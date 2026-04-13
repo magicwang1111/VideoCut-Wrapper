@@ -59,7 +59,7 @@ program
       const { manifest: m } = t;
       const varCount = Object.keys(m.variables).length;
       console.log(
-        `  ${m.id.padEnd(22)}${m.name.padEnd(14)}${m.version.padEnd(8)}${m.preset.padEnd(18)}${varCount}`,
+        `  ${m.id.padEnd(22)}${m.name.padEnd(14)}${m.version.padEnd(8)}${(m.preset ?? 'auto').padEnd(18)}${varCount}`,
       );
     }
 
@@ -126,8 +126,8 @@ program
     lines.push('');
     lines.push(`template: "${m.id}"`);
     lines.push('');
-    lines.push(`# 分辨率预设（可选，不写则用模板默认: ${m.preset}）`);
-    lines.push(`# preset: "${m.preset}"`);
+    lines.push(`# 分辨率预设（可选，不写则用模板默认: ${m.preset ?? 'auto'}）`);
+    lines.push(`# preset: "${m.preset ?? 'auto'}"`);
     lines.push('');
     lines.push(`# 输出质量（可选: low / medium / high，默认: high）`);
     lines.push('# quality: "high"');

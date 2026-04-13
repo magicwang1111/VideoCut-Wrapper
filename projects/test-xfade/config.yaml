@@ -1,0 +1,17 @@
+# 项目配置 — 叠化拼接 模板
+# 创建时间: 2026-04-13
+
+template: "xfade-concat"
+
+preset: "auto"
+quality: "high"
+
+variables:
+
+  # 第 1 段视频 [video] (必填)
+  clip_1: "D:/Goumei-Video-Cut/example/4月10日.mp4"
+  clip_2: "D:/Goumei-Video-Cut/example/4月10日.mp4"
+  clip_3: "D:/Goumei-Video-Cut/example/4月10日.mp4"
+
+  # 叠化时长（秒）
+  transition_duration: 0.5

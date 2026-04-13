@@ -383,6 +383,117 @@ export class RenderService {
     }
   }
 
+  /**
+   * 用 FFmpeg filter_complex 完成叠化（cross-dissolve）拼接，单 pass 直出。
+   * Video: xfade 链；Audio: acrossfade 链；无音频片段自动补静音。
+   */
+  private ffmpegXfadeConcat(
+    ffmpegPath: string,
+    ffprobePath: string,
+    clips: Array<{ key: string; src: string; duration: number }>,
+    outputPath: string,
+    qualPreset: QualityPreset,
+    task: RenderTask,
+    transitionDuration: number,
+  ): void {
+    const n = clips.length;
+    const D = transitionDuration;
+
+    // ── 构造输入参数与音视频输入索引 ──────────────────────────────────────
+    interface ClipMeta {
+      videoIdx: number;  // ffmpeg -i 的序号
+      audioIdx: number;  // 对应音频序号（无音频时为 -1，用 anullsrc 代替）
+      duration: number;
+    }
+
+    const inputArgs: string[] = [];
+    const clipMeta: ClipMeta[] = [];
+    let inputCounter = 0;
+
+    for (const clip of clips) {
+      const hasAudio = checkHasAudio(ffprobePath, clip.src);
+      inputArgs.push('-i', clip.src);
+      clipMeta.push({
+        videoIdx: inputCounter,
+        audioIdx: hasAudio ? inputCounter : -1,
+        duration: clip.duration,
+      });
+      inputCounter++;
+    }
+
+    // ── 构建 filter_complex ────────────────────────────────────────────────
+    const filterParts: string[] = [];
+
+    // 单片段：无需转场
+    if (n === 1) {
+      const { videoIdx, audioIdx, duration } = clipMeta[0];
+      const aLabel = audioIdx >= 0
+        ? `[${audioIdx}:a]`
+        : `anullsrc=channel_layout=stereo:sample_rate=44100,atrim=duration=${duration}`;
+
+      filterParts.push(`[${videoIdx}:v]copy[vout]`);
+      filterParts.push(`${aLabel}aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[aout]`);
+    } else {
+      // 视频 xfade 链
+      let prevVLabel = `[${clipMeta[0].videoIdx}:v]`;
+      let durationSum = clipMeta[0].duration;
+
+      for (let i = 1; i < n; i++) {
+        const offset = Math.max(0.01, durationSum - i * D);
+        const outLabel = i === n - 1 ? '[vout]' : `[v${i}]`;
+
+        if (clipMeta[i].duration < D * 2) {
+          console.warn(
+            `  ⚠ 片段 ${clips[i].key} 时长 ${clipMeta[i].duration.toFixed(1)}s 短于两倍叠化时长（${(D * 2).toFixed(1)}s），转场可能异常`,
+          );
+        }
+
+        filterParts.push(
+          `${prevVLabel}[${clipMeta[i].videoIdx}:v]xfade=transition=fade:duration=${D}:offset=${offset.toFixed(3)}${outLabel}`,
+        );
+        prevVLabel = outLabel;
+        durationSum += clipMeta[i].duration;
+      }
+
+      // 音频 acrossfade 链
+      // 为无音频片段生成带时长限制的静音流标签
+      const audioLabels: string[] = clipMeta.map((m) => {
+        if (m.audioIdx >= 0) return `[${m.audioIdx}:a]`;
+        return `anullsrc=channel_layout=stereo:sample_rate=44100,atrim=duration=${m.duration},asetpts=PTS-STARTPTS`;
+      });
+
+      let prevAExpr = audioLabels[0];
+      for (let i = 1; i < n; i++) {
+        const outLabel = i === n - 1 ? '[aout]' : `[a${i}]`;
+        filterParts.push(`${prevAExpr}${audioLabels[i]}acrossfade=d=${D}:c1=tri:c2=tri${outLabel}`);
+        prevAExpr = outLabel;
+      }
+    }
+
+    const filterComplex = filterParts.join(';');
+
+    const args: string[] = [
+      ...inputArgs,
+      '-filter_complex', filterComplex,
+      '-map', '[vout]',
+      '-map', '[aout]',
+      '-c:v', 'libx264',
+      '-preset', qualPreset.ffmpegPreset,
+      '-crf', String(qualPreset.crf),
+      '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-ar', '44100',
+      '-ac', '2',
+      '-y', outputPath,
+    ];
+
+    console.log(`\n[2/3] FFmpeg 叠化拼接 ${n} 个片段（叠化时长 ${D}s）...`);
+    execFileSync(ffmpegPath, args, { timeout: 600_000 });
+
+    updateProgress(task, 1);
+  }
+
   async render(request: RenderRequest): Promise<RenderResult> {
     const ffprobePath = resolveFfprobePath(this.rootDir);
     const ffmpegPath = resolveFfmpegPath(this.rootDir);
@@ -400,10 +511,10 @@ export class RenderService {
       request.templateInfo,
     );
 
-    if (request.templateId === 'trim-concat') {
+    if (['trim-concat', 'xfade-concat'].includes(request.templateId)) {
       if (!ffmpegPath || !ffprobePath) {
         throw new RenderError(
-          'trim-concat 模板依赖 FFmpeg，请安装 FFmpeg 或通过环境变量 FFMPEG_PATH / FFPROBE_PATH 指定路径。',
+          `${request.templateId} 模板依赖 FFmpeg，请安装 FFmpeg 或通过环境变量 FFMPEG_PATH / FFPROBE_PATH 指定路径。`,
         );
       }
 
@@ -490,6 +601,55 @@ export class RenderService {
           qualPreset,
           task,
           TRIM_START,
+        );
+
+        const elapsed = (Date.now() - startTime) / 1000;
+        completeTask(task, outputPath);
+
+        console.log(`[3/3] 归档产物...`);
+        await this.writeMeta(outDir, task, request, resPreset, elapsed);
+
+        return {
+          taskId: task.id,
+          status: 'completed',
+          outputPath,
+          duration: elapsed,
+        };
+      }
+
+      // ── xfade-concat：叠化拼接，直接走 FFmpeg ──
+      if (request.templateId === 'xfade-concat') {
+        console.log(`\n[1/3] 收集并校验视频片段...`);
+
+        const transitionDuration = typeof request.variables['transition_duration'] === 'number'
+          ? request.variables['transition_duration']
+          : 0.5;
+
+        const clips: Array<{ key: string; src: string; duration: number }> = [];
+        for (const [key, def] of Object.entries(request.templateInfo.manifest.variables)) {
+          if (def.type !== 'video') continue;
+          const src = request.variables[key];
+          if (typeof src !== 'string' || !src.trim()) continue;
+          const info = videoInfo.get(key);
+          const duration = info?.duration ?? 0;
+          clips.push({ key, src, duration });
+        }
+
+        if (clips.length === 0) {
+          throw new RenderError('没有可用的视频片段（未提供任何视频）');
+        }
+
+        console.log(`  共 ${clips.length} 个片段，叠化时长 ${transitionDuration}s`);
+
+        const outputPath = path.join(outDir, outFile);
+        this.ffmpegXfadeConcat(
+          ffmpegPath!,
+          ffprobePath!,
+          clips,
+          outputPath,
+          qualPreset,
+          task,
+          transitionDuration,
         );
 
         const elapsed = (Date.now() - startTime) / 1000;
