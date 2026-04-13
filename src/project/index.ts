@@ -65,7 +65,7 @@ export class ProjectManager {
       templateInfo,
       variables: resolvedVars,
       preset: config.preset ?? manifest.preset ?? 'auto',
-      quality: config.quality ?? 'medium',
+      quality: config.quality ?? 'high',
       outputFilename: config.output?.filename,
       projectDir,
       configPath: absConfigPath,

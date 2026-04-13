@@ -129,8 +129,8 @@ program
     lines.push(`# 分辨率预设（可选，不写则用模板默认: ${m.preset}）`);
     lines.push(`# preset: "${m.preset}"`);
     lines.push('');
-    lines.push(`# 输出质量（可选: low / medium / high）`);
-    lines.push('# quality: "medium"');
+    lines.push(`# 输出质量（可选: low / medium / high，默认: high）`);
+    lines.push('# quality: "high"');
     lines.push('');
     lines.push('# 变量 — 填入你的素材和内容');
     lines.push('variables:');
