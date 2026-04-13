@@ -7,6 +7,7 @@ import {
   getQualityPreset,
   AUTO_PRESET,
   type ResolutionPreset,
+  type QualityPreset,
 } from '../presets.js';
 import { RenderError } from '../errors.js';
 import {
@@ -85,6 +86,39 @@ function resolveFfprobePath(rootDir: string): string | null {
   }
 }
 
+function resolveFfmpegPath(rootDir: string): string | null {
+  const explicitPath = process.env.FFMPEG_PATH;
+  if (explicitPath && fs.existsSync(explicitPath)) {
+    return explicitPath;
+  }
+
+  const candidateRoots = [
+    path.join(rootDir, 'ffmpeg'),
+    path.join(path.dirname(rootDir), 'ffmpeg'),
+  ];
+
+  for (const root of candidateRoots) {
+    const found = findFileRecursive(root, 'ffmpeg.exe');
+    if (found) {
+      return found;
+    }
+  }
+
+  try {
+    const resolved = execFileSync('where.exe', ['ffmpeg'], {
+      encoding: 'utf-8',
+      timeout: 3000,
+    })
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find(Boolean);
+
+    return resolved ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** 用 ffprobe 探测视频的分辨率、帧率和时长 */
 function probeVideo(
   ffprobePath: string,
@@ -135,6 +169,27 @@ function probeVideo(
     };
   } catch {
     return null;
+  }
+}
+
+/** 检查视频是否包含音频流 */
+function checkHasAudio(ffprobePath: string, videoPath: string): boolean {
+  try {
+    const raw = execFileSync(
+      ffprobePath,
+      [
+        '-v', 'quiet',
+        '-print_format', 'json',
+        '-show_streams',
+        '-select_streams', 'a:0',
+        videoPath,
+      ],
+      { encoding: 'utf-8', timeout: 10000 },
+    );
+    const info = JSON.parse(raw) as { streams?: unknown[] };
+    return (info.streams?.length ?? 0) > 0;
+  } catch {
+    return false;
   }
 }
 
@@ -238,8 +293,99 @@ export class RenderService {
     this.outputDir = path.join(rootDir, 'output');
   }
 
+  /**
+   * 用 FFmpeg 直接完成"裁去开头 N 秒 + 拼接"，不经过 Revideo。
+   * 两步法：先逐条裁剪到 temp，再用 concat demuxer 合并。
+   */
+  private ffmpegTrimConcat(
+    ffmpegPath: string,
+    ffprobePath: string,
+    clips: Array<{ key: string; src: string; duration: number }>,
+    outputPath: string,
+    qualPreset: QualityPreset,
+    task: RenderTask,
+    trimStart: number,
+  ): void {
+    const tempDir = path.join(this.rootDir, 'temp');
+    fs.mkdirSync(tempDir, { recursive: true });
+
+    const sessionId = Date.now().toString(36);
+    const tempFiles: string[] = [];
+
+    try {
+      console.log(`\n[2/3] FFmpeg 裁剪 ${clips.length} 个片段...`);
+
+      for (let i = 0; i < clips.length; i++) {
+        const clip = clips[i];
+        const tempFile = path.join(tempDir, `trim_${sessionId}_${i}.mp4`);
+        tempFiles.push(tempFile);
+
+        const hasAudio = checkHasAudio(ffprobePath, clip.src);
+
+        const args: string[] = [
+          '-ss', String(trimStart),
+          '-i', clip.src,
+        ];
+
+        if (!hasAudio) {
+          // 注入静音音轨，确保所有片段音频格式一致
+          args.push('-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100');
+        }
+
+        args.push(
+          '-c:v', 'libx264',
+          '-preset', qualPreset.ffmpegPreset,
+          '-crf', String(qualPreset.crf),
+          '-c:a', 'aac',
+          '-b:a', '192k',
+          '-ar', '44100',
+          '-ac', '2',
+        );
+
+        if (!hasAudio) {
+          args.push('-map', '0:v', '-map', '1:a', '-shortest');
+        }
+
+        args.push('-y', tempFile);
+
+        console.log(`  [${i + 1}/${clips.length}] 裁剪 ${path.basename(clip.src)}（跳过前 ${trimStart}s）`);
+        execFileSync(ffmpegPath, args, { timeout: 300_000 });
+
+        updateProgress(task, (i + 1) / (clips.length + 1));
+      }
+
+      // 生成 concat 列表文件
+      const listFile = path.join(tempDir, `concat_${sessionId}.txt`);
+      const listContent = tempFiles
+        .map((f) => `file '${f.replace(/\\/g, '/')}'`)
+        .join('\n');
+      fs.writeFileSync(listFile, listContent, 'utf-8');
+
+      console.log(`  拼接 ${clips.length} 个片段 → ${path.basename(outputPath)}`);
+      execFileSync(
+        ffmpegPath,
+        [
+          '-f', 'concat',
+          '-safe', '0',
+          '-i', listFile,
+          '-c', 'copy',
+          '-y', outputPath,
+        ],
+        { timeout: 600_000 },
+      );
+
+      // 清理 concat 列表
+      try { fs.unlinkSync(listFile); } catch { /* ignore */ }
+    } finally {
+      for (const f of tempFiles) {
+        try { fs.unlinkSync(f); } catch { /* ignore */ }
+      }
+    }
+  }
+
   async render(request: RenderRequest): Promise<RenderResult> {
     const ffprobePath = resolveFfprobePath(this.rootDir);
+    const ffmpegPath = resolveFfmpegPath(this.rootDir);
     const videoInfo = collectVideoInfo(
       ffprobePath,
       request.variables,
@@ -255,9 +401,9 @@ export class RenderService {
     );
 
     if (request.templateId === 'trim-concat') {
-      if (!ffprobePath) {
+      if (!ffmpegPath || !ffprobePath) {
         throw new RenderError(
-          'trim-concat 模板依赖 ffprobe 获取视频时长，但当前环境未找到 ffprobe。请安装 FFmpeg，或设置 FFPROBE_PATH 环境变量。',
+          'trim-concat 模板依赖 FFmpeg，请安装 FFmpeg 或通过环境变量 FFMPEG_PATH / FFPROBE_PATH 指定路径。',
         );
       }
 
@@ -308,6 +454,59 @@ export class RenderService {
     const startTime = Date.now();
 
     try {
+      // ── trim-concat：直接走 FFmpeg，不经过 Revideo ──
+      if (request.templateId === 'trim-concat') {
+        const TRIM_START = 2;
+
+        console.log(`\n[1/3] 收集并校验视频片段...`);
+
+        // 按 manifest 变量顺序收集所有有效片段
+        const clips: Array<{ key: string; src: string; duration: number }> = [];
+        for (const [key, def] of Object.entries(request.templateInfo.manifest.variables)) {
+          if (def.type !== 'video') continue;
+          const src = request.variables[key];
+          if (typeof src !== 'string' || !src.trim()) continue;
+          const info = videoInfo.get(key);
+          const duration = info?.duration ?? 0;
+          if (duration > 0 && duration <= TRIM_START) {
+            console.warn(`  ⚠ 跳过 ${key}：时长 ${duration.toFixed(1)}s 不足 ${TRIM_START}s`);
+            continue;
+          }
+          clips.push({ key, src, duration });
+        }
+
+        if (clips.length === 0) {
+          throw new RenderError('没有可用的视频片段（全部片段时长均不足 2 秒或未提供）');
+        }
+
+        console.log(`  共 ${clips.length} 个片段，每段跳过前 ${TRIM_START}s`);
+
+        const outputPath = path.join(outDir, outFile);
+        this.ffmpegTrimConcat(
+          ffmpegPath!,
+          ffprobePath!,
+          clips,
+          outputPath,
+          qualPreset,
+          task,
+          TRIM_START,
+        );
+
+        const elapsed = (Date.now() - startTime) / 1000;
+        completeTask(task, outputPath);
+
+        console.log(`[3/3] 归档产物...`);
+        await this.writeMeta(outDir, task, request, resPreset, elapsed);
+
+        return {
+          taskId: task.id,
+          status: 'completed',
+          outputPath,
+          duration: elapsed,
+        };
+      }
+
+      // ── 其他模板：走 Revideo 渲染引擎 ──
       console.log(`\n[1/3] 准备渲染环境...`);
 
       // 动态导入 @revideo/renderer
@@ -319,10 +518,12 @@ export class RenderService {
         projectFile: request.templateInfo.entryPath,
         variables: renderVariables,
         settings: {
-          outFile,
+          outFile: outFile as `${string}.mp4`,
           outDir,
-          dimensions: [resPreset.width, resPreset.height],
           logProgress: true,
+          projectSettings: {
+            size: { x: resPreset.width, y: resPreset.height },
+          },
           progressCallback: (_worker: number, progress: number) => {
             updateProgress(task, progress);
           },
