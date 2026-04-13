@@ -320,33 +320,15 @@ export class RenderService {
         const tempFile = path.join(tempDir, `trim_${sessionId}_${i}.mp4`);
         tempFiles.push(tempFile);
 
-        const hasAudio = checkHasAudio(ffprobePath, clip.src);
-
         const args: string[] = [
           '-ss', String(trimStart),
           '-i', clip.src,
-        ];
-
-        if (!hasAudio) {
-          // 注入静音音轨，确保所有片段音频格式一致
-          args.push('-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100');
-        }
-
-        args.push(
           '-c:v', 'libx264',
           '-preset', qualPreset.ffmpegPreset,
           '-crf', String(qualPreset.crf),
-          '-c:a', 'aac',
-          '-b:a', '192k',
-          '-ar', '44100',
-          '-ac', '2',
-        );
-
-        if (!hasAudio) {
-          args.push('-map', '0:v', '-map', '1:a', '-shortest');
-        }
-
-        args.push('-y', tempFile);
+          '-an',
+          '-y', tempFile,
+        ];
 
         console.log(`  [${i + 1}/${clips.length}] 裁剪 ${path.basename(clip.src)}（跳过前 ${trimStart}s）`);
         execFileSync(ffmpegPath, args, { timeout: 300_000 });
@@ -399,42 +381,23 @@ export class RenderService {
     const n = clips.length;
     const D = transitionDuration;
 
-    // ── 构造输入参数与音视频输入索引 ──────────────────────────────────────
-    interface ClipMeta {
-      videoIdx: number;  // ffmpeg -i 的序号
-      audioIdx: number;  // 对应音频序号（无音频时为 -1，用 anullsrc 代替）
-      duration: number;
-    }
-
+    // ── 构造输入参数与视频输入索引 ──────────────────────────────────────────
     const inputArgs: string[] = [];
-    const clipMeta: ClipMeta[] = [];
+    const clipMeta: Array<{ videoIdx: number; duration: number }> = [];
     let inputCounter = 0;
 
     for (const clip of clips) {
-      const hasAudio = checkHasAudio(ffprobePath, clip.src);
       inputArgs.push('-i', clip.src);
-      clipMeta.push({
-        videoIdx: inputCounter,
-        audioIdx: hasAudio ? inputCounter : -1,
-        duration: clip.duration,
-      });
+      clipMeta.push({ videoIdx: inputCounter, duration: clip.duration });
       inputCounter++;
     }
 
-    // ── 构建 filter_complex ────────────────────────────────────────────────
+    // ── 构建 filter_complex（仅视频 xfade 链）─────────────────────────────
     const filterParts: string[] = [];
 
-    // 单片段：无需转场
     if (n === 1) {
-      const { videoIdx, audioIdx, duration } = clipMeta[0];
-      const aLabel = audioIdx >= 0
-        ? `[${audioIdx}:a]`
-        : `anullsrc=channel_layout=stereo:sample_rate=44100,atrim=duration=${duration}[anull0];[anull0]`;
-
-      filterParts.push(`[${videoIdx}:v]copy[vout]`);
-      filterParts.push(`${aLabel}aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[aout]`);
+      filterParts.push(`[${clipMeta[0].videoIdx}:v]copy[vout]`);
     } else {
-      // 视频 xfade 链
       let prevVLabel = `[${clipMeta[0].videoIdx}:v]`;
       let durationSum = clipMeta[0].duration;
 
@@ -454,24 +417,6 @@ export class RenderService {
         prevVLabel = outLabel;
         durationSum += clipMeta[i].duration;
       }
-
-      // 音频 acrossfade 链
-      // 为无音频片段先生成带独立 label 的 anullsrc 源，再链入 acrossfade
-      const audioLabels: string[] = clipMeta.map((m, i) => {
-        if (m.audioIdx >= 0) return `[${m.audioIdx}:a]`;
-        const label = `[anull${i}]`;
-        filterParts.push(
-          `anullsrc=channel_layout=stereo:sample_rate=44100,atrim=duration=${m.duration},asetpts=PTS-STARTPTS${label}`,
-        );
-        return label;
-      });
-
-      let prevALabel = audioLabels[0];
-      for (let i = 1; i < n; i++) {
-        const outLabel = i === n - 1 ? '[aout]' : `[a${i}]`;
-        filterParts.push(`${prevALabel}${audioLabels[i]}acrossfade=d=${D}:c1=tri:c2=tri${outLabel}`);
-        prevALabel = outLabel;
-      }
     }
 
     const filterComplex = filterParts.join(';');
@@ -480,15 +425,11 @@ export class RenderService {
       ...inputArgs,
       '-filter_complex', filterComplex,
       '-map', '[vout]',
-      '-map', '[aout]',
       '-c:v', 'libx264',
       '-preset', qualPreset.ffmpegPreset,
       '-crf', String(qualPreset.crf),
       '-pix_fmt', 'yuv420p',
-      '-c:a', 'aac',
-      '-b:a', '192k',
-      '-ar', '44100',
-      '-ac', '2',
+      '-an',
       '-y', outputPath,
     ];
 
