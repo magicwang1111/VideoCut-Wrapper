@@ -1,0 +1,58 @@
+# 项目配置 — 产品展示 模板
+# 创建时间: 2026-04-13T08:44:57.678Z
+
+template: "product-showcase"
+
+# 分辨率预设（可选，不写则用模板默认: douyin_vertical）
+# preset: "douyin_vertical"
+
+# 输出质量（可选: low / medium / high）
+quality: "high"
+
+# 变量 — 填入你的素材和内容
+variables:
+
+  # 开场视频 [video] (必填)
+  clip_intro: "D:\Goumei-Video-Cut\projects\test-video\materials\20260413\kling_20260410_作品_固定镜头_展示穿搭_4455_0.mp4"
+
+  # 产品特写 [video] (必填)
+  clip_detail: "D:\Goumei-Video-Cut\projects\test-video\materials\20260413\kling_20260410_作品_固定镜头_模仿穿搭博_4166_0.mp4"
+
+  # 结尾视频 [video] (必填)
+  clip_outro: "D:\Goumei-Video-Cut\projects\test-video\materials\20260413\kling_20260410_作品_固定镜头_模仿穿搭博_4505_0.mp4"
+
+  # 产品名称 [text]
+  product_name: "产品名称"
+
+  # 价格文案 [text]
+  price_text: "¥99"
+
+  # 结尾文案 [text]
+  outro_text: "关注我们获取更多优惠"
+
+  # 品牌 Logo [image]
+  #logo: "materials/your-file.png"
+
+  # 背景音乐 [audio]
+  #bgm: "materials/your-file.mp3"
+
+  # 字幕颜色 [color]
+  subtitle_color: "#FFFFFF"
+
+  # 开场时长（秒） [number]
+  intro_duration: 3
+
+  # 特写时长（秒） [number]
+  detail_duration: 5
+
+  # 结尾时长（秒） [number]
+  outro_duration: 3
+
+  # 启用背景音乐 [boolean]
+  enable_bgm: true
+
+  # 启用转场 [boolean]
+  enable_transition: true
+
+  # 背景音乐音量 (0-1) [number]
+  bgm_volume: 0.3

@@ -1,0 +1,56 @@
+{
+  "id": "simple-slideshow",
+  "name": "简单轮播",
+  "description": "2-3 段视频依次播放，支持可选转场效果",
+  "version": "1.0.0",
+  "author": "Goumei",
+  "preset": "douyin_vertical",
+  "entry": "src/project.ts",
+  "variables": {
+    "clip_1": {
+      "type": "video",
+      "label": "第一段视频",
+      "required": true
+    },
+    "clip_2": {
+      "type": "video",
+      "label": "第二段视频",
+      "required": true
+    },
+    "clip_3": {
+      "type": "video",
+      "label": "第三段视频（可选）"
+    },
+    "clip_1_duration": {
+      "type": "number",
+      "label": "第一段时长（秒，0=使用原始时长）",
+      "default": 0,
+      "min": 0
+    },
+    "clip_2_duration": {
+      "type": "number",
+      "label": "第二段时长（秒，0=使用原始时长）",
+      "default": 0,
+      "min": 0
+    },
+    "clip_3_duration": {
+      "type": "number",
+      "label": "第三段时长（秒，0=使用原始时长）",
+      "default": 0,
+      "min": 0
+    },
+    "transition_duration": {
+      "type": "number",
+      "label": "转场时长（秒）",
+      "default": 0.5,
+      "min": 0,
+      "max": 3
+    },
+    "enable_transition": {
+      "type": "boolean",
+      "label": "启用转场",
+      "default": true
+    }
+  },
+  "tags": ["基础", "拼接", "轮播"]
+}

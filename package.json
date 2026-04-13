@@ -1,0 +1,30 @@
+{
+  "name": "goumei-video-cut",
+  "version": "0.1.0",
+  "description": "模板化视频剪辑系统 — 单镜像多模板、统一渲染 API、模板注册制",
+  "type": "module",
+  "bin": {
+    "goumei": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "goumei": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "@revideo/2d": "^0.10",
+    "@revideo/core": "^0.10",
+    "@revideo/renderer": "^0.10",
+    "@revideo/ui": "^0.10.4",
+    "@revideo/vite-plugin": "^0.10",
+    "ajv": "^8.17",
+    "commander": "^13.0",
+    "vite": "^5.4",
+    "yaml": "^2.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0",
+    "tsx": "^4.19",
+    "typescript": "^5.7"
+  }
+}

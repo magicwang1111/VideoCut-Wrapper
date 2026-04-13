@@ -1,0 +1,37 @@
+{
+  "id": "trim-concat",
+  "name": "裁头拼接",
+  "description": "将多个视频统一剪去开头 2 秒后顺序拼接，不额外添加音乐或字幕",
+  "version": "1.0.0",
+  "author": "Goumei",
+  "preset": "douyin_vertical",
+  "entry": "src/project.ts",
+  "variables": {
+    "clip_1": {
+      "type": "video",
+      "label": "第 1 段视频",
+      "required": true
+    },
+    "clip_2": {
+      "type": "video",
+      "label": "第 2 段视频"
+    },
+    "clip_3": {
+      "type": "video",
+      "label": "第 3 段视频"
+    },
+    "clip_4": {
+      "type": "video",
+      "label": "第 4 段视频"
+    },
+    "clip_5": {
+      "type": "video",
+      "label": "第 5 段视频"
+    },
+    "clip_6": {
+      "type": "video",
+      "label": "第 6 段视频"
+    }
+  },
+  "tags": ["基础", "拼接", "裁剪"]
+}

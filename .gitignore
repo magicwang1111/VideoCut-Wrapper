@@ -1,0 +1,10 @@
+node_modules/
+dist/
+output/
+temp/
+*.mp4
+*.mov
+*.avi
+*.mp3
+*.wav
+*.aac
