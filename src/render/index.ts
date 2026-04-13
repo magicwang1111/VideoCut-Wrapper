@@ -429,7 +429,7 @@ export class RenderService {
       const { videoIdx, audioIdx, duration } = clipMeta[0];
       const aLabel = audioIdx >= 0
         ? `[${audioIdx}:a]`
-        : `anullsrc=channel_layout=stereo:sample_rate=44100,atrim=duration=${duration}`;
+        : `anullsrc=channel_layout=stereo:sample_rate=44100,atrim=duration=${duration}[anull0];[anull0]`;
 
       filterParts.push(`[${videoIdx}:v]copy[vout]`);
       filterParts.push(`${aLabel}aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[aout]`);
@@ -456,17 +456,21 @@ export class RenderService {
       }
 
       // 音频 acrossfade 链
-      // 为无音频片段生成带时长限制的静音流标签
-      const audioLabels: string[] = clipMeta.map((m) => {
+      // 为无音频片段先生成带独立 label 的 anullsrc 源，再链入 acrossfade
+      const audioLabels: string[] = clipMeta.map((m, i) => {
         if (m.audioIdx >= 0) return `[${m.audioIdx}:a]`;
-        return `anullsrc=channel_layout=stereo:sample_rate=44100,atrim=duration=${m.duration},asetpts=PTS-STARTPTS`;
+        const label = `[anull${i}]`;
+        filterParts.push(
+          `anullsrc=channel_layout=stereo:sample_rate=44100,atrim=duration=${m.duration},asetpts=PTS-STARTPTS${label}`,
+        );
+        return label;
       });
 
-      let prevAExpr = audioLabels[0];
+      let prevALabel = audioLabels[0];
       for (let i = 1; i < n; i++) {
         const outLabel = i === n - 1 ? '[aout]' : `[a${i}]`;
-        filterParts.push(`${prevAExpr}${audioLabels[i]}acrossfade=d=${D}:c1=tri:c2=tri${outLabel}`);
-        prevAExpr = outLabel;
+        filterParts.push(`${prevALabel}${audioLabels[i]}acrossfade=d=${D}:c1=tri:c2=tri${outLabel}`);
+        prevALabel = outLabel;
       }
     }
 
