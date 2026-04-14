@@ -122,22 +122,32 @@ variables:
 
 ### `xfade-concat` — 叠化拼接
 
-多段视频之间加叠化（cross-dissolve）转场拼接。单 pass FFmpeg filter_complex 实现。
+多段视频按顺序拼接，前一段尾部淡出，下一段在转场期间只显示首帧静帧，不做淡入；若长度不足，会自动复制边缘帧创建转场并保持总时长不变。
 
 | 变量 | 类型 | 默认 | 说明 |
 |------|------|------|------|
 | `clip_1` ~ `clip_6` | video | — | 视频片段，clip_1 必填 |
-| `transition_duration` | number | 0.5 | 叠化时长（秒，0.1–3.0） |
+| `transition_duration` | number | 0.5 | 转场时长（秒，0.1–3.0） |
 
 ### `trim-xfade-concat` — 裁头叠化拼接
 
-裁去每段视频开头 N 秒后，再用叠化转场拼接。裁头与叠化在同一 pass 内完成。
+裁去每段视频开头 N 秒后，再按“前一段尾部淡出 + 下一段首帧静帧垫底”的方式拼接；若长度不足，会自动复制边缘帧创建转场并保持总时长不变。
 
 | 变量 | 类型 | 默认 | 说明 |
 |------|------|------|------|
 | `clip_1` ~ `clip_6` | video | — | 视频片段，clip_1 必填 |
 | `trim_start` | number | 2 | 裁去开头秒数（0–10） |
-| `transition_duration` | number | 0.5 | 叠化时长（秒，0.1–3.0） |
+| `transition_duration` | number | 0.5 | 转场时长（秒，0.1–3.0） |
+
+### `zoom-dissolve-concat` — 拉近叠化拼接
+
+多段视频之间先做由四周向画面中心收束的拉近，再与下一段进行叠化转场，适合更明显的剪映式拉近叠化节奏。
+
+| 变量 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `clip_1` ~ `clip_6` | video | — | 视频片段，clip_1 必填 |
+| `transition_duration` | number | 0.4 | 拉近与叠化时长（秒，0.1–3.0） |
+| `zoom_scale` | number | 1.18 | 放大倍数（建议 1.1–1.3） |
 
 ### `simple-slideshow` — 简单轮播
 
@@ -328,4 +338,3 @@ curl -L http://localhost:3000/tasks/t_1a2b3c4d/download \
 - **队列持久化**：服务重启时自动从 SQLite 重放 `pending`/`rendering` 状态的任务
 - **OSS 存储**：输入素材上传到 `{OSS_PREFIX}/inputs/`，输出文件存放在 `{OSS_PREFIX}/outputs/`，下载 URL 有效期 1 小时
 - **进度上报**：Worker 通过 IPC 消息上报进度，限流 1 次/秒写入 DB
-

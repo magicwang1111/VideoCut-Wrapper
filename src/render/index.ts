@@ -504,11 +504,16 @@ export class RenderService {
     outputPath: string,
     qualPreset: QualityPreset,
     task: RenderTask,
+    resPreset: ResolutionPreset,
     transitionDuration: number,
     trimStart: number = 0,
   ): void {
     const n = clips.length;
     const D = transitionDuration;
+    const fps = resPreset.fps;
+    const frameDuration = 1 / fps;
+    const minSegmentDuration = frameDuration / 2;
+    const formatSeconds = (value: number) => value.toFixed(6);
 
     // ── 构造输入参数与视频输入索引 ──────────────────────────────────────────
     const inputArgs: string[] = [];
@@ -518,35 +523,69 @@ export class RenderService {
     for (const clip of clips) {
       if (trimStart > 0) inputArgs.push('-ss', String(trimStart));
       inputArgs.push('-i', clip.src);
-      clipMeta.push({ videoIdx: inputCounter, duration: clip.duration - trimStart });
+      clipMeta.push({
+        videoIdx: inputCounter,
+        duration: Math.max(0, clip.duration - trimStart),
+      });
       inputCounter++;
     }
 
     // ── 构建 filter_complex（仅视频 xfade 链）─────────────────────────────
+    void ffprobePath;
+
     const filterParts: string[] = [];
+    const segmentLabels: string[] = [];
 
     if (n === 1) {
-      filterParts.push(`[${clipMeta[0].videoIdx}:v]copy[vout]`);
+      filterParts.push(
+        `[${clipMeta[0].videoIdx}:v]setpts=PTS-STARTPTS,fps=fps=${fps}[vout]`,
+      );
     } else {
-      let prevVLabel = `[${clipMeta[0].videoIdx}:v]`;
-      let durationSum = clipMeta[0].duration;
+      for (let i = 0; i < n - 1; i++) {
+        const current = clipMeta[i];
+        const next = clipMeta[i + 1];
+        const bodyDuration = Math.max(0, current.duration - D);
+        const availableTailDuration = Math.min(current.duration, D);
+        const tailStart = Math.max(0, current.duration - D);
+        const tailPadDuration = Math.max(0, D - availableTailDuration);
+        const stillPadDuration = Math.max(0, D - frameDuration);
 
-      for (let i = 1; i < n; i++) {
-        const offset = Math.max(0.01, durationSum - i * D);
-        const outLabel = i === n - 1 ? '[vout]' : `[v${i}]`;
-
-        if (clipMeta[i].duration < D * 2) {
+        if (tailPadDuration > minSegmentDuration) {
           console.warn(
-            `  ⚠ 片段 ${clips[i].key} 时长 ${clipMeta[i].duration.toFixed(1)}s 短于两倍叠化时长（${(D * 2).toFixed(1)}s），转场可能异常`,
+            `  ⚠ 片段 ${clips[i].key} 尾部不足 ${D.toFixed(1)}s，已自动复制最后一帧补足淡出转场`,
           );
         }
 
+        if (bodyDuration > minSegmentDuration) {
+          filterParts.push(
+            `[${current.videoIdx}:v]trim=duration=${formatSeconds(bodyDuration)},setpts=PTS-STARTPTS,fps=fps=${fps}[body${i}]`,
+          );
+          segmentLabels.push(`[body${i}]`);
+        }
+
         filterParts.push(
-          `${prevVLabel}[${clipMeta[i].videoIdx}:v]xfade=transition=fade:duration=${D}:offset=${offset.toFixed(3)}${outLabel}`,
+          `[${current.videoIdx}:v]trim=start=${formatSeconds(tailStart)}:duration=${formatSeconds(availableTailDuration)},setpts=PTS-STARTPTS` +
+          (tailPadDuration > 0
+            ? `,tpad=stop_mode=clone:stop_duration=${formatSeconds(tailPadDuration)}`
+            : '') +
+          `,format=rgba,fade=t=out:st=0:d=${formatSeconds(D)}:alpha=1[fade${i}]`,
         );
-        prevVLabel = outLabel;
-        durationSum += clipMeta[i].duration;
+        filterParts.push(
+          `[${next.videoIdx}:v]trim=end_frame=1,setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=${formatSeconds(stillPadDuration)},fps=fps=${fps}[still${i}]`,
+        );
+        filterParts.push(
+          `[still${i}][fade${i}]overlay=eof_action=pass:shortest=1,format=yuv420p,fps=fps=${fps}[transition${i}]`,
+        );
+        segmentLabels.push(`[transition${i}]`);
       }
+
+      filterParts.push(
+        `[${clipMeta[n - 1].videoIdx}:v]setpts=PTS-STARTPTS,fps=fps=${fps}[last]`,
+      );
+      segmentLabels.push('[last]');
+      filterParts.push(
+        `${segmentLabels.join('')}concat=n=${segmentLabels.length}:v=1:a=0[vout]`,
+      );
     }
 
     const filterComplex = filterParts.join(';');
@@ -563,15 +602,15 @@ export class RenderService {
       '-y', outputPath,
     ];
 
-    console.log(`\n[2/3] FFmpeg 叠化拼接 ${n} 个片段（叠化时长 ${D}s）...`);
+    console.log(`\n[2/3] FFmpeg 前段淡出拼接 ${n} 个片段（转场 ${D}s，长度不足自动补边缘帧）...`);
     execFileSync(ffmpegPath, args, { timeout: 600_000 });
 
     updateProgress(task, 1);
   }
 
   /**
-   * 推镜叠化拼接：每段出画片段的最后 D 秒做 scale 放大（推镜），
-   * 然后用 xfade 交叉叠化衔接下一段（clip1 淡出 + clip2 淡入，无黑屏）。
+   * 中心拉近叠化拼接：每段出画片段的最后 D 秒做由四周向中心收束的拉近，
+   * 然后用 xfade 交叉叠化衔接下一段（保留当前 dissolve 节奏）。
    */
   private ffmpegZoomDissolveConcat(
     ffmpegPath: string,
@@ -588,13 +627,20 @@ export class RenderService {
     const W = resPreset.width;
     const H = resPreset.height;
 
-    // scale 放大表达式：n 从 0 到 frames-1，zoom 从 1.0x 线性增长到 zoomScale
-    // 使用 n（帧序号）而非 t（时间戳），更可靠；floor(x/2)*2 确保偶数像素（yuv420p）
+    // 已在 normalizeClips 中统一分辨率和 fps，这里只做中心拉出轨迹。
+    // 拉出效果放在每段入场片段的头部（clip 1 ~ n-1），而非出场片段的尾部，
+    // 这样 zoom 起点被叠化遮盖，终点 zoom=1 与后续正常画面无缝衔接。
+    // scale eval=frame 不支持输出尺寸递减，用双 reverse 实现 zoomScale→1 拉出。
     const fps = resPreset.fps;
     const frames = Math.max(2, Math.round(fps * D));
     const zDelta = (zoomScale - 1).toFixed(6);
-    const scaleW = `floor(${W}*(1+${zDelta}*n/max(1,${frames - 1}))/2)*2`;
-    const scaleH = `floor(${H}*(1+${zDelta}*n/max(1,${frames - 1}))/2)*2`;
+    const frameProgress = `(n/${frames - 1})`;
+    const easedProgress = `(3*${frameProgress}*${frameProgress}-2*${frameProgress}*${frameProgress}*${frameProgress})`;
+    const zoomExpr = `(1+${zDelta}*${easedProgress})`;
+    const scaleW = `floor(${W}*${zoomExpr}/2)*2`;
+    const scaleH = `floor(${H}*${zoomExpr}/2)*2`;
+    const cropX = `${W}*${zDelta}*${easedProgress}/2`;
+    const cropY = `${H}*${zDelta}*${easedProgress}/2`;
 
     // ── 构造输入参数 ──────────────────────────────────────────────────────────
     const inputArgs: string[] = [];
@@ -607,14 +653,19 @@ export class RenderService {
 
     if (n === 1) {
       filterParts.push(
-        `[0:v]scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2[vout]`,
+        `[0:v]setpts=PTS-STARTPTS[vout]`,
       );
     } else {
-      // 对每段出画片段（0 到 n-2）：末尾 D 秒做推镜，与 body 重新拼接
-      for (let i = 0; i < n - 1; i++) {
+      // 第一段：不做 zoom，仅归一化 fps
+      filterParts.push(
+        `[0:v]setpts=PTS-STARTPTS,fps=fps=${fps}[proc0]`,
+      );
+
+      // 第 1 ~ n-1 段（入场片段）：头部 D 秒做中心拉出，与 body 拼接
+      for (let i = 1; i < n; i++) {
         const dur = clips[i].duration;
-        const tailStart = Math.max(0.001, dur - D);
-        const tailStartStr = tailStart.toFixed(6);
+        const headEnd = Math.min(D, dur);
+        const headEndStr = headEnd.toFixed(6);
 
         if (dur <= D) {
           console.warn(
@@ -622,31 +673,27 @@ export class RenderService {
           );
         }
 
-        // body：正常部分，缩放至目标分辨率
+        const outLabel = i === n - 1 ? '[last]' : `[proc${i}]`;
+
+        // head：前 D 秒做拉出；双 reverse 让 scale 正向放大后视觉呈 zoomScale→1
         filterParts.push(
-          `[${i}:v]trim=duration=${tailStartStr},setpts=PTS-STARTPTS,scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2[body${i}]`,
-        );
-        // tail：最后 D 秒，先归一化分辨率，再 scale 放大（eval=frame），再 crop 居中
-        // 不加 fade——fade 由后续 xfade 完成
-        filterParts.push(
-          `[${i}:v]trim=start=${tailStartStr},setpts=PTS-STARTPTS,` +
-          `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,` +
+          `[${i}:v]trim=duration=${headEndStr},setpts=PTS-STARTPTS,` +
+          `reverse,` +
           `scale='${scaleW}':'${scaleH}':eval=frame,` +
-          `crop=${W}:${H}:x='(iw-${W})/2':y='(ih-${H})/2'[zoomed${i}]`,
+          `crop=${W}:${H}:x='${cropX}':y='${cropY}',` +
+          `reverse[head${i}]`,
         );
-        // 合并 body + zoomed tail（proc_i 时长与原片段相同）
-        // fps 归一化 timebase（concat 输出 1/1000000，xfade 要求两端一致）
+        // body：剩余正常播放段
         filterParts.push(
-          `[body${i}][zoomed${i}]concat=n=2:v=1:a=0,fps=fps=${fps}[proc${i}]`,
+          `[${i}:v]trim=start=${headEndStr},setpts=PTS-STARTPTS[body${i}]`,
+        );
+        // 合并 head + body，fps 归一化
+        filterParts.push(
+          `[head${i}][body${i}]concat=n=2:v=1:a=0,fps=fps=${fps}${outLabel}`,
         );
       }
 
-      // 最后一段直接缩放，不做推镜；同样 fps 归一化
-      filterParts.push(
-        `[${n - 1}:v]scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,fps=fps=${fps}[last]`,
-      );
-
-      // xfade 链：proc_0 → proc_1 → ... → last（与 ffmpegXfadeConcat 相同 offset 公式）
+      // xfade 链：proc0 → proc1 → ... → last
       let prevLabel = `[proc0]`;
       let durationSum = clips[0].duration;
 
@@ -678,7 +725,7 @@ export class RenderService {
       '-y', outputPath,
     ];
 
-    console.log(`\n[2/3] FFmpeg 推镜叠化拼接 ${n} 个片段（叠化 ${D}s，放大 ${zoomScale}x）...`);
+    console.log(`\n[2/3] FFmpeg 中心拉近叠化拼接 ${n} 个片段（叠化 ${D}s，放大 ${zoomScale}x）...`);
     execFileSync(ffmpegPath, args, { timeout: 600_000 });
 
     updateProgress(task, 1);
@@ -813,7 +860,7 @@ export class RenderService {
         };
       }
 
-      // ── xfade-concat：叠化拼接，直接走 FFmpeg ──
+      // ── xfade-concat：前段淡出拼接，直接走 FFmpeg ──
       if (request.templateId === 'xfade-concat') {
         console.log(`\n[1/3] 收集并校验视频片段...`);
 
@@ -827,7 +874,7 @@ export class RenderService {
           throw new RenderError('没有可用的视频片段（未提供任何视频）');
         }
 
-        console.log(`  共 ${clips.length} 个片段，叠化时长 ${transitionDuration}s`);
+        console.log(`  共 ${clips.length} 个片段，前段淡出转场时长 ${transitionDuration}s`);
 
         const normalized = this.normalizeClips(
           ffmpegPath!,
@@ -845,6 +892,7 @@ export class RenderService {
           outputPath,
           qualPreset,
           task,
+          resPreset,
           transitionDuration,
         );
 
@@ -862,7 +910,7 @@ export class RenderService {
         };
       }
 
-      // ── trim-xfade-concat：裁头 + 叠化拼接，直接走 FFmpeg ──
+      // ── trim-xfade-concat：裁头 + 前段淡出拼接，直接走 FFmpeg ──
       if (request.templateId === 'trim-xfade-concat') {
         console.log(`\n[1/3] 收集并校验视频片段...`);
 
@@ -887,7 +935,7 @@ export class RenderService {
           throw new RenderError('没有可用的视频片段（全部片段时长均不足裁剪长度或未提供）');
         }
 
-        console.log(`  共 ${clips.length} 个片段，裁去前 ${trimStart}s，叠化时长 ${transitionDuration}s`);
+        console.log(`  共 ${clips.length} 个片段，裁去前 ${trimStart}s，前段淡出转场时长 ${transitionDuration}s`);
 
         const normalized = this.normalizeClips(
           ffmpegPath!,
@@ -905,6 +953,7 @@ export class RenderService {
           outputPath,
           qualPreset,
           task,
+          resPreset,
           transitionDuration,
           trimStart,
         );
@@ -923,16 +972,16 @@ export class RenderService {
         };
       }
 
-      // ── zoom-dissolve-concat：推镜放大+淡黑，直接拼接 ──
+      // ── zoom-dissolve-concat：中心拉近 + xfade 叠化 ──
       if (request.templateId === 'zoom-dissolve-concat') {
         console.log(`\n[1/3] 收集并校验视频片段...`);
 
         const transitionDuration = typeof request.variables['transition_duration'] === 'number'
           ? request.variables['transition_duration']
-          : 0.5;
+          : 0.4;
         const zoomScale = typeof request.variables['zoom_scale'] === 'number'
           ? request.variables['zoom_scale']
-          : 1.2;
+          : 1.18;
 
         const clips = collectClips(request.variables, request.templateInfo, videoInfo);
 
@@ -940,7 +989,7 @@ export class RenderService {
           throw new RenderError('没有可用的视频片段（未提供任何视频）');
         }
 
-        console.log(`  共 ${clips.length} 个片段，推镜时长 ${transitionDuration}s，放大倍数 ${zoomScale}x`);
+        console.log(`  共 ${clips.length} 个片段，中心拉近时长 ${transitionDuration}s，放大倍数 ${zoomScale}x`);
 
         const normalized = this.normalizeClips(
           ffmpegPath!,

@@ -1,7 +1,7 @@
 {
   "id": "zoom-dissolve-concat",
   "name": "拉近叠化拼接",
-  "description": "多段视频拼接，每段出画时推镜放大并淡出至黑，下一段直接硬切进入，无淡入效果",
+  "description": "多段视频拼接，每段尾部先由四周向画面中心拉近，再与下一段做叠化转场，适合剪映式拉近叠化节奏",
   "version": "1.0.0",
   "author": "Goumei",
   "entry": "src/project.ts",
@@ -34,14 +34,14 @@
     "transition_duration": {
       "type": "number",
       "label": "推镜时长（秒）",
-      "default": 0.5,
+      "default": 0.4,
       "min": 0.1,
       "max": 3.0
     },
     "zoom_scale": {
       "type": "number",
       "label": "放大倍数",
-      "default": 1.2,
+      "default": 1.18,
       "min": 1.05,
       "max": 2.0
     }
