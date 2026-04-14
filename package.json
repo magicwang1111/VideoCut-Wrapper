@@ -12,17 +12,23 @@
     "goumei": "tsx src/cli.ts"
   },
   "dependencies": {
+    "@fastify/multipart": "^10.0.0",
     "@revideo/2d": "^0.10",
     "@revideo/core": "^0.10",
     "@revideo/renderer": "^0.10",
     "@revideo/ui": "^0.10.4",
     "@revideo/vite-plugin": "^0.10",
     "ajv": "^8.17",
+    "ali-oss": "^6.23.0",
+    "better-sqlite3": "^12.9.0",
     "commander": "^13.0",
+    "fastify": "^5.8.4",
     "vite": "^5.4",
     "yaml": "^2.7"
   },
   "devDependencies": {
+    "@types/ali-oss": "^6.23.3",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.0",
     "tsx": "^4.19",
     "typescript": "^5.7"
