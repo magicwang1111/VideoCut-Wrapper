@@ -1,0 +1,251 @@
+# Goumei Video Cut
+
+模板化视频剪辑系统。通过 YAML 配置文件 + 可插拔模板，用一条命令批量渲染短视频。
+
+## 依赖
+
+- **Node.js** >= 18
+- **FFmpeg**（FFmpeg 系模板必须，需在 PATH 中或通过环境变量指定）
+- **Chrome/Chromium**（Revideo 系模板必须）
+
+```bash
+# 检查依赖状态
+npx tsx src/cli.ts check
+```
+
+FFmpeg 不在 PATH 时，可通过环境变量指定路径：
+
+```bash
+set FFMPEG_PATH=D:\ffmpeg\bin\ffmpeg.exe
+set FFPROBE_PATH=D:\ffmpeg\bin\ffprobe.exe
+```
+
+## 安装
+
+```bash
+npm install
+```
+
+## 快速开始
+
+```bash
+# 1. 查看可用模板
+npx tsx src/cli.ts list
+
+# 2. 创建项目（以 trim-xfade-concat 为例）
+npx tsx src/cli.ts init trim-xfade-concat my-project
+
+# 3. 编辑 projects/my-project/config.yaml，填入素材路径
+
+# 4. 渲染
+npx tsx src/cli.ts render projects/my-project/config.yaml
+```
+
+输出文件位于 `output/<project-name>/final.mp4`，同目录还有 `meta.json` 记录本次渲染参数。
+
+---
+
+## CLI 命令
+
+| 命令 | 说明 |
+|------|------|
+| `list` | 列出所有已注册模板 |
+| `info <template-id>` | 查看模板变量详情 |
+| `init <template-id> <project-name>` | 创建项目目录和配置文件 |
+| `validate <config>` | 校验配置（不渲染） |
+| `render <config>` | 渲染视频 |
+| `presets` | 列出所有分辨率和质量预设 |
+| `check` | 检查系统依赖 |
+
+### render 选项
+
+```bash
+npx tsx src/cli.ts render projects/my-project/config.yaml \
+  --preset douyin_vertical \   # 覆盖分辨率预设
+  --quality medium \           # 覆盖质量
+  --preview                    # 快速预览（半分辨率）
+```
+
+---
+
+## 项目配置文件
+
+每个项目一个 `config.yaml`（也支持 `.json`）：
+
+```yaml
+template: "trim-xfade-concat"   # 模板 ID（必填）
+
+preset: "auto"                  # 分辨率预设（可选，默认 auto）
+quality: "high"                 # 质量（可选，默认 high）
+
+variables:
+  clip_1: "materials/a.mp4"     # 相对路径或绝对路径
+  clip_2: "D:/videos/b.mp4"
+  trim_start: 2
+  transition_duration: 0.5
+```
+
+素材路径解析顺序：**项目目录 → 模板目录 → 仓库根目录**。
+
+---
+
+## 分辨率预设
+
+| 预设名 | 尺寸 | 帧率 | 说明 |
+|--------|------|------|------|
+| `auto` | — | — | 自动探测第一个视频的分辨率和帧率（默认） |
+| `douyin_vertical` | 1080×1920 | 30 | 抖音/快手竖屏 |
+| `douyin_horizontal` | 1920×1080 | 30 | 抖音/快手横屏 |
+| `xiaohongshu_square` | 1080×1080 | 30 | 小红书正方形 |
+| `xiaohongshu_vertical` | 1080×1440 | 30 | 小红书竖屏 3:4 |
+| `preview` | 540×960 | 24 | 快速预览（半分辨率） |
+
+## 质量预设
+
+| 预设名 | CRF | 说明 |
+|--------|-----|------|
+| `low` | 28 | 低质量，文件小，编码快 |
+| `medium` | 23 | 中等质量 |
+| `high` | 18 | 高质量（默认） |
+
+---
+
+## 内置模板
+
+### `trim-concat` — 裁头拼接
+
+裁去每段视频开头固定 2 秒后顺序拼接（无转场）。直接由 FFmpeg 完成，速度快。
+
+| 变量 | 类型 | 说明 |
+|------|------|------|
+| `clip_1` ~ `clip_6` | video | 视频片段，clip_1 必填 |
+
+### `xfade-concat` — 叠化拼接
+
+多段视频之间加叠化（cross-dissolve）转场拼接。单 pass FFmpeg filter_complex 实现。
+
+| 变量 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `clip_1` ~ `clip_6` | video | — | 视频片段，clip_1 必填 |
+| `transition_duration` | number | 1 | 叠化时长（秒，0.1–3.0） |
+
+### `trim-xfade-concat` — 裁头叠化拼接
+
+裁去每段视频开头 N 秒后，再用叠化转场拼接。裁头与叠化在同一 pass 内完成。
+
+| 变量 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `clip_1` ~ `clip_6` | video | — | 视频片段，clip_1 必填 |
+| `trim_start` | number | 2 | 裁去开头秒数（0–10） |
+| `transition_duration` | number | 1 | 叠化时长（秒，0.1–3.0） |
+
+### `simple-slideshow` — 简单轮播
+
+2–3 段视频依次播放，支持可选叠化转场。由 Revideo 渲染引擎处理。
+
+| 变量 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `clip_1` / `clip_2` | video | — | 必填 |
+| `clip_3` | video | — | 可选第三段 |
+| `clip_1_duration` ~ `clip_3_duration` | number | 0 | 各段时长（0 = 使用原始时长） |
+| `transition_duration` | number | 0.5 | 转场时长（秒） |
+| `enable_transition` | boolean | true | 是否启用转场 |
+
+### `product-showcase` — 产品展示
+
+三场景产品展示，含 Logo 叠加、字幕、背景音乐。由 Revideo 渲染引擎处理。
+
+| 变量 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `clip_intro` | video | — | 开场视频（必填） |
+| `clip_detail` | video | — | 产品特写（必填） |
+| `clip_outro` | video | — | 结尾视频（必填） |
+| `product_name` | text | 产品名称 | 产品名 |
+| `price_text` | text | ¥99 | 价格文案 |
+| `outro_text` | text | 关注我们… | 结尾文案 |
+| `logo` | image | — | 品牌 Logo |
+| `bgm` | audio | — | 背景音乐 |
+| `subtitle_color` | color | #FFFFFF | 字幕颜色 |
+| `intro_duration` | number | 3 | 开场时长（秒） |
+| `detail_duration` | number | 5 | 特写时长（秒） |
+| `outro_duration` | number | 3 | 结尾时长（秒） |
+| `enable_bgm` | boolean | true | 启用背景音乐 |
+| `enable_transition` | boolean | true | 启用转场 |
+| `bgm_volume` | number | 0.3 | 背景音乐音量（0–1） |
+
+---
+
+## 新增模板
+
+在 `templates/` 下新建目录，包含两个文件：
+
+```
+templates/
+└── my-template/
+    ├── manifest.json   # 模板描述和变量定义
+    └── src/
+        └── project.ts  # Revideo 入口（FFmpeg 模板可留空占位）
+```
+
+**manifest.json 最小示例：**
+
+```json
+{
+  "id": "my-template",
+  "name": "我的模板",
+  "description": "模板描述",
+  "version": "1.0.0",
+  "entry": "src/project.ts",
+  "variables": {
+    "clip_1": { "type": "video", "label": "第 1 段视频", "required": true }
+  }
+}
+```
+
+`id` 必须唯一，与目录名保持一致。模板会在下次运行 CLI 时自动注册，无需手动配置。
+
+FFmpeg 系模板需要在 `src/render/index.ts` 的 `render()` 方法中添加对应分支处理逻辑；Revideo 系模板直接在 `project.ts` 中实现动画即可。
+
+---
+
+## 仓库结构
+
+```
+Goumei-Video-Cut/
+├── src/
+│   ├── cli.ts              # CLI 入口，所有子命令定义
+│   ├── presets.ts          # 分辨率 & 质量预设
+│   ├── errors.ts           # 自定义错误类
+│   ├── registry/
+│   │   ├── index.ts        # 模板注册、扫描、查找
+│   │   └── schema-validator.ts
+│   ├── project/
+│   │   ├── index.ts        # ProjectManager：配置解析 + 素材路径解析
+│   │   ├── config-parser.ts
+│   │   └── asset-resolver.ts
+│   └── render/
+│       ├── index.ts        # RenderService：FFmpeg / Revideo 渲染调度
+│       ├── task.ts         # 渲染任务状态管理
+│       └── queue.ts
+├── templates/              # 内置模板目录（每个子目录一个模板）
+│   ├── trim-concat/
+│   ├── xfade-concat/
+│   ├── trim-xfade-concat/
+│   ├── simple-slideshow/
+│   └── product-showcase/
+├── projects/               # 用户项目（每个子目录一个项目）
+│   └── <project-name>/
+│       ├── config.yaml
+│       └── materials/
+├── input/                  # 临时素材存放区（不纳入项目管理）
+├── output/                 # 渲染产物
+│   └── <project-name>/
+│       ├── final.mp4
+│       └── meta.json
+├── assets/                 # 公共素材（字体、图片等）
+├── fonts/                  # 字体文件
+├── temp/                   # FFmpeg 中间文件（自动清理）
+├── package.json
+├── tsconfig.json
+└── vite.config.ts
+```
