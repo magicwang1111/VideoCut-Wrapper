@@ -336,6 +336,16 @@ export interface RenderResult {
   error?: string;
 }
 
+function buildNormalizeVideoFilter(resPreset: ResolutionPreset): string {
+  return [
+    `fps=${resPreset.fps}`,
+    `scale=${resPreset.width}:${resPreset.height}:force_original_aspect_ratio=decrease:flags=lanczos`,
+    `pad=${resPreset.width}:${resPreset.height}:(ow-iw)/2:(oh-ih)/2:color=black`,
+    'setsar=1',
+    'format=yuv420p',
+  ].join(',');
+}
+
 export class RenderService {
   private rootDir: string;
   private outputDir: string;
@@ -343,6 +353,72 @@ export class RenderService {
   constructor(rootDir: string) {
     this.rootDir = rootDir;
     this.outputDir = path.join(rootDir, 'output');
+  }
+
+  private normalizeClips(
+    ffmpegPath: string,
+    clips: Array<{ key: string; src: string; duration: number }>,
+    qualPreset: QualityPreset,
+    resPreset: ResolutionPreset,
+  ): {
+    clips: Array<{ key: string; src: string; duration: number }>;
+    cleanup: () => void;
+  } {
+    const tempDir = path.join(this.rootDir, 'temp');
+    fs.mkdirSync(tempDir, { recursive: true });
+
+    const normalizeFilter = buildNormalizeVideoFilter(resPreset);
+    const sessionId = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const tempFiles: string[] = [];
+
+    const cleanup = () => {
+      for (const file of tempFiles) {
+        try {
+          fs.unlinkSync(file);
+        } catch {
+          // ignore temp cleanup errors
+        }
+      }
+    };
+
+    try {
+      console.log(
+        `  [normalize] all input videos -> ${resPreset.width}x${resPreset.height} ${resPreset.fps}fps (lanczos)`,
+      );
+
+      const normalizedClips = clips.map((clip, index) => {
+        const tempFile = path.join(tempDir, `normalized_${sessionId}_${index}.mp4`);
+        tempFiles.push(tempFile);
+
+        execFileSync(
+          ffmpegPath,
+          [
+            '-i', clip.src,
+            '-vf', normalizeFilter,
+            '-c:v', 'libx264',
+            '-preset', qualPreset.ffmpegPreset,
+            '-crf', String(qualPreset.crf),
+            '-pix_fmt', 'yuv420p',
+            '-an',
+            '-y', tempFile,
+          ],
+          { timeout: 600_000 },
+        );
+
+        return {
+          ...clip,
+          src: tempFile,
+        };
+      });
+
+      return {
+        clips: normalizedClips,
+        cleanup,
+      };
+    } catch (err) {
+      cleanup();
+      throw err;
+    }
   }
 
   /**
@@ -512,11 +588,13 @@ export class RenderService {
     const W = resPreset.width;
     const H = resPreset.height;
 
-    // scale 放大表达式：t 从 0 到 D，zoom 从 1.0x 线性增长到 zoomScale
-    // floor(x/2)*2 确保偶数像素（yuv420p 要求），eval=frame 逐帧计算
+    // scale 放大表达式：n 从 0 到 frames-1，zoom 从 1.0x 线性增长到 zoomScale
+    // 使用 n（帧序号）而非 t（时间戳），更可靠；floor(x/2)*2 确保偶数像素（yuv420p）
+    const fps = resPreset.fps;
+    const frames = Math.max(2, Math.round(fps * D));
     const zDelta = (zoomScale - 1).toFixed(6);
-    const scaleW = `floor(${W}*(1+${zDelta}*t/${D})/2)*2`;
-    const scaleH = `floor(${H}*(1+${zDelta}*t/${D})/2)*2`;
+    const scaleW = `floor(${W}*(1+${zDelta}*n/max(1,${frames - 1}))/2)*2`;
+    const scaleH = `floor(${H}*(1+${zDelta}*n/max(1,${frames - 1}))/2)*2`;
 
     // ── 构造输入参数 ──────────────────────────────────────────────────────────
     const inputArgs: string[] = [];
@@ -559,13 +637,13 @@ export class RenderService {
         // 合并 body + zoomed tail（proc_i 时长与原片段相同）
         // fps 归一化 timebase（concat 输出 1/1000000，xfade 要求两端一致）
         filterParts.push(
-          `[body${i}][zoomed${i}]concat=n=2:v=1:a=0,fps=fps=${resPreset.fps}[proc${i}]`,
+          `[body${i}][zoomed${i}]concat=n=2:v=1:a=0,fps=fps=${fps}[proc${i}]`,
         );
       }
 
       // 最后一段直接缩放，不做推镜；同样 fps 归一化
       filterParts.push(
-        `[${n - 1}:v]scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,fps=fps=${resPreset.fps}[last]`,
+        `[${n - 1}:v]scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,fps=fps=${fps}[last]`,
       );
 
       // xfade 链：proc_0 → proc_1 → ... → last（与 ffmpegXfadeConcat 相同 offset 公式）
@@ -676,6 +754,7 @@ export class RenderService {
     const outFile = request.outputFilename ?? 'final.mp4';
 
     const startTime = Date.now();
+    const cleanupFns: Array<() => void> = [];
 
     try {
       // ── trim-concat：直接走 FFmpeg，不经过 Revideo ──
@@ -701,11 +780,19 @@ export class RenderService {
 
         console.log(`  共 ${clips.length} 个片段，每段跳过前 ${TRIM_START}s`);
 
+        const normalized = this.normalizeClips(
+          ffmpegPath!,
+          clips,
+          qualPreset,
+          resPreset,
+        );
+        cleanupFns.push(normalized.cleanup);
+
         const outputPath = path.join(outDir, outFile);
         this.ffmpegTrimConcat(
           ffmpegPath!,
           ffprobePath!,
-          clips,
+          normalized.clips,
           outputPath,
           qualPreset,
           task,
@@ -742,11 +829,19 @@ export class RenderService {
 
         console.log(`  共 ${clips.length} 个片段，叠化时长 ${transitionDuration}s`);
 
+        const normalized = this.normalizeClips(
+          ffmpegPath!,
+          clips,
+          qualPreset,
+          resPreset,
+        );
+        cleanupFns.push(normalized.cleanup);
+
         const outputPath = path.join(outDir, outFile);
         this.ffmpegXfadeConcat(
           ffmpegPath!,
           ffprobePath!,
-          clips,
+          normalized.clips,
           outputPath,
           qualPreset,
           task,
@@ -794,11 +889,19 @@ export class RenderService {
 
         console.log(`  共 ${clips.length} 个片段，裁去前 ${trimStart}s，叠化时长 ${transitionDuration}s`);
 
+        const normalized = this.normalizeClips(
+          ffmpegPath!,
+          clips,
+          qualPreset,
+          resPreset,
+        );
+        cleanupFns.push(normalized.cleanup);
+
         const outputPath = path.join(outDir, outFile);
         this.ffmpegXfadeConcat(
           ffmpegPath!,
           ffprobePath!,
-          clips,
+          normalized.clips,
           outputPath,
           qualPreset,
           task,
@@ -839,10 +942,18 @@ export class RenderService {
 
         console.log(`  共 ${clips.length} 个片段，推镜时长 ${transitionDuration}s，放大倍数 ${zoomScale}x`);
 
+        const normalized = this.normalizeClips(
+          ffmpegPath!,
+          clips,
+          qualPreset,
+          resPreset,
+        );
+        cleanupFns.push(normalized.cleanup);
+
         const outputPath = path.join(outDir, outFile);
         this.ffmpegZoomDissolveConcat(
           ffmpegPath!,
-          clips,
+          normalized.clips,
           outputPath,
           qualPreset,
           task,
@@ -914,6 +1025,14 @@ export class RenderService {
         duration: elapsed,
         error: errMsg,
       };
+    } finally {
+      for (const cleanup of cleanupFns) {
+        try {
+          cleanup();
+        } catch {
+          // ignore temp cleanup errors
+        }
+      }
     }
   }
 
