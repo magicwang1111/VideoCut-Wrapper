@@ -167,7 +167,7 @@ src/
       "required": true
     },
     "trim_start": { "type": "number", "label": "裁去开头（秒）", "default": 2, "min": 0, "max": 10 },
-    "transition_duration": { "type": "number", "label": "叠化时长（秒）", "default": 1, "min": 0.1, "max": 3.0 }
+    "transition_duration": { "type": "number", "label": "叠化时长（秒）", "default": 0.5, "min": 0.1, "max": 3.0 }
   }
 }
 ```

@@ -619,7 +619,7 @@ export class RenderService {
 
         const transitionDuration = typeof request.variables['transition_duration'] === 'number'
           ? request.variables['transition_duration']
-          : 1;
+          : 0.5;
 
         const clips = collectClips(request.variables, request.templateInfo, videoInfo);
 
@@ -663,7 +663,7 @@ export class RenderService {
           : 2;
         const transitionDuration = typeof request.variables['transition_duration'] === 'number'
           ? request.variables['transition_duration']
-          : 1;
+          : 0.5;
 
         const allClips2 = collectClips(request.variables, request.templateInfo, videoInfo);
         const clips: Array<{ key: string; src: string; duration: number }> = [];
