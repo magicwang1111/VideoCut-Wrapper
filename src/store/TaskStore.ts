@@ -75,6 +75,11 @@ export class TaskStore {
         completed_at TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+      CREATE TABLE IF NOT EXISTS files (
+        file_id TEXT PRIMARY KEY,
+        oss_key TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
     `);
   }
 
@@ -141,6 +146,17 @@ export class TaskStore {
       "DELETE FROM tasks WHERE status IN ('completed','failed') AND created_at < ?"
     ).run(cutoff);
     return result.changes;
+  }
+
+  saveFile(fileId: string, ossKey: string): void {
+    this.db.prepare(
+      'INSERT OR REPLACE INTO files (file_id, oss_key, created_at) VALUES (?, ?, ?)'
+    ).run(fileId, ossKey, new Date().toISOString());
+  }
+
+  getOssKey(fileId: string): string | null {
+    const row = this.db.prepare('SELECT oss_key FROM files WHERE file_id=?').get(fileId) as { oss_key: string } | undefined;
+    return row?.oss_key ?? null;
   }
 
   close(): void {

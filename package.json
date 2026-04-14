@@ -9,7 +9,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "goumei": "tsx src/cli.ts"
+    "goumei": "tsx src/cli.ts",
+    "start:api": "tsx src/api/server.ts"
   },
   "dependencies": {
     "@fastify/multipart": "^10.0.0",
