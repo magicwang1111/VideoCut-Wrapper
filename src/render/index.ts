@@ -218,6 +218,21 @@ function collectVideoInfo(
   }
 
   for (const [key, def] of Object.entries(templateInfo.manifest.variables)) {
+    if (def.type === 'video_list') {
+      // 探测数组中每个视频，用第一个设置分辨率基准，durations 注入到 variables
+      const list = variables[key];
+      if (!Array.isArray(list)) continue;
+      const durations: number[] = [];
+      for (const src of list as string[]) {
+        if (typeof src !== 'string' || !src.trim()) { durations.push(0); continue; }
+        const probed = probeVideo(ffprobePath, src);
+        durations.push(probed?.duration ?? 0);
+        if (probed && !videoInfo.has(key)) videoInfo.set(key, probed);
+      }
+      (variables as Record<string, unknown>)[`${key}_source_durations`] = durations;
+      continue;
+    }
+
     if (def.type !== 'video') continue;
 
     const value = variables[key];
@@ -255,6 +270,11 @@ function countProvidedVideoInputs(
   let count = 0;
 
   for (const [key, def] of Object.entries(templateInfo.manifest.variables)) {
+    if (def.type === 'video_list') {
+      const list = variables[key];
+      if (Array.isArray(list)) count += list.length;
+      continue;
+    }
     if (def.type !== 'video') continue;
 
     const value = variables[key];
@@ -266,7 +286,39 @@ function countProvidedVideoInputs(
   return count;
 }
 
+/** 从 manifest 变量中收集视频片段（同时支持具名 video 键和 video_list 数组） */
+function collectClips(
+  variables: Record<string, unknown>,
+  templateInfo: TemplateInfo,
+  videoInfo: Map<string, ProbedVideoInfo>,
+): Array<{ key: string; src: string; duration: number }> {
+  // 优先读 video_list 字段
+  for (const [key, def] of Object.entries(templateInfo.manifest.variables)) {
+    if (def.type !== 'video_list') continue;
+    const list = variables[key];
+    if (!Array.isArray(list)) continue;
+    const durations = (variables[`${key}_source_durations`] as number[] | undefined) ?? [];
+    return list.map((src, i) => ({
+      key: `clip_${i + 1}`,
+      src: src as string,
+      duration: durations[i] ?? 0,
+    }));
+  }
+
+  // 回退：扫描具名 video 键（兼容现有 CLI 模板）
+  const clips: Array<{ key: string; src: string; duration: number }> = [];
+  for (const [key, def] of Object.entries(templateInfo.manifest.variables)) {
+    if (def.type !== 'video') continue;
+    const src = variables[key];
+    if (typeof src !== 'string' || !src.trim()) continue;
+    const info = videoInfo.get(key);
+    clips.push({ key, src, duration: info?.duration ?? 0 });
+  }
+  return clips;
+}
+
 export interface RenderRequest {
+  taskId?: string; // 外部传入则覆盖内部生成的 ID
   templateId: string;
   templateInfo: TemplateInfo;
   variables: Record<string, unknown>;
@@ -499,8 +551,9 @@ export class RenderService {
 
     const qualPreset = getQualityPreset(request.quality);
 
-    // 创建任务
+    // 创建任务（外部传入 taskId 则覆盖）
     const task = createTask(request.templateId, request.variables);
+    if (request.taskId) task.id = request.taskId;
     startTask(task);
 
     // 确定输出路径
@@ -518,19 +571,15 @@ export class RenderService {
 
         console.log(`\n[1/3] 收集并校验视频片段...`);
 
-        // 按 manifest 变量顺序收集所有有效片段
+        // 按 manifest 变量顺序收集所有有效片段（支持具名键和 video_list）
+        const allClips = collectClips(request.variables, request.templateInfo, videoInfo);
         const clips: Array<{ key: string; src: string; duration: number }> = [];
-        for (const [key, def] of Object.entries(request.templateInfo.manifest.variables)) {
-          if (def.type !== 'video') continue;
-          const src = request.variables[key];
-          if (typeof src !== 'string' || !src.trim()) continue;
-          const info = videoInfo.get(key);
-          const duration = info?.duration ?? 0;
-          if (duration > 0 && duration <= TRIM_START) {
-            console.warn(`  ⚠ 跳过 ${key}：时长 ${duration.toFixed(1)}s 不足 ${TRIM_START}s`);
+        for (const clip of allClips) {
+          if (clip.duration > 0 && clip.duration <= TRIM_START) {
+            console.warn(`  ⚠ 跳过 ${clip.key}：时长 ${clip.duration.toFixed(1)}s 不足 ${TRIM_START}s`);
             continue;
           }
-          clips.push({ key, src, duration });
+          clips.push(clip);
         }
 
         if (clips.length === 0) {
@@ -572,15 +621,7 @@ export class RenderService {
           ? request.variables['transition_duration']
           : 1;
 
-        const clips: Array<{ key: string; src: string; duration: number }> = [];
-        for (const [key, def] of Object.entries(request.templateInfo.manifest.variables)) {
-          if (def.type !== 'video') continue;
-          const src = request.variables[key];
-          if (typeof src !== 'string' || !src.trim()) continue;
-          const info = videoInfo.get(key);
-          const duration = info?.duration ?? 0;
-          clips.push({ key, src, duration });
-        }
+        const clips = collectClips(request.variables, request.templateInfo, videoInfo);
 
         if (clips.length === 0) {
           throw new RenderError('没有可用的视频片段（未提供任何视频）');
@@ -624,18 +665,14 @@ export class RenderService {
           ? request.variables['transition_duration']
           : 1;
 
+        const allClips2 = collectClips(request.variables, request.templateInfo, videoInfo);
         const clips: Array<{ key: string; src: string; duration: number }> = [];
-        for (const [key, def] of Object.entries(request.templateInfo.manifest.variables)) {
-          if (def.type !== 'video') continue;
-          const src = request.variables[key];
-          if (typeof src !== 'string' || !src.trim()) continue;
-          const info = videoInfo.get(key);
-          const duration = info?.duration ?? 0;
-          if (duration > 0 && duration <= trimStart) {
-            console.warn(`  ⚠ 跳过 ${key}：时长 ${duration.toFixed(1)}s 不足 ${trimStart}s`);
+        for (const clip of allClips2) {
+          if (clip.duration > 0 && clip.duration <= trimStart) {
+            console.warn(`  ⚠ 跳过 ${clip.key}：时长 ${clip.duration.toFixed(1)}s 不足 ${trimStart}s`);
             continue;
           }
-          clips.push({ key, src, duration });
+          clips.push(clip);
         }
 
         if (clips.length === 0) {

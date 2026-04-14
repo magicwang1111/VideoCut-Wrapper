@@ -7,6 +7,7 @@ export interface RenderTask {
   templateId: string;
   status: TaskStatus;
   progress: number; // 0-100
+  attempt: number;
   createdAt: Date;
   startedAt?: Date;
   completedAt?: Date;
@@ -24,6 +25,7 @@ export function createTask(
     templateId,
     status: 'pending',
     progress: 0,
+    attempt: 0,
     createdAt: new Date(),
     variables: { ...variables },
   };
