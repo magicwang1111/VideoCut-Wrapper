@@ -494,8 +494,8 @@ export class RenderService {
   }
 
   /**
-   * 推镜叠化拼接：每段出画片段的最后 D 秒做 scale 放大 + crop 居中 + fade=out，
-   * 然后直接 concat 下一段（无交叉叠化，入画片段硬切，无淡入）。
+   * 推镜叠化拼接：每段出画片段的最后 D 秒做 scale 放大（推镜），
+   * 然后用 xfade 交叉叠化衔接下一段（clip1 淡出 + clip2 淡入，无黑屏）。
    */
   private ffmpegZoomDissolveConcat(
     ffmpegPath: string,
@@ -512,11 +512,11 @@ export class RenderService {
     const W = resPreset.width;
     const H = resPreset.height;
 
-    // scale+crop 缩放表达式（先将 tail 归一化到目标分辨率，再基于帧时间戳 t 从 1.0x 线性放大）
-    // 使用固定的 W/H 作为基础（tail 已归一化），floor(x/2)*2 确保偶数像素（yuv420p 要求）
+    // scale 放大表达式：t 从 0 到 D，zoom 从 1.0x 线性增长到 zoomScale
+    // floor(x/2)*2 确保偶数像素（yuv420p 要求），eval=frame 逐帧计算
     const zDelta = (zoomScale - 1).toFixed(6);
-    const zoomScaleW = `floor(${W}*(1+${zDelta}*t/${D})/2)*2`;
-    const zoomScaleH = `floor(${H}*(1+${zDelta}*t/${D})/2)*2`;
+    const scaleW = `floor(${W}*(1+${zDelta}*t/${D})/2)*2`;
+    const scaleH = `floor(${H}*(1+${zDelta}*t/${D})/2)*2`;
 
     // ── 构造输入参数 ──────────────────────────────────────────────────────────
     const inputArgs: string[] = [];
@@ -528,8 +528,11 @@ export class RenderService {
     const filterParts: string[] = [];
 
     if (n === 1) {
-      filterParts.push(`[0:v]scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2[vout]`);
+      filterParts.push(
+        `[0:v]scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2[vout]`,
+      );
     } else {
+      // 对每段出画片段（0 到 n-2）：末尾 D 秒做推镜，与 body 重新拼接
       for (let i = 0; i < n - 1; i++) {
         const dur = clips[i].duration;
         const tailStart = Math.max(0.001, dur - D);
@@ -541,35 +544,46 @@ export class RenderService {
           );
         }
 
-        // body: 正常部分，缩放至目标分辨率
+        // body：正常部分，缩放至目标分辨率
         filterParts.push(
           `[${i}:v]trim=duration=${tailStartStr},setpts=PTS-STARTPTS,scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2[body${i}]`,
         );
-        // tail: 最后 D 秒，先归一化到目标分辨率，再 scale 放大 + crop 居中 + fade=out 淡至黑
-        // eval=frame 允许 scale 每帧重新计算 t（时间戳）表达式
+        // tail：最后 D 秒，先归一化分辨率，再 scale 放大（eval=frame），再 crop 居中
+        // 不加 fade——fade 由后续 xfade 完成
         filterParts.push(
-          `[${i}:v]trim=start=${tailStartStr},setpts=PTS-STARTPTS,scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,scale='${zoomScaleW}':'${zoomScaleH}':eval=frame,crop=${W}:${H}:x='(iw-${W})/2':y='(ih-${H})/2',fade=t=out:st=0:d=${D}[faded${i}]`,
+          `[${i}:v]trim=start=${tailStartStr},setpts=PTS-STARTPTS,` +
+          `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,` +
+          `scale='${scaleW}':'${scaleH}':eval=frame,` +
+          `crop=${W}:${H}:x='(iw-${W})/2':y='(ih-${H})/2'[zoomed${i}]`,
         );
-        // 合并 body + faded tail
+        // 合并 body + zoomed tail（proc_i 时长与原片段相同）
+        // fps 归一化 timebase（concat 输出 1/1000000，xfade 要求两端一致）
         filterParts.push(
-          `[body${i}][faded${i}]concat=n=2:v=1:a=0[proc${i}]`,
+          `[body${i}][zoomed${i}]concat=n=2:v=1:a=0,fps=fps=${resPreset.fps}[proc${i}]`,
         );
       }
 
-      // 最后一段直接缩放，不做推镜
-      const lastIdx = n - 1;
+      // 最后一段直接缩放，不做推镜；同样 fps 归一化
       filterParts.push(
-        `[${lastIdx}:v]scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2[last]`,
+        `[${n - 1}:v]scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,fps=fps=${resPreset.fps}[last]`,
       );
 
-      // 拼接所有处理后的片段 + 最后一段
-      const concatInputs = [
-        ...Array.from({ length: n - 1 }, (_, i) => `[proc${i}]`),
-        `[last]`,
-      ].join('');
-      filterParts.push(
-        `${concatInputs}concat=n=${n}:v=1:a=0[vout]`,
-      );
+      // xfade 链：proc_0 → proc_1 → ... → last（与 ffmpegXfadeConcat 相同 offset 公式）
+      let prevLabel = `[proc0]`;
+      let durationSum = clips[0].duration;
+
+      for (let i = 1; i < n; i++) {
+        const offset = Math.max(0.01, durationSum - i * D);
+        const outLabel = i === n - 1 ? '[vout]' : `[v${i}]`;
+        const nextLabel = i === n - 1 ? '[last]' : `[proc${i}]`;
+
+        filterParts.push(
+          `${prevLabel}${nextLabel}xfade=transition=fade:duration=${D}:offset=${offset.toFixed(3)}${outLabel}`,
+        );
+
+        prevLabel = outLabel;
+        durationSum += clips[i].duration;
+      }
     }
 
     const filterComplex = filterParts.join(';');
@@ -586,7 +600,7 @@ export class RenderService {
       '-y', outputPath,
     ];
 
-    console.log(`\n[2/3] FFmpeg 推镜拼接 ${n} 个片段（推镜 ${D}s，放大 ${zoomScale}x）...`);
+    console.log(`\n[2/3] FFmpeg 推镜叠化拼接 ${n} 个片段（叠化 ${D}s，放大 ${zoomScale}x）...`);
     execFileSync(ffmpegPath, args, { timeout: 600_000 });
 
     updateProgress(task, 1);
