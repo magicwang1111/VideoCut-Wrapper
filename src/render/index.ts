@@ -837,6 +837,6 @@ export class RenderService {
     _transitionDuration: number,
     _zoomScale: number,
   ): void {
-    throw new Error('ffmpegZoomDissolveConcat: not yet implemented');
+    throw new RenderError('zoom-dissolve-concat 渲染方法尚未实现');
   }
 }
