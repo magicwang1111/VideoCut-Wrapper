@@ -377,6 +377,7 @@ export class RenderService {
     qualPreset: QualityPreset,
     task: RenderTask,
     transitionDuration: number,
+    trimStart: number = 0,
   ): void {
     const n = clips.length;
     const D = transitionDuration;
@@ -387,8 +388,9 @@ export class RenderService {
     let inputCounter = 0;
 
     for (const clip of clips) {
+      if (trimStart > 0) inputArgs.push('-ss', String(trimStart));
       inputArgs.push('-i', clip.src);
-      clipMeta.push({ videoIdx: inputCounter, duration: clip.duration });
+      clipMeta.push({ videoIdx: inputCounter, duration: clip.duration - trimStart });
       inputCounter++;
     }
 
@@ -456,7 +458,7 @@ export class RenderService {
       request.templateInfo,
     );
 
-    if (['trim-concat', 'xfade-concat'].includes(request.templateId)) {
+    if (['trim-concat', 'xfade-concat', 'trim-xfade-concat'].includes(request.templateId)) {
       if (!ffmpegPath || !ffprobePath) {
         throw new RenderError(
           `${request.templateId} 模板依赖 FFmpeg，请安装 FFmpeg 或通过环境变量 FFMPEG_PATH / FFPROBE_PATH 指定路径。`,
@@ -465,7 +467,7 @@ export class RenderService {
 
       if (providedVideoCount > 0 && videoInfo.size !== providedVideoCount) {
         throw new RenderError(
-          'trim-concat 模板无法读取全部输入视频的时长，请确认素材可被 ffprobe 正常探测。',
+          `${request.templateId} 模板无法读取全部输入视频的时长，请确认素材可被 ffprobe 正常探测。`,
         );
       }
     }
@@ -568,7 +570,7 @@ export class RenderService {
 
         const transitionDuration = typeof request.variables['transition_duration'] === 'number'
           ? request.variables['transition_duration']
-          : 0.5;
+          : 1;
 
         const clips: Array<{ key: string; src: string; duration: number }> = [];
         for (const [key, def] of Object.entries(request.templateInfo.manifest.variables)) {
@@ -595,6 +597,63 @@ export class RenderService {
           qualPreset,
           task,
           transitionDuration,
+        );
+
+        const elapsed = (Date.now() - startTime) / 1000;
+        completeTask(task, outputPath);
+
+        console.log(`[3/3] 归档产物...`);
+        await this.writeMeta(outDir, task, request, resPreset, elapsed);
+
+        return {
+          taskId: task.id,
+          status: 'completed',
+          outputPath,
+          duration: elapsed,
+        };
+      }
+
+      // ── trim-xfade-concat：裁头 + 叠化拼接，直接走 FFmpeg ──
+      if (request.templateId === 'trim-xfade-concat') {
+        console.log(`\n[1/3] 收集并校验视频片段...`);
+
+        const trimStart = typeof request.variables['trim_start'] === 'number'
+          ? request.variables['trim_start']
+          : 2;
+        const transitionDuration = typeof request.variables['transition_duration'] === 'number'
+          ? request.variables['transition_duration']
+          : 1;
+
+        const clips: Array<{ key: string; src: string; duration: number }> = [];
+        for (const [key, def] of Object.entries(request.templateInfo.manifest.variables)) {
+          if (def.type !== 'video') continue;
+          const src = request.variables[key];
+          if (typeof src !== 'string' || !src.trim()) continue;
+          const info = videoInfo.get(key);
+          const duration = info?.duration ?? 0;
+          if (duration > 0 && duration <= trimStart) {
+            console.warn(`  ⚠ 跳过 ${key}：时长 ${duration.toFixed(1)}s 不足 ${trimStart}s`);
+            continue;
+          }
+          clips.push({ key, src, duration });
+        }
+
+        if (clips.length === 0) {
+          throw new RenderError('没有可用的视频片段（全部片段时长均不足裁剪长度或未提供）');
+        }
+
+        console.log(`  共 ${clips.length} 个片段，裁去前 ${trimStart}s，叠化时长 ${transitionDuration}s`);
+
+        const outputPath = path.join(outDir, outFile);
+        this.ffmpegXfadeConcat(
+          ffmpegPath!,
+          ffprobePath!,
+          clips,
+          outputPath,
+          qualPreset,
+          task,
+          transitionDuration,
+          trimStart,
         );
 
         const elapsed = (Date.now() - startTime) / 1000;
