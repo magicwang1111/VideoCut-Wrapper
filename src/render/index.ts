@@ -493,6 +493,108 @@ export class RenderService {
     updateProgress(task, 1);
   }
 
+  /**
+   * 推镜叠化拼接：每段出画片段的最后 D 秒做 zoompan 放大 + fade=out，
+   * 然后直接 concat 下一段（无交叉叠化，入画片段硬切，无淡入）。
+   */
+  private ffmpegZoomDissolveConcat(
+    ffmpegPath: string,
+    clips: Array<{ key: string; src: string; duration: number }>,
+    outputPath: string,
+    qualPreset: QualityPreset,
+    task: RenderTask,
+    resPreset: ResolutionPreset,
+    transitionDuration: number,
+    zoomScale: number,
+  ): void {
+    const n = clips.length;
+    const D = transitionDuration;
+    const fps = resPreset.fps;
+    const frames = Math.max(1, Math.round(fps * D)); // 过渡帧数
+
+    // 缩放增量表达式：从 1.0 线性增长到 zoomScale，共 frames 帧
+    // on=0 时 z=1.0，on=frames-1 时 z=zoomScale
+    const denominator = Math.max(1, frames - 1);
+    const zExpr = `1+(${(zoomScale - 1).toFixed(6)})*on/${denominator}`;
+    const xExpr = `(iw-iw/zoom)/2`;
+    const yExpr = `(ih-ih/zoom)/2`;
+
+    // ── 构造输入参数 ──────────────────────────────────────────────────────────
+    const inputArgs: string[] = [];
+    for (const clip of clips) {
+      inputArgs.push('-i', clip.src);
+    }
+
+    // ── 构建 filter_complex ───────────────────────────────────────────────────
+    const filterParts: string[] = [];
+
+    if (n === 1) {
+      filterParts.push(`[0:v]copy[vout]`);
+    } else {
+      // 对每段出画片段（索引 0 到 n-2）拆分：正常 body + 推镜 tail
+      for (let i = 0; i < n - 1; i++) {
+        const dur = clips[i].duration;
+        const tailStart = Math.max(0.001, dur - D);
+        const tailStartStr = tailStart.toFixed(6);
+
+        // body: 0 到 tailStart
+        filterParts.push(
+          `[${i}:v]trim=duration=${tailStartStr},setpts=PTS-STARTPTS[body${i}]`,
+        );
+        // tail: tailStart 到结尾
+        filterParts.push(
+          `[${i}:v]trim=start=${tailStartStr},setpts=PTS-STARTPTS[tail${i}]`,
+        );
+        // zoompan 放大
+        filterParts.push(
+          `[tail${i}]zoompan=z='${zExpr}':x='${xExpr}':y='${yExpr}':fps=${fps}:d=${frames}[zoomed${i}]`,
+        );
+        // fade=out 淡至黑
+        filterParts.push(
+          `[zoomed${i}]fade=t=out:st=0:d=${D}[faded${i}]`,
+        );
+        // 合并 body + faded tail
+        filterParts.push(
+          `[body${i}][faded${i}]concat=n=2:v=1:a=0[proc${i}]`,
+        );
+
+        if (dur < D) {
+          console.warn(
+            `  ⚠ 片段 ${clips[i].key} 时长 ${dur.toFixed(1)}s 短于推镜时长（${D}s），效果可能异常`,
+          );
+        }
+      }
+
+      // 拼接所有处理后的片段 + 最后一段（不做推镜）
+      const concatInputs = [
+        ...Array.from({ length: n - 1 }, (_, i) => `[proc${i}]`),
+        `[${n - 1}:v]`,
+      ].join('');
+      filterParts.push(
+        `${concatInputs}concat=n=${n}:v=1:a=0[vout]`,
+      );
+    }
+
+    const filterComplex = filterParts.join(';');
+
+    const args: string[] = [
+      ...inputArgs,
+      '-filter_complex', filterComplex,
+      '-map', '[vout]',
+      '-c:v', 'libx264',
+      '-preset', qualPreset.ffmpegPreset,
+      '-crf', String(qualPreset.crf),
+      '-pix_fmt', 'yuv420p',
+      '-an',
+      '-y', outputPath,
+    ];
+
+    console.log(`\n[2/3] FFmpeg 推镜拼接 ${n} 个片段（推镜 ${D}s，放大 ${zoomScale}x）...`);
+    execFileSync(ffmpegPath, args, { timeout: 600_000 });
+
+    updateProgress(task, 1);
+  }
+
   async render(request: RenderRequest): Promise<RenderResult> {
     const ffprobePath = resolveFfprobePath(this.rootDir);
     const ffmpegPath = resolveFfmpegPath(this.rootDir);
@@ -827,16 +929,4 @@ export class RenderService {
     fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf-8');
   }
 
-  private ffmpegZoomDissolveConcat(
-    _ffmpegPath: string,
-    _clips: Array<{ key: string; src: string; duration: number }>,
-    _outputPath: string,
-    _qualPreset: QualityPreset,
-    _task: RenderTask,
-    _resPreset: ResolutionPreset,
-    _transitionDuration: number,
-    _zoomScale: number,
-  ): void {
-    throw new RenderError('zoom-dissolve-concat 渲染方法尚未实现');
-  }
 }
