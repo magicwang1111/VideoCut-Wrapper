@@ -547,7 +547,7 @@ export class RenderService {
         );
         // zoompan 放大
         filterParts.push(
-          `[tail${i}]zoompan=z='${zExpr}':x='${xExpr}':y='${yExpr}':fps=${fps}:d=${frames}[zoomed${i}]`,
+          `[tail${i}]zoompan=z='${zExpr}':x='${xExpr}':y='${yExpr}':fps=${fps}:d=${frames}:s=${resPreset.width}x${resPreset.height}[zoomed${i}]`,
         );
         // fade=out 淡至黑
         filterParts.push(
@@ -558,7 +558,7 @@ export class RenderService {
           `[body${i}][faded${i}]concat=n=2:v=1:a=0[proc${i}]`,
         );
 
-        if (dur < D) {
+        if (dur <= D) {
           console.warn(
             `  ⚠ 片段 ${clips[i].key} 时长 ${dur.toFixed(1)}s 短于推镜时长（${D}s），效果可能异常`,
           );
