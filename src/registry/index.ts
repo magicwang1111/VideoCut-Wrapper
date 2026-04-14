@@ -5,6 +5,7 @@ import { ManifestError, TemplateNotFoundError } from '../errors.js';
 /** 变量类型 */
 export type VariableType =
   | 'video'
+  | 'video_list'
   | 'image'
   | 'audio'
   | 'text'

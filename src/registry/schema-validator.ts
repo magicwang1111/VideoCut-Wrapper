@@ -79,6 +79,27 @@ function validateType(
       return null;
     }
 
+    case 'video_list': {
+      if (!Array.isArray(value)) {
+        return `${def.label}（${key}）: 应为视频路径数组，实际是 ${typeof value}`;
+      }
+      if (value.length === 0) {
+        return `${def.label}（${key}）: 视频列表不能为空`;
+      }
+      const allowed = FILE_EXTENSIONS['video'];
+      for (let i = 0; i < value.length; i++) {
+        const item = value[i];
+        if (typeof item !== 'string') {
+          return `${def.label}（${key}）[${i}]: 应为文件路径，实际是 ${typeof item}`;
+        }
+        const ext = item.slice(item.lastIndexOf('.')).toLowerCase();
+        if (!allowed.includes(ext)) {
+          return `${def.label}（${key}）[${i}]: 不支持的格式 "${ext}"，支持: ${allowed.join(', ')}`;
+        }
+      }
+      return null;
+    }
+
     case 'video':
     case 'image':
     case 'audio': {

@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { TemplateInfo, VariableDefinition } from '../registry/index.js';
 import { AssetNotFoundError } from '../errors.js';
 
-const FILE_TYPES = new Set(['video', 'image', 'audio']);
+const FILE_TYPES = new Set(['video', 'video_list', 'image', 'audio']);
 
 /**
  * 解析素材路径：相对路径按 项目目录 → 模板目录 → 项目根目录 的顺序查找
@@ -22,6 +22,22 @@ export function resolveAssets(
   for (const [key, value] of Object.entries(variables)) {
     const def = schema[key];
     if (!def || !FILE_TYPES.has(def.type)) continue;
+
+    // video_list：逐项解析路径
+    if (def.type === 'video_list') {
+      if (!Array.isArray(value)) continue;
+      const resolvedList: string[] = [];
+      for (let i = 0; i < value.length; i++) {
+        const item = value[i];
+        if (typeof item !== 'string' || item === '') continue;
+        const absPath = resolveFilePath(item, [projectDir, templateInfo.dir, rootDir]);
+        if (!absPath) throw new AssetNotFoundError(item, `${key}[${i}]`, configPath);
+        resolvedList.push(absPath);
+      }
+      resolved[key] = resolvedList;
+      continue;
+    }
+
     if (typeof value !== 'string' || value === '') continue;
 
     const absPath = resolveFilePath(value, [
