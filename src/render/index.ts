@@ -609,8 +609,9 @@ export class RenderService {
   }
 
   /**
-   * 中心拉近叠化拼接：每段出画片段的最后 D 秒做由四周向中心收束的拉近，
-   * 然后用 xfade 交叉叠化衔接下一段（保留当前 dissolve 节奏）。
+   * 中心拉近叠化拼接：每段出画片段的最后 D 秒由四周向中心拉近（1→zoomScale），
+   * 同时淡出；下一段首帧静帧垫底，下一段本身不淡入。
+   * 叠化逻辑与 xfade-concat 保持一致。
    */
   private ffmpegZoomDissolveConcat(
     ffmpegPath: string,
@@ -626,16 +627,20 @@ export class RenderService {
     const D = transitionDuration;
     const W = resPreset.width;
     const H = resPreset.height;
-
-    // 已在 normalizeClips 中统一分辨率和 fps，这里只做中心拉出轨迹。
-    // 拉出效果放在每段入场片段的头部（clip 1 ~ n-1），而非出场片段的尾部，
-    // 这样 zoom 起点被叠化遮盖，终点 zoom=1 与后续正常画面无缝衔接。
-    // scale eval=frame 不支持输出尺寸递减，用双 reverse 实现 zoomScale→1 拉出。
     const fps = resPreset.fps;
-    const frames = Math.max(2, Math.round(fps * D));
+    const frameDuration = 1 / fps;
+    const minSegmentDuration = frameDuration / 2;
+    const formatSeconds = (value: number) => value.toFixed(6);
+
+    // 径向 zoom blur：fps 过采样后 tmix 多帧平均，使每帧内部呈现从中心向外的射线感
+    // oversample=8 → 每个原始帧展开成 8 个不同 zoom 级别的子帧，平均后即为 zoom blur
+    const oversample = 8;
+    const fps_hi = fps * oversample;
+    const frames_hi = Math.max(2, Math.round(fps_hi * D));
     const zDelta = (zoomScale - 1).toFixed(6);
-    const frameProgress = `(n/${frames - 1})`;
-    const easedProgress = `(3*${frameProgress}*${frameProgress}-2*${frameProgress}*${frameProgress}*${frameProgress})`;
+    const frameProgress = `(n/${frames_hi - 1})`;
+    // quartic ease-in: p^4 —— 前段几乎不动，后段爆炸性加速拉入
+    const easedProgress = `(${frameProgress}*${frameProgress}*${frameProgress}*${frameProgress})`;
     const zoomExpr = `(1+${zDelta}*${easedProgress})`;
     const scaleW = `floor(${W}*${zoomExpr}/2)*2`;
     const scaleH = `floor(${H}*${zoomExpr}/2)*2`;
@@ -644,71 +649,79 @@ export class RenderService {
 
     // ── 构造输入参数 ──────────────────────────────────────────────────────────
     const inputArgs: string[] = [];
+    const clipMeta: Array<{ videoIdx: number; duration: number }> = [];
+    let inputCounter = 0;
     for (const clip of clips) {
       inputArgs.push('-i', clip.src);
+      clipMeta.push({ videoIdx: inputCounter, duration: clip.duration });
+      inputCounter++;
     }
 
     // ── 构建 filter_complex ───────────────────────────────────────────────────
     const filterParts: string[] = [];
+    const segmentLabels: string[] = [];
 
     if (n === 1) {
-      filterParts.push(
-        `[0:v]setpts=PTS-STARTPTS[vout]`,
-      );
+      filterParts.push(`[0:v]setpts=PTS-STARTPTS[vout]`);
     } else {
-      // 第一段：不做 zoom，仅归一化 fps
-      filterParts.push(
-        `[0:v]setpts=PTS-STARTPTS,fps=fps=${fps}[proc0]`,
-      );
+      for (let i = 0; i < n - 1; i++) {
+        const current = clipMeta[i];
+        const next = clipMeta[i + 1];
+        const bodyDuration = Math.max(0, current.duration - D);
+        const availableTailDuration = Math.min(current.duration, D);
+        const tailStart = Math.max(0, current.duration - D);
+        const tailPadDuration = Math.max(0, D - availableTailDuration);
+        const stillPadDuration = Math.max(0, D - frameDuration);
 
-      // 第 1 ~ n-1 段（入场片段）：头部 D 秒做中心拉出，与 body 拼接
-      for (let i = 1; i < n; i++) {
-        const dur = clips[i].duration;
-        const headEnd = Math.min(D, dur);
-        const headEndStr = headEnd.toFixed(6);
-
-        if (dur <= D) {
+        if (tailPadDuration > minSegmentDuration) {
           console.warn(
-            `  ⚠ 片段 ${clips[i].key} 时长 ${dur.toFixed(1)}s 不长于推镜时长（${D}s），效果可能异常`,
+            `  ⚠ 片段 ${clips[i].key} 尾部不足 ${D.toFixed(1)}s，已自动复制最后一帧补足拉近叠化转场`,
           );
         }
 
-        const outLabel = i === n - 1 ? '[last]' : `[proc${i}]`;
+        // body：clip[i] 去掉最后 D 秒
+        if (bodyDuration > minSegmentDuration) {
+          filterParts.push(
+            `[${current.videoIdx}:v]trim=duration=${formatSeconds(bodyDuration)},setpts=PTS-STARTPTS,fps=fps=${fps}[body${i}]`,
+          );
+          segmentLabels.push(`[body${i}]`);
+        }
 
-        // head：前 D 秒做拉出；双 reverse 让 scale 正向放大后视觉呈 zoomScale→1
+        // zoomfade：clip[i] 最后 D 秒，向中心拉近（1→zoomScale）并淡出
         filterParts.push(
-          `[${i}:v]trim=duration=${headEndStr},setpts=PTS-STARTPTS,` +
-          `reverse,` +
-          `scale='${scaleW}':'${scaleH}':eval=frame,` +
-          `crop=${W}:${H}:x='${cropX}':y='${cropY}',` +
-          `reverse[head${i}]`,
+          `[${current.videoIdx}:v]trim=start=${formatSeconds(tailStart)}:duration=${formatSeconds(availableTailDuration)},setpts=PTS-STARTPTS` +
+          (tailPadDuration > 0
+            ? `,tpad=stop_mode=clone:stop_duration=${formatSeconds(tailPadDuration)}`
+            : '') +
+          `,fps=fps=${fps_hi}` +
+          `,scale='${scaleW}':'${scaleH}':eval=frame` +
+          `,crop=${W}:${H}:x='${cropX}':y='${cropY}'` +
+          `,tmix=frames=${oversample}` +
+          `,fps=fps=${fps}` +
+          `,format=rgba,fade=t=out:st=${formatSeconds(D * 0.65)}:d=${formatSeconds(D * 0.35)}:alpha=1[zoomfade${i}]`,
         );
-        // body：剩余正常播放段
+
+        // still：clip[i+1] 首帧静帧，持续 D 秒作底层
         filterParts.push(
-          `[${i}:v]trim=start=${headEndStr},setpts=PTS-STARTPTS[body${i}]`,
+          `[${next.videoIdx}:v]trim=end_frame=1,setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=${formatSeconds(stillPadDuration)},fps=fps=${fps}[still${i}]`,
         );
-        // 合并 head + body，fps 归一化
+
+        // transition：静帧垫底，拉近淡出叠上层
         filterParts.push(
-          `[head${i}][body${i}]concat=n=2:v=1:a=0,fps=fps=${fps}${outLabel}`,
+          `[still${i}][zoomfade${i}]overlay=eof_action=pass:shortest=1,format=yuv420p,fps=fps=${fps}[transition${i}]`,
         );
+        segmentLabels.push(`[transition${i}]`);
       }
 
-      // xfade 链：proc0 → proc1 → ... → last
-      let prevLabel = `[proc0]`;
-      let durationSum = clips[0].duration;
+      // 最后一段：全段正常播放，不淡入
+      filterParts.push(
+        `[${clipMeta[n - 1].videoIdx}:v]setpts=PTS-STARTPTS,fps=fps=${fps}[last]`,
+      );
+      segmentLabels.push('[last]');
 
-      for (let i = 1; i < n; i++) {
-        const offset = Math.max(0.01, durationSum - i * D);
-        const outLabel = i === n - 1 ? '[vout]' : `[v${i}]`;
-        const nextLabel = i === n - 1 ? '[last]' : `[proc${i}]`;
-
-        filterParts.push(
-          `${prevLabel}${nextLabel}xfade=transition=fade:duration=${D}:offset=${offset.toFixed(3)}${outLabel}`,
-        );
-
-        prevLabel = outLabel;
-        durationSum += clips[i].duration;
-      }
+      filterParts.push(
+        `${segmentLabels.join('')}concat=n=${segmentLabels.length}:v=1:a=0[vout]`,
+      );
     }
 
     const filterComplex = filterParts.join(';');
@@ -725,7 +738,7 @@ export class RenderService {
       '-y', outputPath,
     ];
 
-    console.log(`\n[2/3] FFmpeg 中心拉近叠化拼接 ${n} 个片段（叠化 ${D}s，放大 ${zoomScale}x）...`);
+    console.log(`\n[2/3] FFmpeg 中心拉近叠化拼接 ${n} 个片段（拉近 ${D}s，放大 ${zoomScale}x）...`);
     execFileSync(ffmpegPath, args, { timeout: 600_000 });
 
     updateProgress(task, 1);

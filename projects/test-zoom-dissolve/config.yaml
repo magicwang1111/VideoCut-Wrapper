@@ -5,5 +5,5 @@ variables:
   clip_1: "D:/Goumei-Video-Cut/input/1.mp4"
   clip_2: "D:/Goumei-Video-Cut/input/2.mp4"
   clip_3: "D:/Goumei-Video-Cut/input/3.mp4"
-  transition_duration: 0.5
-  zoom_scale: 1.5
+  transition_duration: 
+  zoom_scale: 1.8

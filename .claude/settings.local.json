@@ -15,7 +15,16 @@
       "Read(//mnt/c/ffmpeg/**)",
       "Read(//d//**)",
       "Bash(\"D:/ffmpeg/ffmpeg-master-latest-win64-gpl-shared/bin/ffmpeg.exe\" -version)",
-      "Bash(\"D:/ffmpeg/ffmpeg-master-latest-win64-gpl-shared/bin/ffprobe.exe\" -version)"
+      "Bash(\"D:/ffmpeg/ffmpeg-master-latest-win64-gpl-shared/bin/ffprobe.exe\" -version)",
+      "Bash(npx tsc:*)",
+      "Bash(ffprobe -v quiet -show_streams -show_format -of json \"D:/Goumei-Video-Cut/output/test-zoom-dissolve/final.mp4\")",
+      "Bash(python -c ':*)",
+      "Bash(ffprobe -v quiet -show_streams -show_format -of json \"D:/Goumei-Video-Cut/example/叠化拉近.mp4\")",
+      "Bash(ffmpeg -i \"D:/Goumei-Video-Cut/example/叠化拉近.mp4\" -vf \"fps=24\" \"D:/Goumei-Video-Cut/example/frames/frame_%03d.png\" -y)",
+      "Bash(ffmpeg -i \"D:/Goumei-Video-Cut/output/test-zoom-dissolve/final.mp4\" -vf \"select='between\\(t,4.5,6.0\\)',setpts=PTS-STARTPTS,fps=24\" \"D:/Goumei-Video-Cut/output/test-zoom-dissolve/frames/f_%03d.png\" -y)",
+      "Bash(rm -f \"D:/Goumei-Video-Cut/output/test-zoom-dissolve/frames/\"*.png)",
+      "Bash(ffmpeg -i \"D:/Goumei-Video-Cut/output/test-zoom-dissolve/final.mp4\" -vf \"select='between\\(t,4.8,6.1\\)',setpts=PTS-STARTPTS,fps=24\" \"D:/Goumei-Video-Cut/output/test-zoom-dissolve/frames/f_%03d.png\" -y)",
+      "Bash(ffmpeg -i \"D:/Goumei-Video-Cut/output/test-zoom-dissolve/final.mp4\" -vf \"select='between\\(t,4.8,6.2\\)',setpts=PTS-STARTPTS,fps=24\" \"D:/Goumei-Video-Cut/output/test-zoom-dissolve/frames/f_%03d.png\" -y)"
     ]
   }
 }
