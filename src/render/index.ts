@@ -707,43 +707,35 @@ export class RenderService {
         };
       }
 
-      // ── zoom-dissolve-concat：缩放溶解拼接，直接走 FFmpeg ──
+      // ── zoom-dissolve-concat：推镜放大+淡黑，直接拼接 ──
       if (request.templateId === 'zoom-dissolve-concat') {
         console.log(`\n[1/3] 收集并校验视频片段...`);
 
-        const trimStart = typeof request.variables['trim_start'] === 'number'
-          ? request.variables['trim_start']
-          : 2;
         const transitionDuration = typeof request.variables['transition_duration'] === 'number'
           ? request.variables['transition_duration']
           : 0.5;
+        const zoomScale = typeof request.variables['zoom_scale'] === 'number'
+          ? request.variables['zoom_scale']
+          : 1.2;
 
-        const allClips3 = collectClips(request.variables, request.templateInfo, videoInfo);
-        const clips3: Array<{ key: string; src: string; duration: number }> = [];
-        for (const clip of allClips3) {
-          if (clip.duration > 0 && clip.duration <= trimStart) {
-            console.warn(`  ⚠ 跳过 ${clip.key}：时长 ${clip.duration.toFixed(1)}s 不足 ${trimStart}s`);
-            continue;
-          }
-          clips3.push(clip);
+        const clips = collectClips(request.variables, request.templateInfo, videoInfo);
+
+        if (clips.length === 0) {
+          throw new RenderError('没有可用的视频片段（未提供任何视频）');
         }
 
-        if (clips3.length === 0) {
-          throw new RenderError('没有可用的视频片段（全部片段时长均不足裁剪长度或未提供）');
-        }
-
-        console.log(`  共 ${clips3.length} 个片段，裁去前 ${trimStart}s，缩放溶解时长 ${transitionDuration}s`);
+        console.log(`  共 ${clips.length} 个片段，推镜时长 ${transitionDuration}s，放大倍数 ${zoomScale}x`);
 
         const outputPath = path.join(outDir, outFile);
         this.ffmpegZoomDissolveConcat(
           ffmpegPath!,
-          ffprobePath!,
-          clips3,
+          clips,
           outputPath,
           qualPreset,
           task,
+          resPreset,
           transitionDuration,
-          trimStart,
+          zoomScale,
         );
 
         const elapsed = (Date.now() - startTime) / 1000;
@@ -837,14 +829,14 @@ export class RenderService {
 
   private ffmpegZoomDissolveConcat(
     _ffmpegPath: string,
-    _ffprobePath: string,
     _clips: Array<{ key: string; src: string; duration: number }>,
     _outputPath: string,
     _qualPreset: QualityPreset,
     _task: RenderTask,
+    _resPreset: ResolutionPreset,
     _transitionDuration: number,
-    _trimStart: number,
+    _zoomScale: number,
   ): void {
-    throw new RenderError('zoom-dissolve-concat 尚未实现');
+    throw new Error('ffmpegZoomDissolveConcat: not yet implemented');
   }
 }
