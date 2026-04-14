@@ -494,7 +494,7 @@ export class RenderService {
   }
 
   /**
-   * 推镜叠化拼接：每段出画片段的最后 D 秒做 zoompan 放大 + fade=out，
+   * 推镜叠化拼接：每段出画片段的最后 D 秒做 scale 放大 + crop 居中 + fade=out，
    * 然后直接 concat 下一段（无交叉叠化，入画片段硬切，无淡入）。
    */
   private ffmpegZoomDissolveConcat(
@@ -509,15 +509,14 @@ export class RenderService {
   ): void {
     const n = clips.length;
     const D = transitionDuration;
-    const fps = resPreset.fps;
-    const frames = Math.max(1, Math.round(fps * D)); // 过渡帧数
+    const W = resPreset.width;
+    const H = resPreset.height;
 
-    // 缩放增量表达式：从 1.0 线性增长到 zoomScale，共 frames 帧
-    // on=0 时 z=1.0，on=frames-1 时 z=zoomScale
-    const denominator = Math.max(1, frames - 1);
-    const zExpr = `1+(${(zoomScale - 1).toFixed(6)})*on/${denominator}`;
-    const xExpr = `(iw-iw/zoom)/2`;
-    const yExpr = `(ih-ih/zoom)/2`;
+    // scale+crop 缩放表达式（先将 tail 归一化到目标分辨率，再基于帧时间戳 t 从 1.0x 线性放大）
+    // 使用固定的 W/H 作为基础（tail 已归一化），floor(x/2)*2 确保偶数像素（yuv420p 要求）
+    const zDelta = (zoomScale - 1).toFixed(6);
+    const zoomScaleW = `floor(${W}*(1+${zDelta}*t/${D})/2)*2`;
+    const zoomScaleH = `floor(${H}*(1+${zDelta}*t/${D})/2)*2`;
 
     // ── 构造输入参数 ──────────────────────────────────────────────────────────
     const inputArgs: string[] = [];
@@ -529,46 +528,44 @@ export class RenderService {
     const filterParts: string[] = [];
 
     if (n === 1) {
-      filterParts.push(`[0:v]copy[vout]`);
+      filterParts.push(`[0:v]scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2[vout]`);
     } else {
-      // 对每段出画片段（索引 0 到 n-2）拆分：正常 body + 推镜 tail
       for (let i = 0; i < n - 1; i++) {
         const dur = clips[i].duration;
         const tailStart = Math.max(0.001, dur - D);
         const tailStartStr = tailStart.toFixed(6);
 
-        // body: 0 到 tailStart
+        if (dur <= D) {
+          console.warn(
+            `  ⚠ 片段 ${clips[i].key} 时长 ${dur.toFixed(1)}s 不长于推镜时长（${D}s），效果可能异常`,
+          );
+        }
+
+        // body: 正常部分，缩放至目标分辨率
         filterParts.push(
-          `[${i}:v]trim=duration=${tailStartStr},setpts=PTS-STARTPTS[body${i}]`,
+          `[${i}:v]trim=duration=${tailStartStr},setpts=PTS-STARTPTS,scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2[body${i}]`,
         );
-        // tail: tailStart 到结尾
+        // tail: 最后 D 秒，先归一化到目标分辨率，再 scale 放大 + crop 居中 + fade=out 淡至黑
+        // eval=frame 允许 scale 每帧重新计算 t（时间戳）表达式
         filterParts.push(
-          `[${i}:v]trim=start=${tailStartStr},setpts=PTS-STARTPTS[tail${i}]`,
-        );
-        // zoompan 放大
-        filterParts.push(
-          `[tail${i}]zoompan=z='${zExpr}':x='${xExpr}':y='${yExpr}':fps=${fps}:d=${frames}:s=${resPreset.width}x${resPreset.height}[zoomed${i}]`,
-        );
-        // fade=out 淡至黑
-        filterParts.push(
-          `[zoomed${i}]fade=t=out:st=0:d=${D}[faded${i}]`,
+          `[${i}:v]trim=start=${tailStartStr},setpts=PTS-STARTPTS,scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,scale='${zoomScaleW}':'${zoomScaleH}':eval=frame,crop=${W}:${H}:x='(iw-${W})/2':y='(ih-${H})/2',fade=t=out:st=0:d=${D}[faded${i}]`,
         );
         // 合并 body + faded tail
         filterParts.push(
           `[body${i}][faded${i}]concat=n=2:v=1:a=0[proc${i}]`,
         );
-
-        if (dur <= D) {
-          console.warn(
-            `  ⚠ 片段 ${clips[i].key} 时长 ${dur.toFixed(1)}s 短于推镜时长（${D}s），效果可能异常`,
-          );
-        }
       }
 
-      // 拼接所有处理后的片段 + 最后一段（不做推镜）
+      // 最后一段直接缩放，不做推镜
+      const lastIdx = n - 1;
+      filterParts.push(
+        `[${lastIdx}:v]scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2[last]`,
+      );
+
+      // 拼接所有处理后的片段 + 最后一段
       const concatInputs = [
         ...Array.from({ length: n - 1 }, (_, i) => `[proc${i}]`),
-        `[${n - 1}:v]`,
+        `[last]`,
       ].join('');
       filterParts.push(
         `${concatInputs}concat=n=${n}:v=1:a=0[vout]`,
