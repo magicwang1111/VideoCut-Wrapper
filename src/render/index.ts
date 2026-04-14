@@ -510,7 +510,7 @@ export class RenderService {
       request.templateInfo,
     );
 
-    if (['trim-concat', 'xfade-concat', 'trim-xfade-concat'].includes(request.templateId)) {
+    if (['trim-concat', 'xfade-concat', 'trim-xfade-concat', 'zoom-dissolve-concat'].includes(request.templateId)) {
       if (!ffmpegPath || !ffprobePath) {
         throw new RenderError(
           `${request.templateId} 模板依赖 FFmpeg，请安装 FFmpeg 或通过环境变量 FFMPEG_PATH / FFPROBE_PATH 指定路径。`,
@@ -707,6 +707,59 @@ export class RenderService {
         };
       }
 
+      // ── zoom-dissolve-concat：缩放溶解拼接，直接走 FFmpeg ──
+      if (request.templateId === 'zoom-dissolve-concat') {
+        console.log(`\n[1/3] 收集并校验视频片段...`);
+
+        const trimStart = typeof request.variables['trim_start'] === 'number'
+          ? request.variables['trim_start']
+          : 2;
+        const transitionDuration = typeof request.variables['transition_duration'] === 'number'
+          ? request.variables['transition_duration']
+          : 0.5;
+
+        const allClips3 = collectClips(request.variables, request.templateInfo, videoInfo);
+        const clips3: Array<{ key: string; src: string; duration: number }> = [];
+        for (const clip of allClips3) {
+          if (clip.duration > 0 && clip.duration <= trimStart) {
+            console.warn(`  ⚠ 跳过 ${clip.key}：时长 ${clip.duration.toFixed(1)}s 不足 ${trimStart}s`);
+            continue;
+          }
+          clips3.push(clip);
+        }
+
+        if (clips3.length === 0) {
+          throw new RenderError('没有可用的视频片段（全部片段时长均不足裁剪长度或未提供）');
+        }
+
+        console.log(`  共 ${clips3.length} 个片段，裁去前 ${trimStart}s，缩放溶解时长 ${transitionDuration}s`);
+
+        const outputPath = path.join(outDir, outFile);
+        this.ffmpegZoomDissolveConcat(
+          ffmpegPath!,
+          ffprobePath!,
+          clips3,
+          outputPath,
+          qualPreset,
+          task,
+          transitionDuration,
+          trimStart,
+        );
+
+        const elapsed = (Date.now() - startTime) / 1000;
+        completeTask(task, outputPath);
+
+        console.log(`[3/3] 归档产物...`);
+        await this.writeMeta(outDir, task, request, resPreset, elapsed);
+
+        return {
+          taskId: task.id,
+          status: 'completed',
+          outputPath,
+          duration: elapsed,
+        };
+      }
+
       // ── 其他模板：走 Revideo 渲染引擎 ──
       console.log(`\n[1/3] 准备渲染环境...`);
 
@@ -780,5 +833,18 @@ export class RenderService {
 
     const metaPath = path.join(outDir, 'meta.json');
     fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf-8');
+  }
+
+  private ffmpegZoomDissolveConcat(
+    _ffmpegPath: string,
+    _ffprobePath: string,
+    _clips: Array<{ key: string; src: string; duration: number }>,
+    _outputPath: string,
+    _qualPreset: QualityPreset,
+    _task: RenderTask,
+    _transitionDuration: number,
+    _trimStart: number,
+  ): void {
+    throw new RenderError('zoom-dissolve-concat 尚未实现');
   }
 }
