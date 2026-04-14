@@ -127,7 +127,7 @@ variables:
 | 变量 | 类型 | 默认 | 说明 |
 |------|------|------|------|
 | `clip_1` ~ `clip_6` | video | — | 视频片段，clip_1 必填 |
-| `transition_duration` | number | 1 | 叠化时长（秒，0.1–3.0） |
+| `transition_duration` | number | 0.5 | 叠化时长（秒，0.1–3.0） |
 
 ### `trim-xfade-concat` — 裁头叠化拼接
 
@@ -137,7 +137,7 @@ variables:
 |------|------|------|------|
 | `clip_1` ~ `clip_6` | video | — | 视频片段，clip_1 必填 |
 | `trim_start` | number | 2 | 裁去开头秒数（0–10） |
-| `transition_duration` | number | 1 | 叠化时长（秒，0.1–3.0） |
+| `transition_duration` | number | 0.5 | 叠化时长（秒，0.1–3.0） |
 
 ### `simple-slideshow` — 简单轮播
 
@@ -249,3 +249,83 @@ Goumei-Video-Cut/
 ├── tsconfig.json
 └── vite.config.ts
 ```
+
+---
+
+## API 服务
+
+将渲染功能封装为异步 HTTP API，支持 OSS 文件存储、Worker 子进程池、SQLite 任务持久化。
+
+### 启动
+
+```bash
+cp .env.example .env
+# 编辑 .env 填入真实凭证（OSS、API_KEYS 等）
+npm run start:api
+```
+
+服务默认监听 `:3000`，Worker 数量默认为 `max(1, floor(CPU/2))`。
+
+### 环境变量
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `PORT` | `3000` | HTTP 监听端口 |
+| `API_KEYS` | 必填 | 逗号分隔的 API Key 列表 |
+| `OSS_ENDPOINT` | 必填 | Aliyun OSS 端点（建议内网端点） |
+| `OSS_ACCESS_KEY_ID` | 必填 | OSS AccessKey ID |
+| `OSS_ACCESS_KEY_SECRET` | 必填 | OSS AccessKey Secret |
+| `OSS_BUCKET` | `goumee-coze` | OSS Bucket 名称 |
+| `OSS_PREFIX` | `GouMei-Video-Cut` | OSS 路径前缀 |
+| `WORKER_COUNT` | CPU/2 | Worker 子进程数量 |
+| `QUEUE_MAX` | `200` | 内存队列容量上限，超出返回 503 |
+| `TASK_MAX_ATTEMPT` | `3` | 任务最大重试次数 |
+| `TASK_TTL_DAYS` | `7` | 已完成/失败任务清理周期（天） |
+| `DB_PATH` | `./data/tasks.db` | SQLite 数据库路径 |
+| `TEMP_DIR` | `./temp` | 渲染临时文件目录 |
+
+### 接口速览
+
+所有接口需携带 `X-Api-Key` Header，值为 `API_KEYS` 中的任意一个。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/health` | 健康检查（无需认证） |
+| `POST` | `/upload` | 上传素材文件 → 返回 `fileId` |
+| `POST` | `/render` | 提交渲染任务 → 返回 `taskId` |
+| `GET` | `/tasks/:id` | 查询任务状态（含预签名下载 URL） |
+| `GET` | `/tasks/:id/download` | 302 重定向到结果文件下载地址 |
+
+### 示例流程
+
+```bash
+# 1. 上传素材
+curl -X POST http://localhost:3000/upload \
+  -H "X-Api-Key: your-key" \
+  -F "file=@clip1.mp4"
+# → {"fileId":"abc123","ossKey":"GouMei-Video-Cut/inputs/abc123.mp4"}
+
+# 2. 提交渲染（clips 填 upload 返回的 fileId）
+curl -X POST http://localhost:3000/render \
+  -H "X-Api-Key: your-key" \
+  -H "Content-Type: application/json" \
+  -d '{"template":"trim-xfade-concat","clips":["abc123","def456"],"params":{"transition":"fade","preset":"fast"}}'
+# → {"taskId":"t_1a2b3c4d"}
+
+# 3. 轮询任务状态（status: pending → rendering → completed）
+curl http://localhost:3000/tasks/t_1a2b3c4d \
+  -H "X-Api-Key: your-key"
+# → {"taskId":"t_1a2b3c4d","status":"completed","progress":100,"outputUrl":"https://...?Expires=..."}
+
+# 4. 下载结果（302 重定向）
+curl -L http://localhost:3000/tasks/t_1a2b3c4d/download \
+  -H "X-Api-Key: your-key" -o result.mp4
+```
+
+### 架构说明
+
+- **Worker 隔离**：每个渲染任务在独立子进程中运行，Worker 崩溃不影响其他任务，自动重试（最多 `TASK_MAX_ATTEMPT` 次）
+- **队列持久化**：服务重启时自动从 SQLite 重放 `pending`/`rendering` 状态的任务
+- **OSS 存储**：输入素材上传到 `{OSS_PREFIX}/inputs/`，输出文件存放在 `{OSS_PREFIX}/outputs/`，下载 URL 有效期 1 小时
+- **进度上报**：Worker 通过 IPC 消息上报进度，限流 1 次/秒写入 DB
+
