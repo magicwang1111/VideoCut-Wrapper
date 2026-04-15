@@ -3,7 +3,7 @@
   "name": "简单轮播",
   "description": "2-3 段视频依次播放，支持可选转场效果",
   "version": "1.0.0",
-  "author": "Goumei",
+  "author": "VideoCut Wrapper",
   "preset": "douyin_vertical",
   "entry": "src/project.ts",
   "variables": {

@@ -3,7 +3,7 @@
   "name": "裁头拼接",
   "description": "将多个视频统一剪去开头 2 秒后顺序拼接，不额外添加音乐或字幕",
   "version": "1.0.0",
-  "author": "Goumei",
+  "author": "VideoCut Wrapper",
   "preset": "douyin_vertical",
   "entry": "src/project.ts",
   "variables": {

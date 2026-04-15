@@ -13,13 +13,13 @@ quality: "high"
 variables:
 
   # 开场视频 [video] (必填)
-  clip_intro: "D:\Goumei-Video-Cut\projects\test-video\materials\20260413\kling_20260410_作品_固定镜头_展示穿搭_4455_0.mp4"
+  clip_intro: "./materials/20260413/kling_20260410_作品_固定镜头_展示穿搭_4455_0.mp4"
 
   # 产品特写 [video] (必填)
-  clip_detail: "D:\Goumei-Video-Cut\projects\test-video\materials\20260413\kling_20260410_作品_固定镜头_模仿穿搭博_4166_0.mp4"
+  clip_detail: "./materials/20260413/kling_20260410_作品_固定镜头_模仿穿搭博_4166_0.mp4"
 
   # 结尾视频 [video] (必填)
-  clip_outro: "D:\Goumei-Video-Cut\projects\test-video\materials\20260413\kling_20260410_作品_固定镜头_模仿穿搭博_4505_0.mp4"
+  clip_outro: "./materials/20260413/kling_20260410_作品_固定镜头_模仿穿搭博_4505_0.mp4"
 
   # 产品名称 [text]
   product_name: "产品名称"

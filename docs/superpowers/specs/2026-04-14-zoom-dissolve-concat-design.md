@@ -91,7 +91,7 @@ output：[===clip1_body===][zoom+fade_1][===clip2_body===][zoom+fade_2][===clip3
   "name": "拉近叠化拼接",
   "description": "多段视频拼接，每段出画时推镜放大并淡出，下一段直接切入，转场不含淡入效果",
   "version": "1.0.0",
-  "author": "Goumei",
+  "author": "VideoCut Wrapper",
   "entry": "src/project.ts",
   "variables": {
     "clip_1": { "type": "video", "label": "第 1 段视频", "required": true },
@@ -160,9 +160,9 @@ if (request.templateId === 'zoom-dissolve-concat') {
 ## 验证方法
 
 1. 创建测试项目目录，config.yaml 指定模板 `zoom-dissolve-concat`，提供 2-3 段测试视频
-2. 运行 `goumei render <project_dir>`
+2. 运行 `videocut render <project_dir>`
 3. 检查输出视频：
    - 每段视频末尾有明显放大+淡出效果
    - 下一段视频直接硬切出现（无渐入）
    - 总时长 ≈ 所有输入片段时长之和
-4. 用 `goumei list` 确认新模板出现在列表中
+4. 用 `videocut list` 确认新模板出现在列表中

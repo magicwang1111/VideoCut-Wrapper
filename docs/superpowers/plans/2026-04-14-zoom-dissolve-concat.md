@@ -31,7 +31,7 @@
 - [ ] **Step 1: 创建目录结构**
 
 ```bash
-mkdir -p D:/Goumei-Video-Cut/templates/zoom-dissolve-concat/src
+mkdir -p D:/VideoCut-Wrapper/templates/zoom-dissolve-concat/src
 ```
 
 - [ ] **Step 2: 写 manifest.json**
@@ -44,7 +44,7 @@ mkdir -p D:/Goumei-Video-Cut/templates/zoom-dissolve-concat/src
   "name": "拉近叠化拼接",
   "description": "多段视频拼接，每段出画时推镜放大并淡出至黑，下一段直接硬切进入，无淡入效果",
   "version": "1.0.0",
-  "author": "Goumei",
+  "author": "VideoCut Wrapper",
   "entry": "src/project.ts",
   "variables": {
     "clip_1": {
@@ -103,7 +103,7 @@ export default {};
 - [ ] **Step 4: 验证模板被发现**
 
 ```bash
-cd D:/Goumei-Video-Cut && node --loader ts-node/esm src/cli.ts list
+cd D:/VideoCut-Wrapper && node --loader ts-node/esm src/cli.ts list
 ```
 
 期望输出：列表中出现 `zoom-dissolve-concat` 条目（如果 CLI 支持 `list` 命令）。
@@ -111,7 +111,7 @@ cd D:/Goumei-Video-Cut && node --loader ts-node/esm src/cli.ts list
 - [ ] **Step 5: Commit**
 
 ```bash
-cd D:/Goumei-Video-Cut
+cd D:/VideoCut-Wrapper
 git add templates/zoom-dissolve-concat/
 git commit -m "feat: add zoom-dissolve-concat template manifest and entry"
 ```
@@ -190,7 +190,7 @@ if (['trim-concat', 'xfade-concat', 'trim-xfade-concat', 'zoom-dissolve-concat']
 - [ ] **Step 3: Commit**
 
 ```bash
-cd D:/Goumei-Video-Cut
+cd D:/VideoCut-Wrapper
 git add src/render/index.ts
 git commit -m "feat: add zoom-dissolve-concat routing in render/index.ts"
 ```
@@ -318,7 +318,7 @@ git commit -m "feat: add zoom-dissolve-concat routing in render/index.ts"
 - [ ] **Step 2: 确认 TypeScript 编译无报错**
 
 ```bash
-cd D:/Goumei-Video-Cut && npx tsc --noEmit
+cd D:/VideoCut-Wrapper && npx tsc --noEmit
 ```
 
 期望：无任何 error 输出。
@@ -326,7 +326,7 @@ cd D:/Goumei-Video-Cut && npx tsc --noEmit
 - [ ] **Step 3: Commit**
 
 ```bash
-cd D:/Goumei-Video-Cut
+cd D:/VideoCut-Wrapper
 git add src/render/index.ts
 git commit -m "feat: implement ffmpegZoomDissolveConcat with zoompan+fade+concat"
 ```
@@ -359,7 +359,7 @@ variables:
 - [ ] **Step 2: 执行渲染**
 
 ```bash
-cd D:/Goumei-Video-Cut && node --loader ts-node/esm src/cli.ts render projects/test-zoom-dissolve
+cd D:/VideoCut-Wrapper && node --loader ts-node/esm src/cli.ts render projects/test-zoom-dissolve
 ```
 
 期望：
@@ -385,7 +385,7 @@ ffprobe -v quiet -show_entries format=duration -of csv=p=0 output/test-zoom-diss
 - [ ] **Step 5: 验证模板在列表中**
 
 ```bash
-cd D:/Goumei-Video-Cut && node --loader ts-node/esm src/cli.ts list
+cd D:/VideoCut-Wrapper && node --loader ts-node/esm src/cli.ts list
 ```
 
 期望：`zoom-dissolve-concat` 出现在模板列表中，显示名称"拉近叠化拼接"

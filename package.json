@@ -1,15 +1,15 @@
 {
-  "name": "goumei-video-cut",
+  "name": "videocut-wrapper",
   "version": "0.1.0",
   "description": "模板化视频剪辑系统 — 单镜像多模板、统一渲染 API、模板注册制",
   "type": "module",
   "bin": {
-    "goumei": "./dist/cli.js"
+    "videocut": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "goumei": "tsx src/cli.ts",
+    "videocut": "tsx src/cli.ts",
     "start:api": "tsx src/api/server.ts"
   },
   "dependencies": {

@@ -10,7 +10,7 @@ import {
   QUALITY_PRESETS,
   getResolutionPreset,
 } from './presets.js';
-import { GoumeiError } from './errors.js';
+import { VideoCutError } from './errors.js';
 
 const ROOT_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -27,7 +27,7 @@ function createRegistry(): TemplateRegistry {
 
 const program = new Command();
 program
-  .name('goumei')
+  .name('videocut')
   .description('模板化视频剪辑系统')
   .version('0.1.0');
 
@@ -167,7 +167,7 @@ program
     console.log(`  1. 将素材文件放入 ${materialsDir}`);
     console.log(`  2. 编辑 ${configPath} 填入变量`);
     console.log(
-      `  3. 运行 npx goumei render ${path.relative(ROOT_DIR, configPath)}`,
+      `  3. 运行 npx videocut render ${path.relative(ROOT_DIR, configPath)}`,
     );
     console.log('');
   });
@@ -189,7 +189,7 @@ program
       console.log(`  变量: ${Object.keys(resolved.variables).length} 个`);
       console.log('');
     } catch (err) {
-      if (err instanceof GoumeiError) {
+      if (err instanceof VideoCutError) {
         console.error(`\n✗ ${err.message}\n`);
         process.exit(1);
       }
@@ -347,7 +347,7 @@ program
         process.exit(1);
       }
     } catch (err) {
-      if (err instanceof GoumeiError) {
+      if (err instanceof VideoCutError) {
         console.error(`\n✗ ${err.message}\n`);
         process.exit(1);
       }

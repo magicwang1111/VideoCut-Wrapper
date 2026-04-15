@@ -3,7 +3,7 @@
   "name": "产品展示",
   "description": "3 场景产品展示模板，含 Logo 叠加、字幕和背景音乐",
   "version": "1.0.0",
-  "author": "Goumei",
+  "author": "VideoCut Wrapper",
   "preset": "douyin_vertical",
   "entry": "src/project.ts",
   "variables": {

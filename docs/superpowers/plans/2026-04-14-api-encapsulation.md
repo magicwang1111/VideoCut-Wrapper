@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 将 Goumei Video Cut 封装为生产可用的异步 HTTP API，支持 OSS 文件存储、Worker 子进程池渲染、SQLite 任务持久化。
+**Goal:** 将 VideoCut Wrapper 封装为生产可用的异步 HTTP API，支持 OSS 文件存储、Worker 子进程池渲染、SQLite 任务持久化。
 
 **Architecture:** Fastify HTTP API + 有界内存队列 + child_process Worker 池。所有 SQLite 写操作集中在 API 进程，Worker 通过 IPC 消息回传结果。任务启动时从 SQLite 重放 pending/rendering 任务，Worker 崩溃后自动重试（最多 3 次）。
 
@@ -43,7 +43,7 @@
 - [ ] **Step 1: 安装运行时依赖**
 
 ```bash
-cd D:\Goumei-Video-Cut
+cd D:\VideoCut-Wrapper
 npm install fastify @fastify/multipart ali-oss better-sqlite3
 npm install --save-dev @types/better-sqlite3 @types/ali-oss
 ```
@@ -59,7 +59,7 @@ Expected: `OK`
 - [ ] **Step 3: 创建 .env.example**
 
 ```bash
-cat > D:\Goumei-Video-Cut\.env.example << 'EOF'
+cat > D:\VideoCut-Wrapper\.env.example << 'EOF'
 PORT=3000
 API_KEYS=your-api-key-here
 OSS_ENDPOINT=oss-cn-hangzhou-internal.aliyuncs.com
@@ -79,7 +79,7 @@ EOF
 - [ ] **Step 4: Commit**
 
 ```bash
-cd D:\Goumei-Video-Cut
+cd D:\VideoCut-Wrapper
 git add package.json package-lock.json .env.example
 git commit -m "feat: 安装 API 封装依赖（fastify, ali-oss, better-sqlite3）"
 ```
@@ -252,7 +252,7 @@ export class TaskStore {
 - [ ] **Step 2: 快速冒烟验证**
 
 ```bash
-cd D:\Goumei-Video-Cut
+cd D:\VideoCut-Wrapper
 node --input-type=module << 'EOF'
 import { TaskStore } from './src/store/TaskStore.ts';
 // 用 tsx 验证
@@ -440,7 +440,7 @@ if (def.type === 'video_list') {
 - [ ] **Step 4: 验证**
 
 ```bash
-cd D:\Goumei-Video-Cut
+cd D:\VideoCut-Wrapper
 npx tsx -e "
 import { validateVariables } from './src/registry/schema-validator.ts';
 const schema = { clips: { type: 'video_list', label: '视频列表', required: true } };
@@ -560,7 +560,7 @@ for (const [key, def] of Object.entries(templateInfo.manifest.variables)) {
 - [ ] **Step 5: 验证现有 CLI 渲染仍可工作**
 
 ```bash
-cd D:\Goumei-Video-Cut
+cd D:\VideoCut-Wrapper
 npx tsx src/cli.ts render projects/test-trim-xfade/config.yaml 2>&1 | tail -5
 ```
 
@@ -1032,7 +1032,7 @@ export async function uploadRoutes(app: FastifyInstance): Promise<void> {
     const ossKey = oss.inputKey(fileId, ext);
 
     // 先写到临时文件再上传（ali-oss put 支持 stream，但临时文件更稳）
-    const tmpPath = path.join(os.tmpdir(), `goumei_upload_${fileId}${ext}`);
+    const tmpPath = path.join(os.tmpdir(), `videocut_upload_${fileId}${ext}`);
     try {
       await new Promise<void>((resolve, reject) => {
         const out = fs.createWriteStream(tmpPath);
@@ -1267,7 +1267,7 @@ main().catch((err) => {
 - [ ] **Step 3: 启动服务验证健康检查**
 
 ```bash
-cd D:\Goumei-Video-Cut
+cd D:\VideoCut-Wrapper
 # 设置最小环境变量（无 OSS 的本地测试）
 set API_KEYS=test-key
 set OSS_ACCESS_KEY_ID=dummy

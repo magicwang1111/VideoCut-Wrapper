@@ -1,4 +1,4 @@
-# Goumei Video Cut
+# VideoCut Wrapper
 
 模板化视频剪辑系统。通过 YAML 配置文件 + 可插拔模板，用一条命令批量渲染短视频。
 
@@ -221,7 +221,7 @@ FFmpeg 系模板需要在 `src/render/index.ts` 的 `render()` 方法中添加�
 ## 仓库结构
 
 ```
-Goumei-Video-Cut/
+VideoCut-Wrapper/
 ├── src/
 │   ├── cli.ts              # CLI 入口，所有子命令定义
 │   ├── presets.ts          # 分辨率 & 质量预设

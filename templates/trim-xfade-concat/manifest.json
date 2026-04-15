@@ -3,7 +3,7 @@
   "name": "裁头叠化拼接",
   "description": "裁去每段视频开头 N 秒后按顺序拼接，前一段尾部淡出、下一段首帧静帧垫底，长度不足时自动复制边缘帧创建转场，不额外添加音乐或字幕",
   "version": "1.0.0",
-  "author": "Goumei",
+  "author": "VideoCut Wrapper",
   "entry": "src/project.ts",
   "variables": {
     "clip_1": {

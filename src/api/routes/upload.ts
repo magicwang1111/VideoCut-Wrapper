@@ -27,7 +27,7 @@ export async function uploadRoutes(
     const fileId = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
     const ossKey = oss.inputKey(fileId, ext);
 
-    const tmpPath = path.join(os.tmpdir(), `goumei_upload_${fileId}${ext}`);
+    const tmpPath = path.join(os.tmpdir(), `videocut_upload_${fileId}${ext}`);
     try {
       await new Promise<void>((resolve, reject) => {
         const out = fs.createWriteStream(tmpPath);

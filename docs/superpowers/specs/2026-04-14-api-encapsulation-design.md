@@ -1,14 +1,14 @@
 # API 封装设计文档（修订版 v2）
 
 **日期**: 2026-04-14（Codex 审查后修订）
-**项目**: Goumei Video Cut
+**项目**: VideoCut Wrapper
 **状态**: 待实施
 
 ---
 
 ## 背景与目标
 
-将 Goumei Video Cut 从本地 CLI 工具封装为云端 HTTP API，供其他后端服务调用，支持约 100 并发渲染请求。
+将 VideoCut Wrapper 从本地 CLI 工具封装为云端 HTTP API，供其他后端服务调用，支持约 100 并发渲染请求。
 
 核心解决的问题：
 1. manifest 变量系统 `clip_1…clip_6` 限制视频输入数量

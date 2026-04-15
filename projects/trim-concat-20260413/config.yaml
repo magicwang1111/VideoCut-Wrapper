@@ -13,13 +13,13 @@ quality: "high"
 variables:
 
   # 第 1 段视频 [video] (必填)
-  clip_1: "D:/Goumei-Video-Cut/input/kling_20260410_作品_固定镜头_展示穿搭_4455_0.mp4"
+  clip_1: "../../input/kling_20260410_作品_固定镜头_展示穿搭_4455_0.mp4"
 
   # 第 2 段视频 [video]
-  clip_2: "D:/Goumei-Video-Cut/input/kling_20260410_作品_固定镜头_模仿穿搭博_4166_0.mp4"
+  clip_2: "../../input/kling_20260410_作品_固定镜头_模仿穿搭博_4166_0.mp4"
 
   # 第 3 段视频 [video]
-  clip_3: "D:/Goumei-Video-Cut/input/kling_20260410_作品_固定镜头_模仿穿搭博_4505_0.mp4"
+  clip_3: "../../input/kling_20260410_作品_固定镜头_模仿穿搭博_4505_0.mp4"
 
   # 第 4 段视频 [video]（留空则跳过）
   # clip_4: ""

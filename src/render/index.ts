@@ -23,6 +23,22 @@ interface ProbedVideoInfo extends ResolutionPreset {
   duration: number;
 }
 
+interface ProbeVideoResult {
+  info: ProbedVideoInfo | null;
+  reason?: string;
+}
+
+interface VideoProbeFailure {
+  key: string;
+  src: string;
+  reason: string;
+}
+
+interface CollectedVideoInfo {
+  videoInfo: Map<string, ProbedVideoInfo>;
+  failures: VideoProbeFailure[];
+}
+
 function findFileRecursive(
   dir: string,
   filename: string,
@@ -123,12 +139,12 @@ function resolveFfmpegPath(rootDir: string): string | null {
 function probeVideo(
   ffprobePath: string,
   videoPath: string,
-): ProbedVideoInfo | null {
+): ProbeVideoResult {
   try {
     const raw = execFileSync(
       ffprobePath,
       [
-        '-v', 'quiet',
+        '-v', 'error',
         '-print_format', 'json',
         '-show_streams',
         '-show_format',
@@ -152,24 +168,61 @@ function probeVideo(
     };
 
     const stream = info.streams?.[0];
-    if (!stream?.width || !stream?.height) return null;
+    if (!stream?.width || !stream?.height) {
+      return {
+        info: null,
+        reason: 'ffprobe 未返回有效的视频宽高信息',
+      };
+    }
 
     // 解析帧率：格式为 "30/1" 或 "30000/1001"
     const fpsStr = stream.r_frame_rate ?? stream.avg_frame_rate ?? '30/1';
     const [num, den] = fpsStr.split('/').map(Number);
     const fps = den ? Math.round(num / den) : num;
     const duration = Number(stream.duration ?? info.format?.duration ?? 0);
+    const normalizedDuration = Number.isFinite(duration) ? duration : 0;
 
     return {
+      info: {
       width: stream.width,
       height: stream.height,
       fps: fps || 30,
-      duration: Number.isFinite(duration) ? duration : 0,
+      duration: normalizedDuration,
       label: `原始分辨率 ${stream.width}×${stream.height} ${fps}fps（自动探测）`,
+      },
+      reason: normalizedDuration > 0 ? undefined : 'ffprobe 未返回有效时长',
     };
-  } catch {
-    return null;
+  } catch (error) {
+    return {
+      info: null,
+      reason: formatProbeError(error),
+    };
   }
+}
+
+function formatProbeError(error: unknown): string {
+  const stderr =
+    typeof error === 'object' &&
+    error !== null &&
+    'stderr' in error &&
+    typeof (error as { stderr?: unknown }).stderr === 'string'
+      ? (error as { stderr: string }).stderr.trim()
+      : '';
+
+  if (stderr) {
+    return (
+      stderr
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find(Boolean) ?? 'ffprobe 执行失败'
+    );
+  }
+
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim();
+  }
+
+  return 'ffprobe 执行失败';
 }
 
 /** 检查视频是否包含音频流 */
@@ -211,10 +264,11 @@ function collectVideoInfo(
   ffprobePath: string | null,
   variables: Record<string, unknown>,
   templateInfo: TemplateInfo,
-): Map<string, ProbedVideoInfo> {
+): CollectedVideoInfo {
   const videoInfo = new Map<string, ProbedVideoInfo>();
+  const failures: VideoProbeFailure[] = [];
   if (!ffprobePath) {
-    return videoInfo;
+    return { videoInfo, failures };
   }
 
   for (const [key, def] of Object.entries(templateInfo.manifest.variables)) {
@@ -223,11 +277,26 @@ function collectVideoInfo(
       const list = variables[key];
       if (!Array.isArray(list)) continue;
       const durations: number[] = [];
-      for (const src of list as string[]) {
-        if (typeof src !== 'string' || !src.trim()) { durations.push(0); continue; }
+      for (const [index, src] of (list as string[]).entries()) {
+        if (typeof src !== 'string' || !src.trim()) {
+          durations.push(0);
+          continue;
+        }
+
         const probed = probeVideo(ffprobePath, src);
-        durations.push(probed?.duration ?? 0);
-        if (probed && !videoInfo.has(key)) videoInfo.set(key, probed);
+        durations.push(probed.info?.duration ?? 0);
+
+        if (probed.info && !videoInfo.has(key)) {
+          videoInfo.set(key, probed.info);
+        }
+
+        if (!probed.info || probed.reason) {
+          failures.push({
+            key: `${key}[${index}]`,
+            src,
+            reason: probed.reason ?? 'ffprobe 未返回有效视频信息',
+          });
+        }
       }
       (variables as Record<string, unknown>)[`${key}_source_durations`] = durations;
       continue;
@@ -239,12 +308,20 @@ function collectVideoInfo(
     if (typeof value !== 'string' || value.trim() === '') continue;
 
     const probed = probeVideo(ffprobePath, value);
-    if (probed) {
-      videoInfo.set(key, probed);
+    if (probed.info) {
+      videoInfo.set(key, probed.info);
+    }
+
+    if (!probed.info || probed.reason) {
+      failures.push({
+        key,
+        src: value,
+        reason: probed.reason ?? 'ffprobe 未返回有效视频信息',
+      });
     }
   }
 
-  return videoInfo;
+  return { videoInfo, failures };
 }
 
 function injectVideoMetadataVariables(
@@ -261,29 +338,6 @@ function injectVideoMetadataVariables(
   }
 
   return injected;
-}
-
-function countProvidedVideoInputs(
-  variables: Record<string, unknown>,
-  templateInfo: TemplateInfo,
-): number {
-  let count = 0;
-
-  for (const [key, def] of Object.entries(templateInfo.manifest.variables)) {
-    if (def.type === 'video_list') {
-      const list = variables[key];
-      if (Array.isArray(list)) count += list.length;
-      continue;
-    }
-    if (def.type !== 'video') continue;
-
-    const value = variables[key];
-    if (typeof value === 'string' && value.trim() !== '') {
-      count += 1;
-    }
-  }
-
-  return count;
 }
 
 /** 从 manifest 变量中收集视频片段（同时支持具名 video 键和 video_list 数组） */
@@ -747,7 +801,7 @@ export class RenderService {
   async render(request: RenderRequest): Promise<RenderResult> {
     const ffprobePath = resolveFfprobePath(this.rootDir);
     const ffmpegPath = resolveFfmpegPath(this.rootDir);
-    const videoInfo = collectVideoInfo(
+    const { videoInfo, failures: videoProbeFailures } = collectVideoInfo(
       ffprobePath,
       request.variables,
       request.templateInfo,
@@ -756,11 +810,6 @@ export class RenderService {
       request.variables,
       videoInfo,
     );
-    const providedVideoCount = countProvidedVideoInputs(
-      request.variables,
-      request.templateInfo,
-    );
-
     if (['trim-concat', 'xfade-concat', 'trim-xfade-concat', 'zoom-dissolve-concat'].includes(request.templateId)) {
       if (!ffmpegPath || !ffprobePath) {
         throw new RenderError(
@@ -768,9 +817,12 @@ export class RenderService {
         );
       }
 
-      if (providedVideoCount > 0 && videoInfo.size !== providedVideoCount) {
+      if (videoProbeFailures.length > 0) {
+        const failureDetails = videoProbeFailures
+          .map(({ key, src, reason }) => `  - ${key}: ${src} (${reason})`)
+          .join('\n');
         throw new RenderError(
-          `${request.templateId} 模板无法读取全部输入视频的时长，请确认素材可被 ffprobe 正常探测。`,
+          `${request.templateId} 模板无法读取以下输入视频的时长，请确认素材可被 ffprobe 正常探测：\n${failureDetails}`,
         );
       }
     }

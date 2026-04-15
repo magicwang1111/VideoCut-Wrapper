@@ -1,4 +1,4 @@
-# Goumei-Video-Cut: 模板化视频剪辑系统设计文档 v2
+# VideoCut-Wrapper: 模板化视频剪辑系统设计文档 v2
 
 ## 背景
 
@@ -69,7 +69,7 @@
 ## 目录结构
 
 ```
-D:\Goumei-Video-Cut\
+D:\VideoCut-Wrapper\
 │
 ├── package.json                    # Node.js 项目配置
 ├── tsconfig.json                   # TypeScript 配置
@@ -148,7 +148,7 @@ D:\Goumei-Video-Cut\
   "name": "产品展示",
   "description": "3 场景产品展示模板，含 Logo 叠加和背景音乐",
   "version": "1.0.0",
-  "author": "Goumei",
+  "author": "VideoCut Wrapper",
   
   "preset": "douyin_vertical",
   
@@ -522,7 +522,7 @@ output/<project-name>/
 ## CLI 接口
 
 ```
-npx goumei <command> [options]
+npx videocut <command> [options]
 
 命令:
   render    <config.yaml>              渲染视频
@@ -544,24 +544,24 @@ npx goumei <command> [options]
 
 ```bash
 # 检查环境
-npx goumei check
+npx videocut check
 
 # 列出所有模板
-npx goumei list
+npx videocut list
 
 # 查看某个模板的变量说明
-npx goumei info product-showcase
+npx videocut info product-showcase
 
 # 创建新项目
-npx goumei init product-showcase my-product-video
+npx videocut init product-showcase my-product-video
 # → 生成 projects/my-product-video/config.yaml（带注释）
 # → 生成 projects/my-product-video/materials/（空目录）
 
 # 编辑配置、放入素材后渲染
-npx goumei render projects/my-product-video/config.yaml
+npx videocut render projects/my-product-video/config.yaml
 
 # 快速预览
-npx goumei render projects/my-product-video/config.yaml --preview
+npx videocut render projects/my-product-video/config.yaml --preview
 ```
 
 ---
@@ -600,7 +600,7 @@ const QUALITY = {
 错误: 模板未注册
   模板 ID: product-showcase2
   可用模板: product-showcase, simple-slideshow
-  运行 'npx goumei list' 查看所有模板
+  运行 'npx videocut list' 查看所有模板
 
 错误: 变量校验失败
   - clip_intro: 必填项未提供

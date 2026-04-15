@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
-import { GoumeiError } from '../errors.js';
+import { VideoCutError } from '../errors.js';
 
 /** 项目配置结构 */
 export interface ProjectConfig {
@@ -21,7 +21,7 @@ export function parseProjectConfig(configPath: string): ProjectConfig {
   const absPath = path.resolve(configPath);
 
   if (!fs.existsSync(absPath)) {
-    throw new GoumeiError(`配置文件不存在: ${absPath}`);
+    throw new VideoCutError(`配置文件不存在: ${absPath}`);
   }
 
   const raw = fs.readFileSync(absPath, 'utf-8');
@@ -36,19 +36,19 @@ export function parseProjectConfig(configPath: string): ProjectConfig {
       parsed = YAML.parse(raw);
     }
   } catch (err) {
-    throw new GoumeiError(
+    throw new VideoCutError(
       `配置文件解析失败: ${absPath}\n  ${err instanceof Error ? err.message : err}`,
     );
   }
 
   if (!parsed || typeof parsed !== 'object') {
-    throw new GoumeiError(`配置文件格式错误: 应为对象，实际为 ${typeof parsed}`);
+    throw new VideoCutError(`配置文件格式错误: 应为对象，实际为 ${typeof parsed}`);
   }
 
   const config = parsed as Record<string, unknown>;
 
   if (!config.template || typeof config.template !== 'string') {
-    throw new GoumeiError('配置文件缺少 "template" 字段（模板 ID）');
+    throw new VideoCutError('配置文件缺少 "template" 字段（模板 ID）');
   }
 
   return {

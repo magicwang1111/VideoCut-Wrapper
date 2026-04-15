@@ -3,7 +3,7 @@
   "name": "拉近叠化拼接",
   "description": "多段视频拼接，每段尾部先由四周向画面中心拉近，再与下一段做叠化转场，适合剪映式拉近叠化节奏",
   "version": "1.0.0",
-  "author": "Goumei",
+  "author": "VideoCut Wrapper",
   "entry": "src/project.ts",
   "variables": {
     "clip_1": {
