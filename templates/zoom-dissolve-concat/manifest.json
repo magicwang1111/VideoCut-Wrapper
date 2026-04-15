@@ -1,8 +1,8 @@
 {
   "id": "zoom-dissolve-concat",
   "name": "拉近叠化拼接",
-  "description": "多段视频拼接，每段尾部先由四周向画面中心拉近，再与下一段做叠化转场，适合剪映式拉近叠化节奏",
-  "version": "1.0.0",
+  "description": "多段视频拼接，转场围绕切点做中心拉近、模糊与叠化，整体效果贴近剪映“叠化拉近”。",
+  "version": "2.0.0",
   "author": "Goumei",
   "entry": "src/project.ts",
   "variables": {
@@ -33,18 +33,39 @@
     },
     "transition_duration": {
       "type": "number",
-      "label": "推镜时长（秒）",
-      "default": 0.4,
+      "label": "转场时长（秒）",
+      "default": 2.0,
       "min": 0.1,
       "max": 3.0
     },
-    "zoom_scale": {
+    "blurStrength": {
       "type": "number",
-      "label": "放大倍数",
-      "default": 1.18,
-      "min": 1.05,
-      "max": 2.0
+      "label": "模糊强度",
+      "default": 0.3,
+      "min": 0,
+      "max": 1
+    },
+    "numSamples": {
+      "type": "number",
+      "label": "样本数",
+      "default": 10,
+      "min": 5,
+      "max": 25
+    },
+    "aTargetScale": {
+      "type": "number",
+      "label": "A 目标缩放",
+      "default": 0.5,
+      "min": 0.1,
+      "max": 0.9
+    },
+    "bStartScale": {
+      "type": "number",
+      "label": "B 起始缩放",
+      "default": 1.5,
+      "min": 1.1,
+      "max": 3.0
     }
   },
-  "tags": ["拼接", "转场", "拉近", "推镜"]
+  "tags": ["拼接", "转场", "拉近", "叠化", "剪映"]
 }

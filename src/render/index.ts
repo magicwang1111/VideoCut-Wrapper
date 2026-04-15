@@ -119,7 +119,7 @@ function resolveFfmpegPath(rootDir: string): string | null {
   }
 }
 
-/** 用 ffprobe 探测视频的分辨率、帧率和时长 */
+/** 鐢?ffprobe 鎺㈡祴瑙嗛鐨勫垎杈ㄧ巼銆佸抚鐜囧拰鏃堕暱 */
 function probeVideo(
   ffprobePath: string,
   videoPath: string,
@@ -154,7 +154,7 @@ function probeVideo(
     const stream = info.streams?.[0];
     if (!stream?.width || !stream?.height) return null;
 
-    // 解析帧率：格式为 "30/1" 或 "30000/1001"
+    // 瑙ｆ瀽甯х巼锛氭牸寮忎负 "30/1" 鎴?"30000/1001"
     const fpsStr = stream.r_frame_rate ?? stream.avg_frame_rate ?? '30/1';
     const [num, den] = fpsStr.split('/').map(Number);
     const fps = den ? Math.round(num / den) : num;
@@ -165,14 +165,14 @@ function probeVideo(
       height: stream.height,
       fps: fps || 30,
       duration: Number.isFinite(duration) ? duration : 0,
-      label: `原始分辨率 ${stream.width}×${stream.height} ${fps}fps（自动探测）`,
+      label: `鍘熷鍒嗚鲸鐜?${stream.width}脳${stream.height} ${fps}fps锛堣嚜鍔ㄦ帰娴嬶級`,
     };
   } catch {
     return null;
   }
 }
 
-/** 检查视频是否包含音频流 */
+/** 妫€鏌ヨ棰戞槸鍚﹀寘鍚煶棰戞祦 */
 function checkHasAudio(ffprobePath: string, videoPath: string): boolean {
   try {
     const raw = execFileSync(
@@ -193,7 +193,7 @@ function checkHasAudio(ffprobePath: string, videoPath: string): boolean {
   }
 }
 
-/** 从变量中找第一个视频变量 key，用于自动探测分辨率 */
+/** 浠庡彉閲忎腑鎵剧涓€涓棰戝彉閲?key锛岀敤浜庤嚜鍔ㄦ帰娴嬪垎杈ㄧ巼 */
 function findFirstVideoKey(
   variables: Record<string, unknown>,
   templateInfo: TemplateInfo,
@@ -219,7 +219,7 @@ function collectVideoInfo(
 
   for (const [key, def] of Object.entries(templateInfo.manifest.variables)) {
     if (def.type === 'video_list') {
-      // 探测数组中每个视频，用第一个设置分辨率基准，durations 注入到 variables
+      // 鎺㈡祴鏁扮粍涓瘡涓棰戯紝鐢ㄧ涓€涓缃垎杈ㄧ巼鍩哄噯锛宒urations 娉ㄥ叆鍒?variables
       const list = variables[key];
       if (!Array.isArray(list)) continue;
       const durations: number[] = [];
@@ -286,13 +286,13 @@ function countProvidedVideoInputs(
   return count;
 }
 
-/** 从 manifest 变量中收集视频片段（同时支持具名 video 键和 video_list 数组） */
+/** 浠?manifest 鍙橀噺涓敹闆嗚棰戠墖娈碉紙鍚屾椂鏀寔鍏峰悕 video 閿拰 video_list 鏁扮粍锛?*/
 function collectClips(
   variables: Record<string, unknown>,
   templateInfo: TemplateInfo,
   videoInfo: Map<string, ProbedVideoInfo>,
 ): Array<{ key: string; src: string; duration: number }> {
-  // 优先读 video_list 字段
+  // 浼樺厛璇?video_list 瀛楁
   for (const [key, def] of Object.entries(templateInfo.manifest.variables)) {
     if (def.type !== 'video_list') continue;
     const list = variables[key];
@@ -305,7 +305,7 @@ function collectClips(
     }));
   }
 
-  // 回退：扫描具名 video 键（兼容现有 CLI 模板）
+  // Fallback: scan named video fields for CLI-style templates.
   const clips: Array<{ key: string; src: string; duration: number }> = [];
   for (const [key, def] of Object.entries(templateInfo.manifest.variables)) {
     if (def.type !== 'video') continue;
@@ -318,7 +318,7 @@ function collectClips(
 }
 
 export interface RenderRequest {
-  taskId?: string; // 外部传入则覆盖内部生成的 ID
+  taskId?: string; // 澶栭儴浼犲叆鍒欒鐩栧唴閮ㄧ敓鎴愮殑 ID
   templateId: string;
   templateInfo: TemplateInfo;
   variables: Record<string, unknown>;
@@ -332,7 +332,7 @@ export interface RenderResult {
   taskId: string;
   status: 'completed' | 'failed';
   outputPath?: string;
-  duration?: number; // 渲染耗时（秒）
+  duration?: number; // render time in seconds
   error?: string;
 }
 
@@ -422,9 +422,7 @@ export class RenderService {
   }
 
   /**
-   * 用 FFmpeg 直接完成"裁去开头 N 秒 + 拼接"，不经过 Revideo。
-   * 两步法：先逐条裁剪到 temp，再用 concat demuxer 合并。
-   */
+   * 鐢?FFmpeg 鐩存帴瀹屾垚"瑁佸幓寮€澶?N 绉?+ 鎷兼帴"锛屼笉缁忚繃 Revideo銆?   * 涓ゆ娉曪細鍏堥€愭潯瑁佸壀鍒?temp锛屽啀鐢?concat demuxer 鍚堝苟銆?   */
   private ffmpegTrimConcat(
     ffmpegPath: string,
     ffprobePath: string,
@@ -441,7 +439,7 @@ export class RenderService {
     const tempFiles: string[] = [];
 
     try {
-      console.log(`\n[2/3] FFmpeg 裁剪 ${clips.length} 个片段...`);
+      console.log(`\n[2/3] FFmpeg trimming ${clips.length} clips...`);
 
       for (let i = 0; i < clips.length; i++) {
         const clip = clips[i];
@@ -458,20 +456,20 @@ export class RenderService {
           '-y', tempFile,
         ];
 
-        console.log(`  [${i + 1}/${clips.length}] 裁剪 ${path.basename(clip.src)}（跳过前 ${trimStart}s）`);
+        console.log(`  [${i + 1}/${clips.length}] trimming ${path.basename(clip.src)} (skip first ${trimStart}s)`);
         execFileSync(ffmpegPath, args, { timeout: 300_000 });
 
         updateProgress(task, (i + 1) / (clips.length + 1));
       }
 
-      // 生成 concat 列表文件
+      // 鐢熸垚 concat 鍒楄〃鏂囦欢
       const listFile = path.join(tempDir, `concat_${sessionId}.txt`);
       const listContent = tempFiles
         .map((f) => `file '${f.replace(/\\/g, '/')}'`)
         .join('\n');
       fs.writeFileSync(listFile, listContent, 'utf-8');
 
-      console.log(`  拼接 ${clips.length} 个片段 → ${path.basename(outputPath)}`);
+      console.log(`  concatenating ${clips.length} clips -> ${path.basename(outputPath)}`);
       execFileSync(
         ffmpegPath,
         [
@@ -484,7 +482,7 @@ export class RenderService {
         { timeout: 600_000 },
       );
 
-      // 清理 concat 列表
+      // 娓呯悊 concat 鍒楄〃
       try { fs.unlinkSync(listFile); } catch { /* ignore */ }
     } finally {
       for (const f of tempFiles) {
@@ -494,9 +492,7 @@ export class RenderService {
   }
 
   /**
-   * 用 FFmpeg filter_complex 完成叠化（cross-dissolve）拼接，单 pass 直出。
-   * Video: xfade 链；Audio: acrossfade 链；无音频片段自动补静音。
-   */
+   * 鐢?FFmpeg filter_complex 瀹屾垚鍙犲寲锛坈ross-dissolve锛夋嫾鎺ワ紝鍗?pass 鐩村嚭銆?   * Video: xfade 閾撅紱Audio: acrossfade 閾撅紱鏃犻煶棰戠墖娈佃嚜鍔ㄨˉ闈欓煶銆?   */
   private ffmpegXfadeConcat(
     ffmpegPath: string,
     ffprobePath: string,
@@ -515,7 +511,7 @@ export class RenderService {
     const minSegmentDuration = frameDuration / 2;
     const formatSeconds = (value: number) => value.toFixed(6);
 
-    // ── 构造输入参数与视频输入索引 ──────────────────────────────────────────
+    // 鈹€鈹€ 鏋勯€犺緭鍏ュ弬鏁颁笌瑙嗛杈撳叆绱㈠紩 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     const inputArgs: string[] = [];
     const clipMeta: Array<{ videoIdx: number; duration: number }> = [];
     let inputCounter = 0;
@@ -530,11 +526,10 @@ export class RenderService {
       inputCounter++;
     }
 
-    // ── 构建 filter_complex（仅视频 xfade 链）─────────────────────────────
+    // 鈹€鈹€ 鏋勫缓 filter_complex锛堜粎瑙嗛 xfade 閾撅級鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     void ffprobePath;
 
     const filterParts: string[] = [];
-    const segmentLabels: string[] = [];
 
     if (n === 1) {
       filterParts.push(
@@ -552,7 +547,7 @@ export class RenderService {
 
         if (tailPadDuration > minSegmentDuration) {
           console.warn(
-            `  ⚠ 片段 ${clips[i].key} 尾部不足 ${D.toFixed(1)}s，已自动复制最后一帧补足淡出转场`,
+            `  [warn] clip ${clips[i].key} tail is shorter than ${D.toFixed(1)}s, cloning the last frame to finish the fade-out transition.`, 
           );
         }
 
@@ -602,17 +597,12 @@ export class RenderService {
       '-y', outputPath,
     ];
 
-    console.log(`\n[2/3] FFmpeg 前段淡出拼接 ${n} 个片段（转场 ${D}s，长度不足自动补边缘帧）...`);
+    console.log(`\n[2/3] FFmpeg fade-out concat ${n} clips (transition ${D}s, auto clone edge frames when needed)...`);
     execFileSync(ffmpegPath, args, { timeout: 600_000 });
 
     updateProgress(task, 1);
   }
 
-  /**
-   * 中心拉近叠化拼接：每段出画片段的最后 D 秒由四周向中心拉近（1→zoomScale），
-   * 同时淡出；下一段首帧静帧垫底，下一段本身不淡入。
-   * 叠化逻辑与 xfade-concat 保持一致。
-   */
   private ffmpegZoomDissolveConcat(
     ffmpegPath: string,
     clips: Array<{ key: string; src: string; duration: number }>,
@@ -621,33 +611,142 @@ export class RenderService {
     task: RenderTask,
     resPreset: ResolutionPreset,
     transitionDuration: number,
-    zoomScale: number,
+    blurStrength: number,
+    numSamples: number,
+    aTargetScale: number,
+    bStartScale: number,
   ): void {
     const n = clips.length;
-    const D = transitionDuration;
     const W = resPreset.width;
     const H = resPreset.height;
     const fps = resPreset.fps;
-    const frameDuration = 1 / fps;
-    const minSegmentDuration = frameDuration / 2;
     const formatSeconds = (value: number) => value.toFixed(6);
+    const clamp = (value: number, min: number, max: number) =>
+      Math.min(max, Math.max(min, value));
+    const escapeExpr = (value: string) => value.replace(/,/g, '\\,');
+    const clipFrames = clips.map((clip) => Math.max(1, Math.round(clip.duration * fps)));
+    const requestedTransitionFrames = Math.max(1, Math.round(transitionDuration * fps));
+    const blurStrengthValue = clamp(blurStrength, 0, 1);
+    const sampleCount = clamp(Math.round(numSamples), 5, 25);
+    const aTargetScaleValue = clamp(aTargetScale, 0.1, 0.9);
+    const bStartScaleValue = clamp(bStartScale, 1.1, 3.0);
+    const aTargetScaleDelta = (aTargetScaleValue - 1).toFixed(6);
+    const bStartScaleBase = bStartScaleValue.toFixed(6);
+    const bStartScaleDelta = (1 - bStartScaleValue).toFixed(6);
+    const blurStrengthFixed = blurStrengthValue.toFixed(6);
+    const bgBlurSigma = Math.max(0.5, 1 + blurStrengthValue * 6).toFixed(6);
 
-    // 径向 zoom blur：fps 过采样后 tmix 多帧平均，使每帧内部呈现从中心向外的射线感
-    // oversample=8 → 每个原始帧展开成 8 个不同 zoom 级别的子帧，平均后即为 zoom blur
-    const oversample = 8;
-    const fps_hi = fps * oversample;
-    const frames_hi = Math.max(2, Math.round(fps_hi * D));
-    const zDelta = (zoomScale - 1).toFixed(6);
-    const frameProgress = `(n/${frames_hi - 1})`;
-    // quartic ease-in: p^4 —— 前段几乎不动，后段爆炸性加速拉入
-    const easedProgress = `(${frameProgress}*${frameProgress}*${frameProgress}*${frameProgress})`;
-    const zoomExpr = `(1+${zDelta}*${easedProgress})`;
-    const scaleW = `floor(${W}*${zoomExpr}/2)*2`;
-    const scaleH = `floor(${H}*${zoomExpr}/2)*2`;
-    const cropX = `${W}*${zDelta}*${easedProgress}/2`;
-    const cropY = `${H}*${zDelta}*${easedProgress}/2`;
+    type TransitionPlan = {
+      transitionFrames: number;
+      leftFrames: number;
+      rightFrames: number;
+      bodyStartFrames: number[];
+      bodyFrames: number[];
+      tailStartFrames: number[];
+      headFrames: number[];
+    };
 
-    // ── 构造输入参数 ──────────────────────────────────────────────────────────
+    const buildTransitionPlan = (requestedFrames: number): TransitionPlan => {
+      if (n <= 1) {
+        return {
+          transitionFrames: 0,
+          leftFrames: 0,
+          rightFrames: 0,
+          bodyStartFrames: new Array(n).fill(0),
+          bodyFrames: [...clipFrames],
+          tailStartFrames: [],
+          headFrames: [],
+        };
+      }
+
+      for (let frames = requestedFrames; frames >= 2; frames--) {
+        const leftFrames = Math.floor(frames / 2);
+        const rightFrames = frames - leftFrames;
+        const bodyStartFrames: number[] = [];
+        const bodyFrames: number[] = [];
+        let feasible = true;
+
+        for (let i = 0; i < n; i++) {
+          const startFrame = i === 0 ? 0 : rightFrames;
+          const endFrame = clipFrames[i] - (i < n - 1 ? leftFrames : 0);
+          if (endFrame < startFrame) {
+            feasible = false;
+            break;
+          }
+          bodyStartFrames.push(startFrame);
+          bodyFrames.push(endFrame - startFrame);
+        }
+
+        if (!feasible) {
+          continue;
+        }
+
+        return {
+          transitionFrames: frames,
+          leftFrames,
+          rightFrames,
+          bodyStartFrames,
+          bodyFrames,
+          tailStartFrames: clips.slice(0, -1).map((_, index) => clipFrames[index] - leftFrames),
+          headFrames: clips.slice(1).map(() => rightFrames),
+        };
+      }
+
+      return {
+        transitionFrames: 0,
+        leftFrames: 0,
+        rightFrames: 0,
+        bodyStartFrames: new Array(n).fill(0),
+        bodyFrames: [...clipFrames],
+        tailStartFrames: [],
+        headFrames: [],
+      };
+    };
+
+    const plan = buildTransitionPlan(requestedTransitionFrames);
+    const effectiveTransitionDuration = plan.transitionFrames / fps;
+    const fpsHi = fps * sampleCount;
+    const hiFrames = Math.max(2, plan.transitionFrames * sampleCount);
+    const normalizedProgressExpr = (frames: number, frameVar: 'n' | 'N') =>
+      frames > 1 ? `(${frameVar}/${frames - 1})` : '1';
+    const smoothstepExpr = (xExpr: string, edge0: number, edge1: number) => {
+      const edgeDelta = (edge1 - edge0).toFixed(6);
+      const tExpr = `max(0,min(1,(((${xExpr})-${edge0.toFixed(6)})/${edgeDelta})))`;
+      return `((${tExpr})*(${tExpr})*(3-2*(${tExpr})))`;
+    };
+
+    const hiScaleProgressExpr = normalizedProgressExpr(hiFrames, 'n');
+    const hiBlendProgressExpr = normalizedProgressExpr(hiFrames, 'N');
+    const loBlendProgressExpr = normalizedProgressExpr(Math.max(2, plan.transitionFrames), 'N');
+    const hiScaleTpExpr = `max(0,min(1,((${hiScaleProgressExpr})-0.1)/0.8))`;
+    const hiBlendTpExpr = `max(0,min(1,((${hiBlendProgressExpr})-0.1)/0.8))`;
+    const loBlendTpExpr = `max(0,min(1,((${loBlendProgressExpr})-0.1)/0.8))`;
+    const fadeInExpr = smoothstepExpr(loBlendProgressExpr, 0, 0.1);
+    const fadeOutExpr = smoothstepExpr(loBlendProgressExpr, 0.9, 1.0);
+    const aZoomExpr = `(1/(1+(${aTargetScaleDelta})*(${hiScaleTpExpr})))`;
+    const bZoomExpr = `(1/(${bStartScaleBase}+(${bStartScaleDelta})*(${hiScaleTpExpr})))`;
+    const bBlurMixExpr = `(${blurStrengthFixed}*(1-(${hiBlendTpExpr})))`;
+    const aScaleWExpr = escapeExpr(`max(2,trunc(${W}*${aZoomExpr}/2)*2)`);
+    const aScaleHExpr = escapeExpr(`max(2,trunc(${H}*${aZoomExpr}/2)*2)`);
+    const bScaleWExpr = escapeExpr(`max(2,trunc(${W}*${bZoomExpr}/2)*2)`);
+    const bScaleHExpr = escapeExpr(`max(2,trunc(${H}*${bZoomExpr}/2)*2)`);
+    const bBgBlendExpr = escapeExpr(`A*(1-(${bBlurMixExpr}))+B*(${bBlurMixExpr})`);
+    const midBlendExpr = escapeExpr(`A*(1-(${loBlendTpExpr}))+B*(${loBlendTpExpr})`);
+    const fadeInBlendExpr = escapeExpr(`A*(1-(${fadeInExpr}))+B*(${fadeInExpr})`);
+    const fadeOutBlendExpr = escapeExpr(`A*(1-(${fadeOutExpr}))+B*(${fadeOutExpr})`);
+
+    if (requestedTransitionFrames !== plan.transitionFrames) {
+      if (plan.transitionFrames > 0) {
+        console.warn(
+          `  [warn] transition reduced from ${formatSeconds(requestedTransitionFrames / fps)}s to ${formatSeconds(effectiveTransitionDuration)}s to keep the timeline frame-accurate.`,
+        );
+      } else if (n > 1) {
+        console.warn(
+          '  [warn] clips are too short for a centered overlap transition; falling back to hard cuts while preserving total duration.',
+        );
+      }
+    }
+
     const inputArgs: string[] = [];
     const clipMeta: Array<{ videoIdx: number; duration: number }> = [];
     let inputCounter = 0;
@@ -657,75 +756,91 @@ export class RenderService {
       inputCounter++;
     }
 
-    // ── 构建 filter_complex ───────────────────────────────────────────────────
     const filterParts: string[] = [];
     const segmentLabels: string[] = [];
 
-    if (n === 1) {
-      filterParts.push(`[0:v]setpts=PTS-STARTPTS[vout]`);
-    } else {
-      for (let i = 0; i < n - 1; i++) {
-        const current = clipMeta[i];
-        const next = clipMeta[i + 1];
-        const bodyDuration = Math.max(0, current.duration - D);
-        const availableTailDuration = Math.min(current.duration, D);
-        const tailStart = Math.max(0, current.duration - D);
-        const tailPadDuration = Math.max(0, D - availableTailDuration);
-        const stillPadDuration = Math.max(0, D - frameDuration);
-
-        if (tailPadDuration > minSegmentDuration) {
-          console.warn(
-            `  ⚠ 片段 ${clips[i].key} 尾部不足 ${D.toFixed(1)}s，已自动复制最后一帧补足拉近叠化转场`,
-          );
-        }
-
-        // body：clip[i] 去掉最后 D 秒
-        if (bodyDuration > minSegmentDuration) {
-          filterParts.push(
-            `[${current.videoIdx}:v]trim=duration=${formatSeconds(bodyDuration)},setpts=PTS-STARTPTS,fps=fps=${fps}[body${i}]`,
-          );
-          segmentLabels.push(`[body${i}]`);
-        }
-
-        // zoomfade：clip[i] 最后 D 秒，向中心拉近（1→zoomScale）并淡出
-        filterParts.push(
-          `[${current.videoIdx}:v]trim=start=${formatSeconds(tailStart)}:duration=${formatSeconds(availableTailDuration)},setpts=PTS-STARTPTS` +
-          (tailPadDuration > 0
-            ? `,tpad=stop_mode=clone:stop_duration=${formatSeconds(tailPadDuration)}`
-            : '') +
-          `,fps=fps=${fps_hi}` +
-          `,scale='${scaleW}':'${scaleH}':eval=frame` +
-          `,crop=${W}:${H}:x='${cropX}':y='${cropY}'` +
-          `,tmix=frames=${oversample}` +
-          `,fps=fps=${fps}` +
-          `,format=rgba,fade=t=out:st=${formatSeconds(D * 0.65)}:d=${formatSeconds(D * 0.35)}:alpha=1[zoomfade${i}]`,
-        );
-
-        // still：clip[i+1] 首帧静帧，持续 D 秒作底层
-        filterParts.push(
-          `[${next.videoIdx}:v]trim=end_frame=1,setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=${formatSeconds(stillPadDuration)},fps=fps=${fps}[still${i}]`,
-        );
-
-        // transition：静帧垫底，拉近淡出叠上层
-        filterParts.push(
-          `[still${i}][zoomfade${i}]overlay=eof_action=pass:shortest=1,format=yuv420p,fps=fps=${fps}[transition${i}]`,
-        );
-        segmentLabels.push(`[transition${i}]`);
+    for (let i = 0; i < n; i++) {
+      const bodyFrames = plan.bodyFrames[i];
+      if (bodyFrames <= 0) {
+        continue;
       }
 
-      // 最后一段：全段正常播放，不淡入
       filterParts.push(
-        `[${clipMeta[n - 1].videoIdx}:v]setpts=PTS-STARTPTS,fps=fps=${fps}[last]`,
-      );
-      segmentLabels.push('[last]');
-
-      filterParts.push(
-        `${segmentLabels.join('')}concat=n=${segmentLabels.length}:v=1:a=0[vout]`,
+        `[${clipMeta[i].videoIdx}:v]trim=start_frame=${plan.bodyStartFrames[i]}:end_frame=${plan.bodyStartFrames[i] + bodyFrames},setpts=PTS-STARTPTS,fps=fps=${fps},format=rgba[body${i}]`,
       );
     }
 
-    const filterComplex = filterParts.join(';');
+    if (plan.transitionFrames > 0) {
+      for (let i = 0; i < n - 1; i++) {
+        const current = clipMeta[i];
+        const next = clipMeta[i + 1];
+        const tailTrim = `[${current.videoIdx}:v]trim=start_frame=${plan.tailStartFrames[i]}:end_frame=${clipFrames[i]},setpts=PTS-STARTPTS`;
+        const headTrim = `[${next.videoIdx}:v]trim=start_frame=0:end_frame=${plan.headFrames[i]},setpts=PTS-STARTPTS`;
 
+        filterParts.push(
+          `${tailTrim}` +
+          (plan.rightFrames > 0
+            ? `,tpad=stop_mode=clone:stop=${plan.rightFrames}`
+            : '') +
+          `,fps=fps=${fps},format=rgba,split=2[arawbase${i}][arawwork${i}]`,
+        );
+        filterParts.push(
+          `${headTrim}` +
+          (plan.leftFrames > 0
+            ? `,tpad=start_mode=clone:start=${plan.leftFrames}`
+            : '') +
+          `,fps=fps=${fps},format=rgba,split=3[brawbase${i}][brawsharp${i}][brawfg${i}]`,
+        );
+
+        filterParts.push(
+          `[arawwork${i}]fps=fps=${fpsHi},scale='${aScaleWExpr}':'${aScaleHExpr}':eval=frame,crop=${W}:${H}:x='(in_w-out_w)/2':y='(in_h-out_h)/2',tmix=frames=${sampleCount},fps=fps=${fps},format=rgba[atrans${i}]`,
+        );
+        filterParts.push(
+          `[brawsharp${i}]fps=fps=${fpsHi},split=2[bghisharp${i}][bgblurin${i}]`,
+        );
+        filterParts.push(
+          `[bgblurin${i}]gblur=sigma=${bgBlurSigma}[bghiblur${i}]`,
+        );
+        filterParts.push(
+          `[bghisharp${i}][bghiblur${i}]blend=all_expr='${bBgBlendExpr}'[bgmix${i}]`,
+        );
+        filterParts.push(
+          `[brawfg${i}]fps=fps=${fpsHi},scale='${bScaleWExpr}':'${bScaleHExpr}':eval=frame[bfghi${i}]`,
+        );
+        filterParts.push(
+          `[bgmix${i}][bfghi${i}]overlay=x='(W-w)/2':y='(H-h)/2':eval=frame,tmix=frames=${sampleCount},fps=fps=${fps},format=rgba[btrans${i}]`,
+        );
+        filterParts.push(
+          `[atrans${i}][btrans${i}]blend=all_expr='${midBlendExpr}'[tmid${i}]`,
+        );
+        filterParts.push(
+          `[arawbase${i}][tmid${i}]blend=all_expr='${fadeInBlendExpr}'[tstage${i}]`,
+        );
+        filterParts.push(
+          `[tstage${i}][brawbase${i}]blend=all_expr='${fadeOutBlendExpr}',format=rgba[transition${i}]`,
+        );
+      }
+    }
+
+    const orderedSegmentLabels: string[] = [];
+    for (let i = 0; i < n; i++) {
+      if (plan.bodyFrames[i] > 0) {
+        orderedSegmentLabels.push(`[body${i}]`);
+      }
+      if (plan.transitionFrames > 0 && i < n - 1) {
+        orderedSegmentLabels.push(`[transition${i}]`);
+      }
+    }
+
+    if (orderedSegmentLabels.length === 0) {
+      filterParts.push(`[0:v]setpts=PTS-STARTPTS,fps=fps=${fps},format=rgba[vout]`);
+    } else if (orderedSegmentLabels.length === 1) {
+      filterParts.push(`${orderedSegmentLabels[0]}copy[vout]`);
+    } else {
+      filterParts.push(`${orderedSegmentLabels.join('')}concat=n=${orderedSegmentLabels.length}:v=1:a=0[vout]`);
+    }
+
+    const filterComplex = filterParts.join(';');
     const args: string[] = [
       ...inputArgs,
       '-filter_complex', filterComplex,
@@ -738,7 +853,9 @@ export class RenderService {
       '-y', outputPath,
     ];
 
-    console.log(`\n[2/3] FFmpeg 中心拉近叠化拼接 ${n} 个片段（拉近 ${D}s，放大 ${zoomScale}x）...`);
+    console.log(
+      `\n[2/3] FFmpeg centered zoom-dissolve concat ${n} clips (transition ${formatSeconds(effectiveTransitionDuration)}s, blur ${blurStrengthFixed}, samples ${sampleCount}, A target ${aTargetScaleValue.toFixed(3)}, B start ${bStartScaleValue.toFixed(3)})...`,
+    );
     execFileSync(ffmpegPath, args, { timeout: 600_000 });
 
     updateProgress(task, 1);
@@ -764,18 +881,18 @@ export class RenderService {
     if (['trim-concat', 'xfade-concat', 'trim-xfade-concat', 'zoom-dissolve-concat'].includes(request.templateId)) {
       if (!ffmpegPath || !ffprobePath) {
         throw new RenderError(
-          `${request.templateId} 模板依赖 FFmpeg，请安装 FFmpeg 或通过环境变量 FFMPEG_PATH / FFPROBE_PATH 指定路径。`,
+          `${request.templateId} requires FFmpeg. Install FFmpeg or set FFMPEG_PATH / FFPROBE_PATH.`, 
         );
       }
 
       if (providedVideoCount > 0 && videoInfo.size !== providedVideoCount) {
         throw new RenderError(
-          `${request.templateId} 模板无法读取全部输入视频的时长，请确认素材可被 ffprobe 正常探测。`,
+          `${request.templateId} could not read every input duration via ffprobe. Please verify the source media can be probed correctly.`, 
         );
       }
     }
 
-    // 分辨率：auto 则探测输入视频，否则用具名预设
+    // Resolution: auto probes the first input video; otherwise use the requested preset.
     let resPreset: ResolutionPreset;
     if (request.preset === AUTO_PRESET) {
       const firstVideoKey = findFirstVideoKey(
@@ -789,11 +906,11 @@ export class RenderService {
       const probed = firstVideoKey ? videoInfo.get(firstVideoKey) ?? null : null;
       if (probed) {
         console.log(
-          `  自动探测分辨率: ${probed.width}×${probed.height} ${probed.fps}fps (来源: ${path.basename(videoPath!)})`,
+          `  auto-detected resolution ${probed.width}x${probed.height} ${probed.fps}fps (source: ${path.basename(videoPath!)})`, 
         );
         resPreset = probed;
       } else {
-        console.warn(`  ⚠ 无法探测视频信息，回退到 douyin_vertical (1080×1920)`);
+        console.warn(`  [warn] failed to probe video metadata, falling back to douyin_vertical (1080x1920)`);
         resPreset = getResolutionPreset('douyin_vertical');
       }
     } else {
@@ -802,12 +919,12 @@ export class RenderService {
 
     const qualPreset = getQualityPreset(request.quality);
 
-    // 创建任务（外部传入 taskId 则覆盖）
+    // 鍒涘缓浠诲姟锛堝閮ㄤ紶鍏?taskId 鍒欒鐩栵級
     const task = createTask(request.templateId, request.variables);
     if (request.taskId) task.id = request.taskId;
     startTask(task);
 
-    // 确定输出路径
+    // 纭畾杈撳嚭璺緞
     const projectName = path.basename(request.projectDir);
     const outDir = path.join(this.outputDir, projectName);
     fs.mkdirSync(outDir, { recursive: true });
@@ -817,28 +934,27 @@ export class RenderService {
     const cleanupFns: Array<() => void> = [];
 
     try {
-      // ── trim-concat：直接走 FFmpeg，不经过 Revideo ──
+      // 鈹€鈹€ trim-concat锛氱洿鎺ヨ蛋 FFmpeg锛屼笉缁忚繃 Revideo 鈹€鈹€
       if (request.templateId === 'trim-concat') {
         const TRIM_START = 2;
 
-        console.log(`\n[1/3] 收集并校验视频片段...`);
+        console.log(`\n[1/3] Collecting and validating clips...`);
 
-        // 按 manifest 变量顺序收集所有有效片段（支持具名键和 video_list）
         const allClips = collectClips(request.variables, request.templateInfo, videoInfo);
         const clips: Array<{ key: string; src: string; duration: number }> = [];
         for (const clip of allClips) {
           if (clip.duration > 0 && clip.duration <= TRIM_START) {
-            console.warn(`  ⚠ 跳过 ${clip.key}：时长 ${clip.duration.toFixed(1)}s 不足 ${TRIM_START}s`);
+            console.warn(`  [warn] skip ${clip.key}: duration ${clip.duration.toFixed(1)}s is not longer than ${TRIM_START}s`);
             continue;
           }
           clips.push(clip);
         }
 
         if (clips.length === 0) {
-          throw new RenderError('没有可用的视频片段（全部片段时长均不足 2 秒或未提供）');
+          throw new RenderError('No usable video clips remain after trim filtering.');
         }
 
-        console.log(`  共 ${clips.length} 个片段，每段跳过前 ${TRIM_START}s`);
+        console.log(`  ${clips.length} clips, each skipping the first ${TRIM_START}s`);
 
         const normalized = this.normalizeClips(
           ffmpegPath!,
@@ -862,7 +978,7 @@ export class RenderService {
         const elapsed = (Date.now() - startTime) / 1000;
         completeTask(task, outputPath);
 
-        console.log(`[3/3] 归档产物...`);
+        console.log(`[3/3] Writing metadata...`);
         await this.writeMeta(outDir, task, request, resPreset, elapsed);
 
         return {
@@ -873,9 +989,9 @@ export class RenderService {
         };
       }
 
-      // ── xfade-concat：前段淡出拼接，直接走 FFmpeg ──
+      // 鈹€鈹€ xfade-concat锛氬墠娈垫贰鍑烘嫾鎺ワ紝鐩存帴璧?FFmpeg 鈹€鈹€
       if (request.templateId === 'xfade-concat') {
-        console.log(`\n[1/3] 收集并校验视频片段...`);
+        console.log(`\n[1/3] Collecting and validating clips...`);
 
         const transitionDuration = typeof request.variables['transition_duration'] === 'number'
           ? request.variables['transition_duration']
@@ -884,10 +1000,10 @@ export class RenderService {
         const clips = collectClips(request.variables, request.templateInfo, videoInfo);
 
         if (clips.length === 0) {
-          throw new RenderError('没有可用的视频片段（未提供任何视频）');
+          throw new RenderError('No usable video clips were provided.');
         }
 
-        console.log(`  共 ${clips.length} 个片段，前段淡出转场时长 ${transitionDuration}s`);
+        console.log(`  ${clips.length} clips, fade-out transition ${transitionDuration}s`);
 
         const normalized = this.normalizeClips(
           ffmpegPath!,
@@ -912,7 +1028,7 @@ export class RenderService {
         const elapsed = (Date.now() - startTime) / 1000;
         completeTask(task, outputPath);
 
-        console.log(`[3/3] 归档产物...`);
+        console.log(`[3/3] Writing metadata...`);
         await this.writeMeta(outDir, task, request, resPreset, elapsed);
 
         return {
@@ -923,9 +1039,9 @@ export class RenderService {
         };
       }
 
-      // ── trim-xfade-concat：裁头 + 前段淡出拼接，直接走 FFmpeg ──
+      // 鈹€鈹€ trim-xfade-concat锛氳澶?+ 鍓嶆娣″嚭鎷兼帴锛岀洿鎺ヨ蛋 FFmpeg 鈹€鈹€
       if (request.templateId === 'trim-xfade-concat') {
-        console.log(`\n[1/3] 收集并校验视频片段...`);
+        console.log(`\n[1/3] Collecting and validating clips...`);
 
         const trimStart = typeof request.variables['trim_start'] === 'number'
           ? request.variables['trim_start']
@@ -938,17 +1054,17 @@ export class RenderService {
         const clips: Array<{ key: string; src: string; duration: number }> = [];
         for (const clip of allClips2) {
           if (clip.duration > 0 && clip.duration <= trimStart) {
-            console.warn(`  ⚠ 跳过 ${clip.key}：时长 ${clip.duration.toFixed(1)}s 不足 ${trimStart}s`);
+            console.warn(`  [warn] skip ${clip.key}: duration ${clip.duration.toFixed(1)}s is not longer than trim_start ${trimStart}s`);
             continue;
           }
           clips.push(clip);
         }
 
         if (clips.length === 0) {
-          throw new RenderError('没有可用的视频片段（全部片段时长均不足裁剪长度或未提供）');
+          throw new RenderError('No usable video clips remain after trim filtering.');
         }
 
-        console.log(`  共 ${clips.length} 个片段，裁去前 ${trimStart}s，前段淡出转场时长 ${transitionDuration}s`);
+        console.log(`  ${clips.length} clips, trim_start ${trimStart}s, transition ${transitionDuration}s`);
 
         const normalized = this.normalizeClips(
           ffmpegPath!,
@@ -974,7 +1090,7 @@ export class RenderService {
         const elapsed = (Date.now() - startTime) / 1000;
         completeTask(task, outputPath);
 
-        console.log(`[3/3] 归档产物...`);
+        console.log(`[3/3] Writing metadata...`);
         await this.writeMeta(outDir, task, request, resPreset, elapsed);
 
         return {
@@ -985,24 +1101,35 @@ export class RenderService {
         };
       }
 
-      // ── zoom-dissolve-concat：中心拉近 + xfade 叠化 ──
+      // 鈹€鈹€ zoom-dissolve-concat锛氫腑蹇冩媺杩?+ xfade 鍙犲寲 鈹€鈹€
       if (request.templateId === 'zoom-dissolve-concat') {
-        console.log(`\n[1/3] 收集并校验视频片段...`);
+        console.log(`\n[1/3] Collecting and validating clips...`);
 
         const transitionDuration = typeof request.variables['transition_duration'] === 'number'
           ? request.variables['transition_duration']
-          : 0.4;
-        const zoomScale = typeof request.variables['zoom_scale'] === 'number'
-          ? request.variables['zoom_scale']
-          : 1.18;
+          : 2.0;
+        const blurStrength = typeof request.variables['blurStrength'] === 'number'
+          ? request.variables['blurStrength']
+          : 0.3;
+        const numSamples = typeof request.variables['numSamples'] === 'number'
+          ? request.variables['numSamples']
+          : 10;
+        const aTargetScale = typeof request.variables['aTargetScale'] === 'number'
+          ? request.variables['aTargetScale']
+          : 0.5;
+        const bStartScale = typeof request.variables['bStartScale'] === 'number'
+          ? request.variables['bStartScale']
+          : 1.5;
 
         const clips = collectClips(request.variables, request.templateInfo, videoInfo);
 
         if (clips.length === 0) {
-          throw new RenderError('没有可用的视频片段（未提供任何视频）');
+          throw new RenderError('No usable video clips were provided.');
         }
 
-        console.log(`  共 ${clips.length} 个片段，中心拉近时长 ${transitionDuration}s，放大倍数 ${zoomScale}x`);
+        console.log(
+          `  共 ${clips.length} 个片段，转场 ${transitionDuration}s，blur ${blurStrength}，samples ${numSamples}，A target ${aTargetScale}，B start ${bStartScale}`,
+        );
 
         const normalized = this.normalizeClips(
           ffmpegPath!,
@@ -1021,13 +1148,16 @@ export class RenderService {
           task,
           resPreset,
           transitionDuration,
-          zoomScale,
+          blurStrength,
+          numSamples,
+          aTargetScale,
+          bStartScale,
         );
 
         const elapsed = (Date.now() - startTime) / 1000;
         completeTask(task, outputPath);
 
-        console.log(`[3/3] 归档产物...`);
+        console.log(`[3/3] Writing metadata...`);
         await this.writeMeta(outDir, task, request, resPreset, elapsed);
 
         return {
@@ -1038,13 +1168,13 @@ export class RenderService {
         };
       }
 
-      // ── 其他模板：走 Revideo 渲染引擎 ──
-      console.log(`\n[1/3] 准备渲染环境...`);
+      // 鈹€鈹€ 鍏朵粬妯℃澘锛氳蛋 Revideo 娓叉煋寮曟搸 鈹€鈹€
+      console.log(`\n[1/3] Preparing render environment...`);
 
-      // 动态导入 @revideo/renderer
+      // 鍔ㄦ€佸鍏?@revideo/renderer
       const { renderVideo } = await import('@revideo/renderer');
 
-      console.log(`[2/3] 调用 Revideo 渲染引擎...`);
+      console.log(`[2/3] Running Revideo renderer...`);
 
       const outputPath = await renderVideo({
         projectFile: request.templateInfo.entryPath,
@@ -1065,9 +1195,9 @@ export class RenderService {
       const elapsed = (Date.now() - startTime) / 1000;
       completeTask(task, outputPath);
 
-      console.log(`[3/3] 归档产物...`);
+      console.log(`[3/3] Writing metadata...`);
 
-      // 写入 meta.json
+      // 鍐欏叆 meta.json
       await this.writeMeta(outDir, task, request, resPreset, elapsed);
 
       return {

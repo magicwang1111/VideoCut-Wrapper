@@ -141,13 +141,16 @@ variables:
 
 ### `zoom-dissolve-concat` — 拉近叠化拼接
 
-多段视频之间先做由四周向画面中心收束的拉近，再与下一段进行叠化转场，适合更明显的剪映式拉近叠化节奏。
+多段视频之间使用更接近剪映“叠化拉近”的双流重叠转场。每个转场围绕切点对称展开，超出片段边界的部分用边界帧克隆补齐，总时长保持不变。
 
 | 变量 | 类型 | 默认 | 说明 |
 |------|------|------|------|
 | `clip_1` ~ `clip_6` | video | — | 视频片段，clip_1 必填 |
-| `transition_duration` | number | 0.4 | 拉近与叠化时长（秒，0.1–3.0） |
-| `zoom_scale` | number | 1.18 | 放大倍数（建议 1.1–1.3） |
+| `transition_duration` | number | 2.0 | 转场总时长（秒，0.1–3.0） |
+| `blurStrength` | number | 0.3 | 模糊强度（0–1） |
+| `numSamples` | number | 10 | 过采样/混帧数（5–25，渲染时会取整） |
+| `aTargetScale` | number | 0.5 | A 路目标缩放（0.1–0.9） |
+| `bStartScale` | number | 1.5 | B 路起始缩放（1.1–3.0） |
 
 ### `simple-slideshow` — 简单轮播
 
