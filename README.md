@@ -183,6 +183,106 @@ variables:
 | `enable_transition` | boolean | true | 启用转场 |
 | `bgm_volume` | number | 0.3 | 背景音乐音量（0–1） |
 
+### `flash-black-concat` — 闪黑拼接
+
+每段视频末尾淡出至黑、下一段从黑淡入，营造"闪黑"节奏感。
+
+| 变量 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `clip_1` ~ `clip_6` | video | — | 视频片段，clip_1 必填 |
+| `transition_duration` | number | 0.5 | 闪黑时长（秒，0.1–2.0） |
+
+### `trim-mixed-concat` — 混合转场拼接
+
+裁去每段开头，每个连接点可独立指定转场类型（flash-black / dissolve / cut），全局共享一个转场时长。最多支持 6 段。
+
+| 变量 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `clip_1` ~ `clip_6` | video | — | 视频片段，clip_1 必填 |
+| `trim_start` | number | 2 | 裁去开头秒数（所有片段共用） |
+| `transition_1` ~ `transition_5` | select | flash-black | 各连接点转场类型 |
+| `transition_duration` | number | 0.5 | 转场时长（秒，所有连接点共用） |
+
+---
+
+## Pipeline 模式
+
+Pipeline 是一种不依赖模板的灵活拼接方式。每段素材可独立设置剪头/剪尾时长，每个连接点可独立设置转场类型和时长，片段数量不限。**修改剪辑组合只需改 `config.yaml`，无需改代码。**
+
+### 配置格式
+
+```yaml
+mode: pipeline          # 标识为 pipeline 模式，不使用 template 字段
+
+preset: auto            # 分辨率预设（默认 auto，探测第一个片段）
+quality: high           # 输出质量（默认 high）
+
+# output:
+#   filename: my-cut.mp4  # 自定义输出文件名（默认 final.mp4）
+
+clips:
+  - src: "D:/input/1.mp4"
+    trim_start: 3         # 剪去开头 N 秒（默认 0）
+    trim_end: 0           # 剪去结尾 N 秒（默认 0）
+
+  - src: "D:/input/2.mp4"
+    trim_start: 2
+    trim_end: 1           # 每段独立设置
+
+  - src: "D:/input/3.mp4"
+    trim_start: 1
+
+transitions:
+  # transitions[i] = clips[i] 与 clips[i+1] 之间的转场
+  # 条目不足时，由 default_transition 补足
+  - type: flash-black     # flash-black | dissolve | cut
+    duration: 0.5
+
+  - type: dissolve
+    duration: 0.8         # 每个连接点独立时长
+
+default_transition:       # 兜底转场（可选）
+  type: cut
+  duration: 0
+```
+
+### 渲染
+
+```bash
+npx tsx src/cli.ts render projects/my-pipeline/config.yaml
+```
+
+### 与 trim-mixed-concat 的对比
+
+| | `trim-mixed-concat` 模板 | Pipeline 模式 |
+|---|---|---|
+| 片段数量 | 最多 6 段 | 不限 |
+| 每段 trim_start | 所有片段共用一个值 | 每段独立设置 |
+| trim_end | 不支持 | 支持 |
+| 转场类型 | 每个连接点可独立 | 每个连接点可独立 |
+| 转场时长 | 所有连接点共用一个值 | 每个连接点独立设置 |
+
+### 新增转场类型时需要改代码
+
+新增"剪辑/素材组合"只改 `config.yaml`。但若需要实现一种**全新的视觉转场效果**（如擦除、旋转），需同时修改以下 3 处：
+
+1. **`src/pipeline/types.ts`** — 将新类型名加入联合类型：
+   ```typescript
+   export type PipelineJunctionType = 'flash-black' | 'dissolve' | 'cut' | 'wipe-left';
+   ```
+
+2. **`src/pipeline/config.ts`** — 在 `parseJunctionType` 中加入校验：
+   ```typescript
+   if (raw === 'flash-black' || raw === 'dissolve' || raw === 'cut' || raw === 'wipe-left') return raw;
+   ```
+
+3. **`src/pipeline/runner.ts`** — 在 `ffmpegPipelineConcat` 中添加 FFmpeg filter 逻辑（5–15 行）：
+   ```typescript
+   } else if (t === 'wipe-left') {
+     // 实现对应的 FFmpeg filter_complex 片段
+   }
+   ```
+
 ---
 
 ## 新增模板
@@ -233,6 +333,11 @@ VideoCut-Wrapper/
 │   │   ├── index.ts        # ProjectManager：配置解析 + 素材路径解析
 │   │   ├── config-parser.ts
 │   │   └── asset-resolver.ts
+│   ├── pipeline/
+│   │   ├── types.ts        # Pipeline 配置类型定义
+│   │   ├── config.ts       # Pipeline YAML 解析 + 路径解析
+│   │   ├── runner.ts       # PipelineRunner：FFmpeg filter_complex 构建与执行
+│   │   └── index.ts        # 模块导出
 │   └── render/
 │       ├── index.ts        # RenderService：FFmpeg / Revideo 渲染调度
 │       ├── task.ts         # 渲染任务状态管理

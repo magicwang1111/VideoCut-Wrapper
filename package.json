@@ -4,7 +4,7 @@
   "description": "模板化视频剪辑系统 — 单镜像多模板、统一渲染 API、模板注册制",
   "type": "module",
   "bin": {
-    "videocut": "./dist/cli.js"
+    "videocut": "./bin/videocut.js"
   },
   "scripts": {
     "build": "tsc",

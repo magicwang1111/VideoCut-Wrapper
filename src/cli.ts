@@ -300,14 +300,81 @@ program
   .option('--output <dir>', '覆盖输出目录')
   .option('--preview', '快速预览（半分辨率）')
   .action(async (configPath: string, options: Record<string, unknown>) => {
+    // Peek at raw YAML to detect mode: pipeline before any template lookup
+    const { isPipelineConfig, resolvePipelineConfig, PipelineRunner } =
+      await import('./pipeline/index.js');
+    const { loadRawYaml } = await import('./pipeline/config.js');
+
+    let rawYaml: unknown;
+    try {
+      rawYaml = loadRawYaml(path.resolve(configPath));
+    } catch (err) {
+      if (err instanceof VideoCutError) {
+        console.error(`\n✗ ${err.message}\n`);
+        process.exit(1);
+      }
+      throw err;
+    }
+
+    if (isPipelineConfig(rawYaml)) {
+      // ── Pipeline branch ───────────────────────────────────────────────
+      try {
+        const ctx = resolvePipelineConfig(configPath);
+        const overrides: { preset?: string; quality?: string } = {};
+        if (options.preset) overrides.preset = options.preset as string;
+        if (options.quality) overrides.quality = options.quality as string;
+        if (options.preview) overrides.preset = 'preview';
+
+        const { resolveFfmpegPath, resolveFfprobePath } = await import('./render/index.js');
+        const ffmpegPath = resolveFfmpegPath(ROOT_DIR);
+        const ffprobePath = resolveFfprobePath(ROOT_DIR);
+        if (!ffmpegPath || !ffprobePath) {
+          console.error(
+            '\n✗ Pipeline 模式依赖 FFmpeg，请安装 FFmpeg 或设置 FFMPEG_PATH / FFPROBE_PATH 环境变量\n',
+          );
+          process.exit(1);
+        }
+
+        const resolvedPreset = overrides.preset ?? ctx.config.preset ?? 'auto';
+        console.log(`\n开始渲染 (Pipeline 模式):`);
+        console.log(`  片段数: ${ctx.config.clips.length}`);
+        if (resolvedPreset === 'auto') {
+          console.log(`  预设: auto（将从第一个片段探测分辨率）`);
+        } else {
+          const p = getResolutionPreset(resolvedPreset);
+          console.log(`  预设: ${resolvedPreset} (${p.width}×${p.height})`);
+        }
+        console.log(`  质量: ${overrides.quality ?? ctx.config.quality ?? 'high'}`);
+
+        const runner = new PipelineRunner(ROOT_DIR);
+        const result = await runner.run(ctx, ffmpegPath, ffprobePath, overrides);
+
+        if (result.status === 'completed') {
+          console.log(`\n✓ 渲染完成!`);
+          console.log(`  输出: ${result.outputPath}`);
+          if (result.duration) console.log(`  耗时: ${result.duration.toFixed(1)} 秒`);
+        } else {
+          console.error(`\n✗ 渲染失败: ${result.error}`);
+          process.exit(1);
+        }
+      } catch (err) {
+        if (err instanceof VideoCutError) {
+          console.error(`\n✗ ${err.message}\n`);
+          process.exit(1);
+        }
+        throw err;
+      }
+      console.log('');
+      return;
+    }
+
+    // ── Normal template branch ────────────────────────────────────────
     const registry = createRegistry();
     const projectManager = new ProjectManager(registry, ROOT_DIR);
 
     try {
-      // 校验
       const resolved = projectManager.resolve(configPath);
 
-      // 应用 CLI 覆盖
       if (options.preset) resolved.preset = options.preset as string;
       if (options.quality) resolved.quality = options.quality as string;
       if (options.preview) resolved.preset = 'preview';

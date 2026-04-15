@@ -77,7 +77,7 @@ function findFileRecursive(
   return null;
 }
 
-function resolveFfprobePath(rootDir: string): string | null {
+export function resolveFfprobePath(rootDir: string): string | null {
   const explicitPath = process.env.FFPROBE_PATH;
   if (explicitPath && fs.existsSync(explicitPath)) {
     return explicitPath;
@@ -110,7 +110,7 @@ function resolveFfprobePath(rootDir: string): string | null {
   }
 }
 
-function resolveFfmpegPath(rootDir: string): string | null {
+export function resolveFfmpegPath(rootDir: string): string | null {
   const explicitPath = process.env.FFMPEG_PATH;
   if (explicitPath && fs.existsSync(explicitPath)) {
     return explicitPath;
