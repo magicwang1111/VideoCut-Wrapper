@@ -23,6 +23,7 @@ import { handleXfadeConcat } from './transitions/xfade-concat.js';
 import { handleTrimXfadeConcat } from './transitions/trim-xfade-concat.js';
 import { handleZoomDissolveConcat } from './transitions/zoom-dissolve-concat.js';
 import { handleFlashBlackConcat } from './transitions/flash-black-concat.js';
+import { handleTrimMixedConcat } from './transitions/trim-mixed-concat.js';
 import type {
   TransitionHandlerArgs,
   TransitionHandlerResult,
@@ -386,7 +387,7 @@ export class RenderService {
     );
 
     if (
-      ['trim-concat', 'xfade-concat', 'trim-xfade-concat', 'zoom-dissolve-concat', 'flash-black-concat']
+      ['trim-concat', 'xfade-concat', 'trim-xfade-concat', 'zoom-dissolve-concat', 'flash-black-concat', 'trim-mixed-concat']
         .includes(request.templateId)
     ) {
       if (!ffmpegPath || !ffprobePath) {
@@ -513,6 +514,18 @@ export class RenderService {
           resPreset,
           startTime,
           handleFlashBlackConcat(transitionArgs),
+          cleanupFns,
+        );
+      }
+
+      if (request.templateId === 'trim-mixed-concat') {
+        return await this.finalizeTransitionSuccess(
+          request,
+          task,
+          outDir,
+          resPreset,
+          startTime,
+          handleTrimMixedConcat(transitionArgs),
           cleanupFns,
         );
       }
