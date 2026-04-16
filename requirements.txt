@@ -1,3 +1,9 @@
-# Convenience entrypoint for environments that expect requirements.txt.
-# The dependency source of truth remains pyproject.toml.
--e .
+# Primary human-readable runtime dependencies for local setup.
+# Keep this file in sync with pyproject.toml when dependencies change.
+fastapi>=0.116,<1.0
+uvicorn>=0.35,<1.0
+typer>=0.16,<1.0
+PyYAML>=6.0,<7.0
+pydantic>=2.11,<3.0
+oss2>=2.19,<3.0
+python-multipart>=0.0.20,<1.0

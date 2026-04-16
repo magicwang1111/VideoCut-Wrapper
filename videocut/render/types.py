@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-from videocut.pipeline.types import PipelineBgmConfig
 from videocut.presets import ResolutionPreset
 from videocut.registry import TemplateInfo
+
+if TYPE_CHECKING:
+    from videocut.pipeline.types import PipelineBgmConfig
 
 
 @dataclass(slots=True)
@@ -40,4 +42,3 @@ class VideoClip:
     key: str
     src: str
     duration: float
-
