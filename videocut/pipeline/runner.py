@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import random
 import subprocess
 import time
 from datetime import datetime
@@ -13,6 +14,59 @@ from videocut.presets import AUTO_PRESET, QualityPreset, ResolutionPreset, get_q
 from videocut.render.task import complete_task, create_task, fail_task, start_task, update_progress
 from videocut.render.transitions.shared import normalize_clips
 from videocut.render.types import RenderResult
+
+
+_BGM_EXTENSIONS = {".mp3", ".wav", ".aac", ".ogg", ".flac", ".m4a"}
+
+
+def scan_bgm_files(bgm_dir: Path) -> list[Path]:
+    if not bgm_dir.is_dir():
+        raise RenderError(f"BGM 目录不存在: {bgm_dir}")
+    files = [p for p in bgm_dir.iterdir() if p.suffix.lower() in _BGM_EXTENSIONS]
+    if not files:
+        raise RenderError(f"BGM 目录中没有找到音频文件: {bgm_dir}")
+    return files
+
+
+def apply_bgm(
+    ffmpeg_path: str,
+    ffprobe_path: str,
+    video_path: str,
+    bgm_file: Path,
+    volume: float,
+    fade_out: float,
+) -> None:
+    """将 bgm_file 混入 video_path（视频 → 临时文件 → 覆盖原文件）。"""
+    tmp_path = video_path + ".bgm_tmp.mp4"
+    raw = subprocess.check_output(
+        [ffprobe_path, "-v", "error", "-print_format", "json", "-show_format", video_path],
+        encoding="utf-8",
+        timeout=10,
+    )
+    video_duration = float(json.loads(raw)["format"]["duration"])
+
+    audio_filter = (
+        f"[1:a]aloop=loop=-1:size=2000000000,"
+        f"volume={volume:.4f},"
+        f"atrim=end={video_duration:.6f}"
+    )
+    if fade_out > 0:
+        fade_start = max(0.0, video_duration - fade_out)
+        audio_filter += f",afade=t=out:st={fade_start:.6f}:d={fade_out:.4f}"
+    audio_filter += "[bgm]"
+
+    subprocess.run(
+        [
+            ffmpeg_path, "-i", video_path, "-i", str(bgm_file),
+            "-filter_complex", audio_filter,
+            "-map", "0:v", "-map", "[bgm]",
+            "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+            "-y", tmp_path,
+        ],
+        check=True,
+        timeout=600,
+    )
+    Path(tmp_path).replace(video_path)
 
 
 def probe_single_video(ffprobe_path: str, video_path: str) -> dict[str, float | int]:
@@ -206,7 +260,10 @@ class PipelineRunner:
 
         preset = overrides.get("preset") or config.preset or AUTO_PRESET
         quality = overrides.get("quality") or config.quality or "high"
-        output_filename = config.output.filename if config.output and config.output.filename else "final.mp4"
+        base_name = config.output.filename if config.output and config.output.filename else "final.mp4"
+        stem, ext = Path(base_name).stem, Path(base_name).suffix or ".mp4"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_filename = f"{stem}_{timestamp}{ext}"
         project_name = project_dir.name
 
         task = create_task("pipeline", {})
@@ -292,6 +349,18 @@ class PipelineRunner:
                 task,
             )
 
+            bgm_file_used = None
+            if config.bgm and config.bgm.enabled:
+                bgm_dir_path = (
+                    Path(config.bgm.dir).resolve() if config.bgm.dir
+                    else self.root_dir / "input" / "bgm"
+                )
+                bgm_files = scan_bgm_files(bgm_dir_path)
+                chosen = random.choice(bgm_files)
+                print(f"[2.5/3] 混入 BGM: {chosen.name}（volume={config.bgm.volume}）")
+                apply_bgm(ffmpeg_path, ffprobe_path, output_path, chosen, config.bgm.volume, config.bgm.fade_out)
+                bgm_file_used = str(chosen)
+
             elapsed = time.time() - start_time
             complete_task(task, output_path)
             meta = {
@@ -313,6 +382,11 @@ class PipelineRunner:
                 "renderedAt": datetime.utcnow().isoformat(),
                 "duration": round(elapsed, 1),
                 "resolution": f"{res_preset.width}x{res_preset.height}",
+                "bgm": {
+                    "file": bgm_file_used,
+                    "volume": config.bgm.volume,
+                    "fade_out": config.bgm.fade_out,
+                } if bgm_file_used else None,
             }
             (out_dir / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
             print("[3/3] Writing metadata...")

@@ -25,6 +25,14 @@ class PipelineOutputConfig:
 
 
 @dataclass(slots=True)
+class PipelineBgmConfig:
+    enabled: bool = True       # 默认启用（配置了 bgm 段即生效）
+    dir: str | None = None     # None → 运行时解析为 <root>/input/bgm
+    volume: float = 0.3        # 0.0–1.0
+    fade_out: float = 0.0      # 结尾淡出秒数，默认 0 = 不淡出
+
+
+@dataclass(slots=True)
 class PipelineConfig:
     mode: Literal["pipeline"]
     clips: list[PipelineClipConfig]
@@ -33,6 +41,7 @@ class PipelineConfig:
     output: PipelineOutputConfig | None = None
     transitions: list[PipelineTransitionConfig] | None = None
     default_transition: PipelineTransitionConfig | None = None
+    bgm: PipelineBgmConfig | None = None
 
 
 @dataclass(slots=True)

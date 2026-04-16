@@ -1,0 +1,27 @@
+{
+  "mode": "pipeline",
+  "preset": "auto",
+  "quality": "high",
+  "bgm": {
+    "enabled": true,
+    "dir": null,
+    "volume": 0.3,
+    "fade_out": 0
+  },
+  "clips": [
+    { "src": "D:/VideoCut-Wrapper/input/1.mp4", "trim_start": 3, "trim_end": 0 },
+    { "src": "D:/VideoCut-Wrapper/input/2.mp4", "trim_start": 2, "trim_end": 1 },
+    { "src": "D:/VideoCut-Wrapper/input/3.mp4", "trim_start": 3, "trim_end": 0 },
+    { "src": "D:/VideoCut-Wrapper/input/4.mp4", "trim_start": 1, "trim_end": 0 },
+    { "src": "D:/VideoCut-Wrapper/input/5.mp4", "trim_start": 1, "trim_end": 0 }
+  ],
+  "transitions": [
+    { "type": "flash-black", "duration": 0.5 },
+    { "type": "dissolve",    "duration": 0.8 },
+    { "type": "flash-black", "duration": 0.4 }
+  ],
+  "default_transition": {
+    "type": "dissolve",
+    "duration": 0.5
+  }
+}

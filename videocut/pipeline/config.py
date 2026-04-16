@@ -9,6 +9,7 @@ import yaml
 
 from videocut.errors import VideoCutError
 from videocut.pipeline.types import (
+    PipelineBgmConfig,
     PipelineClipConfig,
     PipelineConfig,
     PipelineJunctionType,
@@ -88,6 +89,8 @@ def parse_pipeline_config(raw: Any, config_path: str | Path) -> PipelineConfig:
     output_raw = raw.get("output")
     output = PipelineOutputConfig(filename=output_raw.get("filename")) if isinstance(output_raw, dict) else None
 
+    bgm = parse_bgm_config(raw.get("bgm"))
+
     return PipelineConfig(
         mode="pipeline",
         preset=raw.get("preset") if isinstance(raw.get("preset"), str) else "auto",
@@ -96,6 +99,18 @@ def parse_pipeline_config(raw: Any, config_path: str | Path) -> PipelineConfig:
         clips=clips,
         transitions=transitions,
         default_transition=default_transition,
+        bgm=bgm,
+    )
+
+
+def parse_bgm_config(raw: object) -> PipelineBgmConfig | None:
+    if not isinstance(raw, dict):
+        return None
+    return PipelineBgmConfig(
+        enabled=bool(raw.get("enabled", True)),
+        dir=raw.get("dir") if isinstance(raw.get("dir"), str) else None,
+        volume=float(raw["volume"]) if isinstance(raw.get("volume"), (int, float)) else 0.3,
+        fade_out=float(raw["fade_out"]) if isinstance(raw.get("fade_out"), (int, float)) else 0.0,
     )
 
 

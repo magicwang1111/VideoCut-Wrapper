@@ -1,0 +1,12 @@
+{
+  "template": "zoom-dissolve-concat",
+  "preset": "auto",
+  "quality": "high",
+  "variables": {
+    "clip_1": "../../input/1.mp4",
+    "clip_2": "../../input/2.mp4",
+    "clip_3": "../../input/3.mp4",
+    "transition_duration": 0.5,
+    "zoom_scale": 1.8
+  }
+}

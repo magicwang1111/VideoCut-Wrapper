@@ -114,7 +114,7 @@ def init(template_id: str, project_name: str) -> None:
         else:
             default = str(definition.default) if definition.default is not None else ""
             lines.append(f'  {key}: "{default}"')
-    config_path = project_dir / "config.yaml"
+    config_path = project_dir / "config.json"
     config_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     typer.echo(f"\nCreated project: {project_dir}")
     typer.echo(f"  Config: {config_path}")

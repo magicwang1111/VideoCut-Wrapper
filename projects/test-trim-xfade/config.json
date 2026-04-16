@@ -1,0 +1,10 @@
+{
+  "template": "trim-xfade-concat",
+  "variables": {
+    "clip_1": "../../input/1.mp4",
+    "clip_2": "../../input/2.mp4",
+    "clip_3": "../../input/3.mp4",
+    "trim_start": 2,
+    "transition_duration": 0.5
+  }
+}

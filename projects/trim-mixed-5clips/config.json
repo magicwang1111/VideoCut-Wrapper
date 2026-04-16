@@ -1,0 +1,17 @@
+{
+  "template": "trim-mixed-concat",
+  "variables": {
+    "clip_1": "D:/VideoCut-Wrapper/input/1.mp4",
+    "clip_2": "D:/VideoCut-Wrapper/input/2.mp4",
+    "clip_3": "D:/VideoCut-Wrapper/input/3.mp4",
+    "clip_4": "D:/VideoCut-Wrapper/input/4.mp4",
+    "clip_5": "D:/VideoCut-Wrapper/input/5.mp4",
+    "trim_start": 2,
+    "transition_1": "flash-black",
+    "transition_2": "dissolve",
+    "transition_3": "flash-black",
+    "transition_4": "dissolve",
+    "transition_5": "flash-black",
+    "transition_duration": 0.5
+  }
+}

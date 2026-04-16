@@ -1,0 +1,10 @@
+{
+  "template": "trim-concat",
+  "preset": "auto",
+  "quality": "high",
+  "variables": {
+    "clip_1": "../../input/kling_20260410_作品_固定镜头_展示穿搭_4455_0.mp4",
+    "clip_2": "../../input/kling_20260410_作品_固定镜头_模仿穿搭博_4166_0.mp4",
+    "clip_3": "../../input/kling_20260410_作品_固定镜头_模仿穿搭博_4505_0.mp4"
+  }
+}
