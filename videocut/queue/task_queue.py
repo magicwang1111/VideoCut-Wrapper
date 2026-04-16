@@ -23,10 +23,9 @@ TaskEventHandler = Callable[[dict[str, Any]], None]
 @dataclass(slots=True)
 class WorkerTask:
     task_id: str
-    template_id: str
-    variables: dict[str, Any]
-    preset: str
-    quality: str
+    task_kind: str
+    source_name: str
+    payload: dict[str, Any]
 
 
 @dataclass(slots=True)
@@ -128,10 +127,9 @@ class WorkerPool:
         idle.input_queue.put(
             {
                 "task_id": task.task_id,
-                "template_id": task.template_id,
-                "variables": task.variables,
-                "preset": task.preset,
-                "quality": task.quality,
+                "task_kind": task.task_kind,
+                "source_name": task.source_name,
+                "payload": task.payload,
             }
         )
         return True
@@ -145,7 +143,7 @@ class WorkerPool:
         for worker in self.workers:
             try:
                 worker.input_queue.put(None)
-            except Exception:  # intentional: best-effort shutdown signal
+            except Exception:
                 pass
         for worker in self.workers:
             worker.process.join(timeout=5)
@@ -190,10 +188,9 @@ class TaskQueue:
                 self.queue.append(
                     WorkerTask(
                         task_id=task.id,
-                        template_id=task.template_id,
-                        variables=task.variables,
-                        preset=str(task.variables.get("_preset", "auto")),
-                        quality=str(task.variables.get("_quality", "high")),
+                        task_kind=task.task_kind,
+                        source_name=task.source_name,
+                        payload=task.payload,
                     )
                 )
         if stalled:
@@ -242,10 +239,9 @@ class TaskQueue:
                     self.queue.append(
                         WorkerTask(
                             task_id=task_id,
-                            template_id=record.template_id,
-                            variables=record.variables,
-                            preset=str(record.variables.get("_preset", "auto")),
-                            quality=str(record.variables.get("_quality", "high")),
+                            task_kind=record.task_kind,
+                            source_name=record.source_name,
+                            payload=record.payload,
                         )
                     )
             else:
@@ -277,10 +273,9 @@ class TaskQueue:
             self.queue.append(
                 WorkerTask(
                     task_id=task_id,
-                    template_id=record.template_id,
-                    variables=record.variables,
-                    preset=str(record.variables.get("_preset", "auto")),
-                    quality=str(record.variables.get("_quality", "high")),
+                    task_kind=record.task_kind,
+                    source_name=record.source_name,
+                    payload=record.payload,
                 )
             )
         self._drain()

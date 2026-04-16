@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import os
+import re
 from contextlib import asynccontextmanager
-from datetime import datetime
+from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -11,23 +13,25 @@ from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
-from videocut.errors import VideoCutError
+from videocut.errors import PipelineNotFoundError, VideoCutError
 from videocut.log import get_logger, setup_logging
 from videocut.oss import OssClient
+from videocut.pipeline import PipelineRegistry
 from videocut.queue import TaskQueue, WorkerTask
-from videocut.store import TaskRecord, TaskStore
+from videocut.store import PipelineRecord, TaskRecord, TaskStore
 
 logger = get_logger(__name__)
 
 ALLOWED_UPLOAD_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".mp3", ".wav", ".aac", ".png", ".jpg", ".jpeg", ".webp"}
 MAX_UPLOAD_BYTES = 500 * 1024 * 1024
-MAX_RENDER_BODY_BYTES = 1024 * 1024
 
 
 class RenderBody(BaseModel):
-    template: str
-    clips: list[str]
+    template: str | None = None
+    pipeline: str | None = None
+    clips: list[str] = Field(default_factory=list)
     params: dict[str, Any] = Field(default_factory=dict)
+    overrides: dict[str, Any] = Field(default_factory=dict)
 
 
 def parse_media_type(content_type: str) -> str:
@@ -59,20 +63,49 @@ def require_content_type(request: Request, expected: str) -> None:
         )
 
 
-def _create_store_record(task_id: str, template_id: str, variables: dict[str, Any]) -> TaskRecord:
+def _create_store_record(task_id: str, task_kind: str, source_name: str, payload: dict[str, Any]) -> TaskRecord:
     return TaskRecord(
         id=task_id,
-        template_id=template_id,
+        task_kind=task_kind,  # type: ignore[arg-type]
+        source_name=source_name,
         status="pending",
         progress=0,
         attempt=0,
-        variables=variables,
+        payload=payload,
         oss_key=None,
         error=None,
-        created_at=datetime.utcnow().isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
         started_at=None,
         completed_at=None,
     )
+
+
+def _looks_like_external_path(value: str) -> bool:
+    if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", value):
+        return True
+    if re.match(r"^[a-zA-Z]:[\\/]", value):
+        return True
+    return value.startswith(("/", "\\", "./", "../", ".\\", "..\\"))
+
+
+def _resolve_clip_refs(store: TaskStore, oss: OssClient, clips: list[str], *, strict_pipeline: bool) -> list[str]:
+    resolved_keys: list[str] = []
+    prefix = f"{oss.prefix}/"
+    for item in clips:
+        if "/" in item or "\\" in item:
+            if strict_pipeline:
+                if _looks_like_external_path(item) or not item.startswith(prefix):
+                    raise HTTPException(
+                        status_code=400,
+                        detail={"error": "invalid_clip_reference", "value": item},
+                    )
+            resolved_keys.append(item)
+            continue
+        oss_key = store.get_oss_key(item)
+        if not oss_key:
+            raise HTTPException(status_code=400, detail={"error": "file_not_found", "fileId": item})
+        resolved_keys.append(oss_key)
+    return resolved_keys
 
 
 @asynccontextmanager
@@ -80,9 +113,25 @@ async def lifespan(app: FastAPI):
     setup_logging()
     root_dir = Path(__file__).resolve().parents[2]
     db_path = Path(os.getenv("DB_PATH", str(root_dir / "data" / "tasks.db"))).resolve()
+    pipelines_dir = Path(os.getenv("PIPELINES_DIR", str(root_dir / "pipelines"))).resolve()
     worker_count = int(os.getenv("WORKER_COUNT", "0")) or max(1, (os.cpu_count() or 2) // 2)
 
     store = TaskStore(db_path)
+    registry = PipelineRegistry(pipelines_dir)
+    registry.scan()
+    now = datetime.now(UTC).isoformat()
+    store.sync_pipelines(
+        [
+            PipelineRecord(
+                name=item.name,
+                source_path=str(item.source_path),
+                config=asdict(item.config),
+                updated_at=now,
+            )
+            for item in registry.list_all()
+        ]
+    )
+
     oss = OssClient()
     task_queue = TaskQueue(
         store,
@@ -101,6 +150,8 @@ async def lifespan(app: FastAPI):
     app.state.oss = oss
     app.state.task_queue = task_queue
     app.state.worker_count = worker_count
+    app.state.pipelines_dir = pipelines_dir
+    app.state.pipeline_count = registry.size
     try:
         yield
     finally:
@@ -124,7 +175,12 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health() -> dict[str, Any]:
         queue_obj: TaskQueue = app.state.task_queue
-        return {"ok": True, "workers": app.state.worker_count, "queueSize": queue_obj.queue_size}
+        return {
+            "ok": True,
+            "workers": app.state.worker_count,
+            "queueSize": queue_obj.queue_size,
+            "pipelines": app.state.pipeline_count,
+        }
 
     @app.post("/upload", dependencies=[Depends(auth_guard)])
     async def upload(request: Request, file: UploadFile = File(...)) -> dict[str, str]:
@@ -163,34 +219,52 @@ def create_app() -> FastAPI:
     @app.post("/render", dependencies=[Depends(auth_guard)])
     async def render(request: Request, body: RenderBody) -> dict[str, str]:
         require_content_type(request, "application/json")
-        if not body.template or not body.clips:
+        if (not body.template and not body.pipeline) or (body.template and body.pipeline) or not body.clips:
+            raise HTTPException(status_code=400, detail={"error": "invalid_body"})
+        if body.template and body.overrides:
+            raise HTTPException(status_code=400, detail={"error": "invalid_body"})
+        if body.pipeline and body.params:
             raise HTTPException(status_code=400, detail={"error": "invalid_body"})
 
         store: TaskStore = app.state.store
-        resolved_keys: list[str] = []
-        for item in body.clips:
-            if "/" in item:
-                resolved_keys.append(item)
-                continue
-            oss_key = store.get_oss_key(item)
-            if not oss_key:
-                raise HTTPException(status_code=400, detail={"error": "file_not_found", "fileId": item})
-            resolved_keys.append(oss_key)
+        oss: OssClient = app.state.oss
 
-        preset = str(body.params.get("preset", "auto"))
-        quality = str(body.params.get("quality", "high"))
+        if body.template:
+            resolved_keys = _resolve_clip_refs(store, oss, body.clips, strict_pipeline=False)
+            preset = str(body.params.get("preset", "auto"))
+            quality = str(body.params.get("quality", "high"))
+            payload = {
+                "variables": {"clips": resolved_keys, **body.params, "_preset": preset, "_quality": quality},
+                "preset": preset,
+                "quality": quality,
+            }
+            source_name = body.template
+            task_kind = "template"
+        else:
+            resolved_keys = _resolve_clip_refs(store, oss, body.clips, strict_pipeline=True)
+            pipeline_name = body.pipeline or ""
+            pipeline_record = store.get_pipeline(pipeline_name)
+            if pipeline_record is None:
+                raise PipelineNotFoundError(pipeline_name, [item.name for item in store.list_pipelines()])
+            payload = {
+                "clips": resolved_keys,
+                "pipeline_config": pipeline_record.config,
+                "pipeline_source_path": pipeline_record.source_path,
+                "overrides": body.overrides,
+            }
+            source_name = pipeline_name
+            task_kind = "pipeline"
+
         task_id = f"t_{uuid4().hex[:8]}"
-        variables = {"clips": resolved_keys, **body.params, "_preset": preset, "_quality": quality}
-        store.create(_create_store_record(task_id, body.template, variables))
+        store.create(_create_store_record(task_id, task_kind, source_name, payload))
 
         queue_obj: TaskQueue = app.state.task_queue
         enqueued = queue_obj.enqueue(
             WorkerTask(
                 task_id=task_id,
-                template_id=body.template,
-                variables=variables,
-                preset=preset,
-                quality=quality,
+                task_kind=task_kind,
+                source_name=source_name,
+                payload=payload,
             )
         )
         if not enqueued:
@@ -216,6 +290,8 @@ def create_app() -> FastAPI:
             "completedAt": task.completed_at,
             "outputUrl": output_url,
             "error": task.error,
+            "taskKind": task.task_kind,
+            "sourceName": task.source_name,
         }
 
     @app.get("/tasks/{task_id}/download", dependencies=[Depends(auth_guard)])

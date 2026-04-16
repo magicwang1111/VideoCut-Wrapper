@@ -8,7 +8,7 @@ PipelineJunctionType = Literal["flash-black", "dissolve", "cut"]
 
 @dataclass(slots=True)
 class PipelineClipConfig:
-    src: str
+    src: str | None = None
     trim_start: float = 0.0
     trim_end: float = 0.0
 
@@ -26,16 +26,17 @@ class PipelineOutputConfig:
 
 @dataclass(slots=True)
 class PipelineBgmConfig:
-    enabled: bool = True       # 默认启用（配置了 bgm 段即生效）
-    dir: str | None = None     # None → 运行时解析为 <root>/input/bgm
-    volume: float = 0.3        # 0.0–1.0
-    fade_out: float = 0.0      # 结尾淡出秒数，默认 0 = 不淡出
+    enabled: bool = True
+    dir: str | None = None
+    volume: float = 0.3
+    fade_out: float = 0.0
 
 
 @dataclass(slots=True)
 class PipelineConfig:
     mode: Literal["pipeline"]
     clips: list[PipelineClipConfig]
+    name: str | None = None
     preset: str = "auto"
     quality: str = "high"
     output: PipelineOutputConfig | None = None
@@ -52,4 +53,3 @@ class ResolvedPipelineClip:
     trim_start: float
     trim_end: float
     effective_duration: float
-

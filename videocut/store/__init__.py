@@ -1,4 +1,3 @@
-from videocut.store.task_store import TaskRecord, TaskStore
+from videocut.store.task_store import PipelineRecord, TaskRecord, TaskStore
 
-__all__ = ["TaskRecord", "TaskStore"]
-
+__all__ = ["PipelineRecord", "TaskRecord", "TaskStore"]

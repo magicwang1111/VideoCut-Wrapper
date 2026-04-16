@@ -194,6 +194,7 @@ class PipelineRunner:
         ffmpeg_path: str,
         ffprobe_path: str,
         overrides: dict[str, str],
+        task_id: str | None = None,
     ) -> RenderResult:
         config = ctx.config
         video_settings = resolve_runtime_video_settings(ffmpeg_path, resolve_video_settings())
@@ -211,6 +212,8 @@ class PipelineRunner:
         project_name = project_dir.name
 
         task = create_task("pipeline", {})
+        if task_id:
+            task.id = task_id
         start_task(task)
 
         start_time = time.time()

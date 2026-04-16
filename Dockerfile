@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM magicwang/pytorch-base:torch210-cu128-runtime-v1
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -22,6 +22,7 @@ RUN apt-get update \
 COPY README.md pyproject.toml requirements.txt ./
 COPY videocut ./videocut
 COPY templates ./templates
+COPY pipelines ./pipelines
 COPY fonts ./fonts
 
 RUN python -m pip install --upgrade pip \

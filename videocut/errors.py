@@ -74,3 +74,21 @@ class DependencyError(VideoCutError):
 
     def __init__(self, dependency: str, detail: str) -> None:
         super().__init__(f"Missing dependency: {dependency}\n  {detail}")
+
+
+class PipelineNotFoundError(VideoCutError):
+    code = 1501
+
+    def __init__(self, pipeline_name: str, available: list[str]) -> None:
+        available_text = ", ".join(available) if available else "(none)"
+        super().__init__(
+            f'Pipeline "{pipeline_name}" is not registered.\n'
+            f"  Available pipelines: {available_text}"
+        )
+
+
+class PipelineDefinitionError(VideoCutError):
+    code = 1502
+
+    def __init__(self, config_path: str, detail: str) -> None:
+        super().__init__(f"Pipeline definition error: {config_path}\n  {detail}")

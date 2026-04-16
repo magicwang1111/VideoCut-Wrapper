@@ -1,0 +1,217 @@
+from __future__ import annotations
+
+from dataclasses import asdict
+import importlib
+import json
+
+import pytest
+from fastapi.testclient import TestClient
+
+from videocut.errors import PipelineDefinitionError
+from videocut.pipeline import PipelineRegistry, build_pipeline_context, parse_pipeline_config
+from videocut.store import PipelineRecord, TaskStore
+
+api_app_module = importlib.import_module("videocut.api.app")
+
+
+class FakeTaskQueue:
+    instances: list["FakeTaskQueue"] = []
+
+    def __init__(self, store, oss, worker_count, on_event, root_dir) -> None:
+        self.store = store
+        self.oss = oss
+        self.worker_count = worker_count
+        self.on_event = on_event
+        self.root_dir = root_dir
+        self.tasks = []
+        FakeTaskQueue.instances.append(self)
+
+    def start(self) -> None:
+        return
+
+    def stop(self) -> None:
+        return
+
+    def enqueue(self, task) -> bool:
+        self.tasks.append(task)
+        return True
+
+    @property
+    def queue_size(self) -> int:
+        return len(self.tasks)
+
+
+def _write_pipeline_config(root, name: str, payload: dict) -> None:
+    target = root / name
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "config.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _make_pipeline_payload(name: str = "trim-mixed-dissolve-v1") -> dict:
+    return {
+        "name": name,
+        "mode": "pipeline",
+        "preset": "auto",
+        "quality": "high",
+        "clips": [
+            {"trim_start": 2, "trim_end": 0},
+            {"trim_start": 3, "trim_end": 0},
+            {"trim_start": 1, "trim_end": 1},
+        ],
+        "transitions": [
+            {"type": "flash-black", "duration": 0.5},
+            {"type": "dissolve", "duration": 0.5},
+        ],
+        "default_transition": {"type": "cut", "duration": 0},
+    }
+
+
+def test_pipeline_registry_scans_and_syncs_to_store(tmp_path) -> None:
+    pipelines_root = tmp_path / "pipelines"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+
+    registry = PipelineRegistry(pipelines_root)
+    registry.scan()
+
+    store = TaskStore(tmp_path / "tasks.db")
+    store.sync_pipelines(
+        [
+            PipelineRecord(
+                name=item.name,
+                source_path=str(item.source_path),
+                config=asdict(item.config),
+                updated_at="2026-04-16T00:00:00",
+            )
+            for item in registry.list_all()
+        ]
+    )
+
+    stored = store.get_pipeline("trim-mixed-dissolve-v1")
+    assert stored is not None
+    assert stored.config["clips"][0]["trim_start"] == 2
+    assert stored.config["default_transition"]["type"] == "cut"
+    store.close()
+
+
+def test_pipeline_registry_rejects_name_mismatch(tmp_path) -> None:
+    pipelines_root = tmp_path / "pipelines"
+    _write_pipeline_config(pipelines_root, "dir-name", _make_pipeline_payload(name="other-name"))
+
+    registry = PipelineRegistry(pipelines_root)
+    with pytest.raises(PipelineDefinitionError):
+        registry.scan()
+
+
+def test_build_pipeline_context_applies_binding_and_overrides(tmp_path) -> None:
+    config = parse_pipeline_config(_make_pipeline_payload(), tmp_path / "config.json", require_name=True)
+    ctx = build_pipeline_context(
+        config,
+        ["/tmp/a.mp4", "/tmp/b.mp4", "/tmp/c.mp4", "/tmp/d.mp4"],
+        tmp_path / "config.json",
+        {
+            "quality": "medium",
+            "clip_overrides": [
+                {"index": 1, "trim_start": 5, "trim_end": 1},
+            ],
+            "transition_overrides": [
+                {"index": 2, "type": "flash-black", "duration": 1.2},
+            ],
+        },
+    )
+
+    assert [clip.trim_start for clip in ctx.config.clips] == [2.0, 5.0, 1.0, 0.0]
+    assert [clip.trim_end for clip in ctx.config.clips] == [0.0, 1.0, 1.0, 0.0]
+    assert ctx.config.quality == "medium"
+    assert [(item.type, item.duration) for item in ctx.junctions] == [
+        ("flash-black", 0.5),
+        ("dissolve", 0.5),
+        ("flash-black", 1.2),
+    ]
+
+
+def test_render_endpoint_supports_template_and_pipeline_modes(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    monkeypatch.setenv("API_KEYS", "test-key")
+    monkeypatch.setenv("OSS_LOCAL_ROOT", str(tmp_path / "oss"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "tasks.db"))
+    monkeypatch.setenv("TEMP_DIR", str(tmp_path / "temp"))
+    monkeypatch.setenv("PIPELINES_DIR", str(pipelines_root))
+    monkeypatch.setattr(api_app_module, "TaskQueue", FakeTaskQueue)
+
+    with TestClient(api_app_module.create_app()) as client:
+        store = client.app.state.store
+        store.save_file("file1", "GouMei-Video-Cut/inputs/file1.mp4")
+        store.save_file("file2", "GouMei-Video-Cut/inputs/file2.mp4")
+        store.save_file("file3", "GouMei-Video-Cut/inputs/file3.mp4")
+
+        health = client.get("/health")
+        assert health.status_code == 200
+        assert health.json()["pipelines"] == 1
+
+        headers = {"X-Api-Key": "test-key", "Content-Type": "application/json"}
+        template_response = client.post(
+            "/render",
+            headers=headers,
+            json={
+                "template": "trim-mixed-concat",
+                "clips": ["file1", "file2"],
+                "params": {"preset": "auto", "quality": "high"},
+            },
+        )
+        assert template_response.status_code == 200
+
+        queue = FakeTaskQueue.instances[-1]
+        template_task = queue.tasks[-1]
+        assert template_task.task_kind == "template"
+        assert template_task.source_name == "trim-mixed-concat"
+        assert template_task.payload["variables"]["clips"] == [
+            "GouMei-Video-Cut/inputs/file1.mp4",
+            "GouMei-Video-Cut/inputs/file2.mp4",
+        ]
+
+        pipeline_response = client.post(
+            "/render",
+            headers=headers,
+            json={
+                "pipeline": "trim-mixed-dissolve-v1",
+                "clips": ["file1", "file2", "file3"],
+                "overrides": {"quality": "medium", "clip_overrides": [{"index": 1, "trim_start": 4}]},
+            },
+        )
+        assert pipeline_response.status_code == 200
+
+        pipeline_task = queue.tasks[-1]
+        assert pipeline_task.task_kind == "pipeline"
+        assert pipeline_task.source_name == "trim-mixed-dissolve-v1"
+        assert pipeline_task.payload["pipeline_config"]["name"] == "trim-mixed-dissolve-v1"
+        assert pipeline_task.payload["clips"] == [
+            "GouMei-Video-Cut/inputs/file1.mp4",
+            "GouMei-Video-Cut/inputs/file2.mp4",
+            "GouMei-Video-Cut/inputs/file3.mp4",
+        ]
+
+
+def test_pipeline_render_rejects_local_paths(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    monkeypatch.setenv("API_KEYS", "test-key")
+    monkeypatch.setenv("OSS_LOCAL_ROOT", str(tmp_path / "oss"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "tasks.db"))
+    monkeypatch.setenv("TEMP_DIR", str(tmp_path / "temp"))
+    monkeypatch.setenv("PIPELINES_DIR", str(pipelines_root))
+    monkeypatch.setattr(api_app_module, "TaskQueue", FakeTaskQueue)
+
+    with TestClient(api_app_module.create_app()) as client:
+        response = client.post(
+            "/render",
+            headers={"X-Api-Key": "test-key", "Content-Type": "application/json"},
+            json={
+                "pipeline": "trim-mixed-dissolve-v1",
+                "clips": ["D:/tmp/local.mp4"],
+            },
+        )
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_clip_reference"
