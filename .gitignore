@@ -2,6 +2,14 @@ node_modules/
 dist/
 output/
 temp/
+data/
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
 *.mp4
 *.mov
 *.avi

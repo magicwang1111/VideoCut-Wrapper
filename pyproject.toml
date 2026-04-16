@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "videocut-wrapper"
+version = "0.1.0"
+description = "Template-driven video rendering service powered by Python and FFmpeg."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.116,<1.0",
+  "uvicorn>=0.35,<1.0",
+  "typer>=0.16,<1.0",
+  "PyYAML>=6.0,<7.0",
+  "pydantic>=2.11,<3.0",
+  "oss2>=2.19,<3.0",
+  "python-multipart>=0.0.20,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3,<9.0",
+]
+
+[project.scripts]
+videocut = "videocut.cli:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["videocut*"]
+

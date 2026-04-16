@@ -1,0 +1,46 @@
+class VideoCutError(Exception):
+    """Base error for the Python runtime."""
+
+
+class TemplateNotFoundError(VideoCutError):
+    def __init__(self, template_id: str, available: list[str]) -> None:
+        available_text = ", ".join(available) if available else "(none)"
+        super().__init__(
+            f'Template "{template_id}" is not registered.\n'
+            f"  Available templates: {available_text}\n"
+            "  Run `videocut list` to inspect supported templates."
+        )
+
+
+class ManifestError(VideoCutError):
+    def __init__(self, template_dir: str, detail: str) -> None:
+        super().__init__(f"Template manifest error: {template_dir}\n  {detail}")
+
+
+class ConfigValidationError(VideoCutError):
+    def __init__(self, errors: list[str]) -> None:
+        self.errors = errors
+        bullets = "\n".join(f"  - {item}" for item in errors)
+        super().__init__(f"Config validation failed with {len(errors)} error(s):\n{bullets}")
+
+
+class AssetNotFoundError(VideoCutError):
+    def __init__(self, asset_path: str, variable_name: str, config_path: str | None = None) -> None:
+        location = f"\n  Config: {config_path}" if config_path else ""
+        super().__init__(
+            "Asset file not found.\n"
+            f"  File: {asset_path}\n"
+            f"  Variable: {variable_name}{location}\n"
+            "  Check the relative path and make sure the file exists."
+        )
+
+
+class RenderError(VideoCutError):
+    def __init__(self, detail: str) -> None:
+        super().__init__(f"Render failed.\n  {detail}")
+
+
+class DependencyError(VideoCutError):
+    def __init__(self, dependency: str, detail: str) -> None:
+        super().__init__(f"Missing dependency: {dependency}\n  {detail}")
+
