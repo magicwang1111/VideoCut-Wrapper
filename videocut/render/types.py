@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from videocut.pipeline.types import PipelineBgmConfig
 from videocut.presets import ResolutionPreset
 from videocut.registry import TemplateInfo
 
@@ -22,6 +23,7 @@ class RenderRequest:
     output_filename: str | None
     project_dir: str
     task_id: str | None = None
+    bgm: PipelineBgmConfig | None = None
 
 
 @dataclass(slots=True)

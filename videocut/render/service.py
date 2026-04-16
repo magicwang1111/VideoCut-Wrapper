@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import shutil
 import subprocess
 import time
@@ -9,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from videocut.bgm import apply_bgm, scan_bgm_files
 from videocut.errors import DependencyError, RenderError
 from videocut.presets import AUTO_PRESET, ResolutionPreset, get_quality_preset, get_resolution_preset
 from videocut.render.task import RenderTask, complete_task, create_task, fail_task, start_task
@@ -207,9 +209,21 @@ class RenderService:
         start_time: float,
         cleanup_fns: list[Any],
         handler_result,
+        ffmpeg_path: str = "",
+        ffprobe_path: str = "",
     ) -> RenderResult:
         cleanup_fns.append(handler_result.cleanup)
-        completed = self._finalize_success(task, handler_result.output_path, start_time)
+        output_path = handler_result.output_path
+        if request.bgm and request.bgm.enabled:
+            bgm_dir_path = (
+                Path(request.bgm.dir).resolve() if request.bgm.dir
+                else self.root_dir / "input" / "bgm"
+            )
+            bgm_files = scan_bgm_files(bgm_dir_path)
+            chosen = random.choice(bgm_files)
+            print(f"[2.5/3] 混入 BGM: {chosen.name}（volume={request.bgm.volume}）")
+            apply_bgm(ffmpeg_path, ffprobe_path, output_path, chosen, request.bgm.volume, request.bgm.fade_out)
+        completed = self._finalize_success(task, output_path, start_time)
         print("[3/3] Writing metadata...")
         self.write_meta(out_dir, task, request, res_preset, completed.duration or 0.0)
         return completed
@@ -263,7 +277,10 @@ class RenderService:
         project_name = Path(request.project_dir).name
         out_dir = self.output_dir / project_name
         out_dir.mkdir(parents=True, exist_ok=True)
-        out_file = request.output_filename or "final.mp4"
+        base_name = request.output_filename or "final.mp4"
+        stem, ext = Path(base_name).stem, Path(base_name).suffix or ".mp4"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_file = f"{stem}_{timestamp}{ext}"
         start_time = time.time()
         cleanup_fns: list[Any] = []
 
@@ -290,29 +307,19 @@ class RenderService:
                 out_file=out_file,
             )
 
-            if request.template_id == "trim-concat":
+            _handler_map = {
+                "trim-concat": handle_trim_concat,
+                "xfade-concat": handle_xfade_concat,
+                "trim-xfade-concat": handle_trim_xfade_concat,
+                "zoom-dissolve-concat": handle_zoom_dissolve_concat,
+                "flash-black-concat": handle_flash_black_concat,
+                "trim-mixed-concat": handle_trim_mixed_concat,
+            }
+            if request.template_id in _handler_map:
                 return self._finalize_transition_success(
-                    request, task, out_dir, res_preset, start_time, cleanup_fns, handle_trim_concat(transition_args)
-                )
-            if request.template_id == "xfade-concat":
-                return self._finalize_transition_success(
-                    request, task, out_dir, res_preset, start_time, cleanup_fns, handle_xfade_concat(transition_args)
-                )
-            if request.template_id == "trim-xfade-concat":
-                return self._finalize_transition_success(
-                    request, task, out_dir, res_preset, start_time, cleanup_fns, handle_trim_xfade_concat(transition_args)
-                )
-            if request.template_id == "zoom-dissolve-concat":
-                return self._finalize_transition_success(
-                    request, task, out_dir, res_preset, start_time, cleanup_fns, handle_zoom_dissolve_concat(transition_args)
-                )
-            if request.template_id == "flash-black-concat":
-                return self._finalize_transition_success(
-                    request, task, out_dir, res_preset, start_time, cleanup_fns, handle_flash_black_concat(transition_args)
-                )
-            if request.template_id == "trim-mixed-concat":
-                return self._finalize_transition_success(
-                    request, task, out_dir, res_preset, start_time, cleanup_fns, handle_trim_mixed_concat(transition_args)
+                    request, task, out_dir, res_preset, start_time, cleanup_fns,
+                    _handler_map[request.template_id](transition_args),
+                    ffmpeg_path or "", ffprobe_path or "",
                 )
 
             raise RenderError(f'Template "{request.template_id}" is not implemented in the Python runtime.')

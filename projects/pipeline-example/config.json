@@ -4,8 +4,8 @@
   "quality": "high",
   "bgm": {
     "enabled": true,
-    "dir": null,
-    "volume": 0.3,
+    "dir": "D:/VideoCut-Wrapper/input/bgm",
+    "volume": 1,
     "fade_out": 0
   },
   "clips": [

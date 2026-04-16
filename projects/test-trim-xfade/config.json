@@ -1,5 +1,11 @@
 {
   "template": "trim-xfade-concat",
+  "bgm": {
+    "enabled": true,
+    "dir": null,
+    "volume": 1,
+    "fade_out": 0
+  },
   "variables": {
     "clip_1": "../../input/1.mp4",
     "clip_2": "../../input/2.mp4",

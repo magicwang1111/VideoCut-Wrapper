@@ -8,6 +8,7 @@ from typing import Any
 import yaml
 
 from videocut.errors import VideoCutError
+from videocut.pipeline.types import PipelineBgmConfig
 
 
 @dataclass(slots=True)
@@ -22,6 +23,7 @@ class ProjectConfig:
     quality: str | None
     output: ProjectOutputConfig | None
     variables: dict[str, Any]
+    bgm: PipelineBgmConfig | None = None
 
 
 def parse_project_config(config_path: str | Path) -> ProjectConfig:
@@ -48,12 +50,22 @@ def parse_project_config(config_path: str | Path) -> ProjectConfig:
         output = ProjectOutputConfig(filename=output_raw.get("filename"))
 
     variables = parsed.get("variables")
+    bgm_raw = parsed.get("bgm")
+    bgm = None
+    if isinstance(bgm_raw, dict):
+        bgm = PipelineBgmConfig(
+            enabled=bool(bgm_raw.get("enabled", True)),
+            dir=bgm_raw.get("dir") if isinstance(bgm_raw.get("dir"), str) else None,
+            volume=float(bgm_raw["volume"]) if isinstance(bgm_raw.get("volume"), (int, float)) else 0.3,
+            fade_out=float(bgm_raw["fade_out"]) if isinstance(bgm_raw.get("fade_out"), (int, float)) else 0.0,
+        )
     return ProjectConfig(
         template=template,
         preset=parsed.get("preset") if isinstance(parsed.get("preset"), str) else None,
         quality=parsed.get("quality") if isinstance(parsed.get("quality"), str) else None,
         output=output,
         variables=variables if isinstance(variables, dict) else {},
+        bgm=bgm,
     )
 
 

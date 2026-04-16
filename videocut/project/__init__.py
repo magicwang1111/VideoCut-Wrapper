@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from videocut.errors import ConfigValidationError
+from videocut.pipeline.types import PipelineBgmConfig
 from videocut.project.asset_resolver import resolve_assets
 from videocut.project.config_parser import ProjectConfig, get_project_dir, parse_project_config
 from videocut.registry import TemplateInfo, TemplateRegistry
@@ -21,6 +22,7 @@ class ResolvedProject:
     output_filename: str | None
     project_dir: Path
     config_path: Path
+    bgm: PipelineBgmConfig | None = None
 
 
 class ProjectManager:
@@ -57,5 +59,6 @@ class ProjectManager:
             output_filename=config.output.filename if config.output else None,
             project_dir=project_dir,
             config_path=abs_config_path,
+            bgm=config.bgm,
         )
 

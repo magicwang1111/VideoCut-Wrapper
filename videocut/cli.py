@@ -234,6 +234,7 @@ def render(
                     quality=resolved.quality,
                     output_filename=resolved.output_filename,
                     project_dir=str(resolved.project_dir),
+                    bgm=resolved.bgm,
                 )
             )
         if result.status == "completed":
