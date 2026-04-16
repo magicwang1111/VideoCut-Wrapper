@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from videocut.bgm import apply_bgm, scan_bgm_files
+from videocut.bgm import apply_bgm, resolve_bgm_dir, scan_bgm_files
 from videocut.errors import DependencyError, RenderError
 from videocut.ffmpeg_config import resolve_runtime_video_settings, resolve_video_settings
 from videocut.log import get_logger
@@ -220,10 +220,7 @@ class RenderService:
         cleanup_fns.append(handler_result.cleanup)
         output_path = handler_result.output_path
         if request.bgm and request.bgm.enabled:
-            bgm_dir_path = (
-                Path(request.bgm.dir).resolve() if request.bgm.dir
-                else self.root_dir / "input" / "bgm"
-            )
+            bgm_dir_path = resolve_bgm_dir(self.root_dir, request.bgm.dir)
             bgm_files = scan_bgm_files(bgm_dir_path)
             chosen = random.choice(bgm_files)
             logger.info("[2.5/3] 混入 BGM: %s (volume=%.2f)", chosen.name, request.bgm.volume)

@@ -585,17 +585,25 @@ cp .env.example .env
   - 填好 `OSS_ACCESS_KEY_ID`
   - 填好 `OSS_ACCESS_KEY_SECRET`
   - 保持 `OSS_LOCAL_ROOT=` 为空
+  - 保持 `SYNC_BGM_ON_STARTUP=1`
 - 如果只是单机或联调：
   - 设置 `OSS_LOCAL_ROOT=/srv/videocut/oss-local`
   - OSS AK/SK 可以留空
+  - 如果不从真实 OSS 拉 BGM，设置 `SYNC_BGM_ON_STARTUP=0`
 
-3. 启动容器：
+3. 先构建基础镜像：
+
+```bash
+docker build -f docker/base/Dockerfile -t videocut-base:latest .
+```
+
+4. 启动业务容器：
 
 ```bash
 docker compose up -d --build
 ```
 
-4. 查看服务状态：
+5. 查看服务状态：
 
 ```bash
 docker compose ps
@@ -606,6 +614,7 @@ docker compose logs -f videocut
 
 - `./data -> /srv/videocut/data`
 - `./temp -> /srv/videocut/temp`
+- `./input/bgm -> /app/input/bgm`
 - `./output -> /app/output`
 - `./fonts -> /app/fonts`
 - `./oss-local -> /srv/videocut/oss-local`
@@ -614,21 +623,25 @@ docker compose logs -f videocut
 
 - `data/` 保存 SQLite 任务库
 - `temp/` 保存上传临时文件和 worker 下载素材
+- `input/bgm/` 保存启动时从 OSS 同步的背景音乐
 - `output/` 保存 worker 本地渲染产物，再上传到 OSS / 本地 OSS
 - `fonts/` 用于自定义字体
 - `oss-local/` 只在本地 OSS 模式下使用
 
 容器内已经安装：
 
-- Python 3.12
+- Python 3.11 headers
 - ffmpeg
 - ffprobe
+- ossutil
 - tzdata
 - tini
 
 当前这套 Docker 配置适合标准 Linux 主机和通用 CPU 环境。要点如下：
 
 - `.env.example` 里的路径已经改成 Linux 容器绝对路径
+- `Dockerfile` 现在通过 `BASE_IMAGE` 从基础镜像构建业务镜像
+- 业务镜像启动前会自动把 `oss://goumee-coze/GouMei-Video-Cut/bgm/` 同步到 `BGM_DIR`
 - `WORKER_COUNT` 默认使用 `0`，表示自动按 CPU 数量推导，避免空值导致启动报错
 - `FFMPEG_ENCODER` 默认改成 `libx264`，更适合通用 CPU 容器
 - `OSS_ENDPOINT` 示例改成公网 endpoint，适合大多数非阿里云内网环境

@@ -1,12 +1,24 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
 from videocut.errors import RenderError
 
 _BGM_EXTENSIONS = {".mp3", ".wav", ".aac", ".ogg", ".flac", ".m4a"}
+
+
+def resolve_bgm_dir(root_dir: str | Path, configured_dir: str | None = None) -> Path:
+    env_dir = os.getenv("BGM_DIR")
+    raw_dir = env_dir.strip() if env_dir and env_dir.strip() else (configured_dir.strip() if configured_dir and configured_dir.strip() else None)
+    if not raw_dir:
+        return Path(root_dir).resolve() / "input" / "bgm"
+    path_obj = Path(raw_dir).expanduser()
+    if path_obj.is_absolute():
+        return path_obj.resolve()
+    return (Path(root_dir).resolve() / path_obj).resolve()
 
 
 def scan_bgm_files(bgm_dir: Path) -> list[Path]:

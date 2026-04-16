@@ -7,7 +7,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from videocut.bgm import apply_bgm, scan_bgm_files
+from videocut.bgm import apply_bgm, resolve_bgm_dir, scan_bgm_files
 from videocut.errors import RenderError
 from videocut.ffmpeg_config import FFmpegVideoSettings, resolve_runtime_video_settings, resolve_video_settings
 from videocut.log import get_logger
@@ -311,10 +311,7 @@ class PipelineRunner:
 
             bgm_file_used = None
             if config.bgm and config.bgm.enabled:
-                bgm_dir_path = (
-                    Path(config.bgm.dir).resolve() if config.bgm.dir
-                    else self.root_dir / "input" / "bgm"
-                )
+                bgm_dir_path = resolve_bgm_dir(self.root_dir, config.bgm.dir)
                 bgm_files = scan_bgm_files(bgm_dir_path)
                 chosen = random.choice(bgm_files)
                 logger.info("[2.5/3] 混入 BGM: %s (volume=%.2f)", chosen.name, config.bgm.volume)

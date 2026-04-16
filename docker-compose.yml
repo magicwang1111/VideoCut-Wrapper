@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        BASE_IMAGE: ${BASE_IMAGE:-videocut-base:latest}
     image: videocut-wrapper:latest
     container_name: videocut-wrapper
     restart: unless-stopped
@@ -13,6 +15,7 @@ services:
     volumes:
       - ./data:/srv/videocut/data
       - ./temp:/srv/videocut/temp
+      - ./input/bgm:/app/input/bgm
       - ./output:/app/output
       - ./pipelines:/app/pipelines:ro
       - ./fonts:/app/fonts:ro
