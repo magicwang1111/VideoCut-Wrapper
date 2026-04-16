@@ -1,4 +1,4 @@
-import { makeScene2D, Video } from '@revideo/2d';
+import { makeScene2D, Video, type View2D } from '@revideo/2d';
 import { createRef, useScene, waitFor } from '@revideo/core';
 
 const TRIM_START_SECONDS = 2;
@@ -11,7 +11,7 @@ const CLIP_KEYS = [
   'clip_6',
 ] as const;
 
-export default makeScene2D(function* (view) {
+export default makeScene2D('concat', function* (view: View2D) {
   const vars = useScene().variables;
 
   const clips = CLIP_KEYS.map((key) => {

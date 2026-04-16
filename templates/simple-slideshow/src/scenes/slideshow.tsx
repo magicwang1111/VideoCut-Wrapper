@@ -1,7 +1,7 @@
-import { makeScene2D, Video, Rect } from '@revideo/2d';
+import { makeScene2D, Video, Rect, type View2D } from '@revideo/2d';
 import { all, waitFor, createRef, useScene } from '@revideo/core';
 
-export default makeScene2D(function* (view) {
+export default makeScene2D('slideshow', function* (view: View2D) {
   const vars = useScene().variables;
 
   // 读取变量

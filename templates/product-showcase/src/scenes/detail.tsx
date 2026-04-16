@@ -1,7 +1,7 @@
-import { makeScene2D, Video, Txt, Rect } from '@revideo/2d';
+import { makeScene2D, Video, Txt, Rect, type View2D } from '@revideo/2d';
 import { waitFor, createRef, useScene } from '@revideo/core';
 
-export default makeScene2D(function* (view) {
+export default makeScene2D('detail', function* (view: View2D) {
   const vars = useScene().variables;
 
   const clipSrc = vars.get('clip_detail', '')();
