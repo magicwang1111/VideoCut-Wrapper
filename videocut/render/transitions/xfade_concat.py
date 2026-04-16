@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from videocut.errors import RenderError
+from videocut.log import get_logger
 from videocut.presets import QualityPreset, ResolutionPreset
 from videocut.render.task import RenderTask, update_progress
 from videocut.render.transitions.shared import (
@@ -30,7 +31,8 @@ def ffmpeg_xfade_concat(
     fps = res_preset.fps
     frame_duration = 1 / fps
     min_segment_duration = frame_duration / 2
-    format_seconds = lambda value: f"{value:.6f}"
+    def format_seconds(value: float) -> str:
+        return f"{value:.6f}"
 
     input_args: list[str] = []
     clip_meta: list[dict[str, float | int]] = []
@@ -61,9 +63,9 @@ def ffmpeg_xfade_concat(
             still_pad_duration = max(0.0, duration - frame_duration)
 
             if tail_pad_duration > min_segment_duration:
-                print(
-                    f"  Warning: {clips[index].key} is too short for {duration:.1f}s fade, "
-                    "extending with cloned last frame"
+                logger.warning(
+                    "%s is too short for %.1fs fade, extending with cloned last frame",
+                    clips[index].key, duration,
                 )
 
             if body_duration > min_segment_duration:
@@ -101,7 +103,7 @@ def ffmpeg_xfade_concat(
         segment_labels.append("[last]")
         filter_parts.append(f"{''.join(segment_labels)}concat=n={len(segment_labels)}:v=1:a=0[vout]")
 
-    print(f"\n[2/3] FFmpeg front-fade concat {clip_count} clips (transition {duration}s)...")
+    logger.info("[2/3] FFmpeg front-fade concat %d clips (transition %.1fs)...", clip_count, duration)
     _run_ffmpeg(
         [
             ffmpeg_path,
@@ -127,8 +129,11 @@ def ffmpeg_xfade_concat(
     update_progress(task, 1.0)
 
 
+logger = get_logger(__name__)
+
+
 def handle_xfade_concat(args: TransitionHandlerArgs) -> TransitionHandlerResult:
-    print("\n[1/3] Collecting input clips...")
+    logger.info("[1/3] Collecting input clips...")
     transition_duration = (
         float(args.request.variables["transition_duration"])
         if isinstance(args.request.variables.get("transition_duration"), (int, float))
@@ -137,7 +142,7 @@ def handle_xfade_concat(args: TransitionHandlerArgs) -> TransitionHandlerResult:
     clips = collect_clips(args.request.variables, args.request.template_info, args.video_info)
     if not clips:
         raise RenderError("No usable video clips were provided.")
-    print(f"  {len(clips)} clip(s), front fade transition {transition_duration}s")
+    logger.info("  %d clip(s), front fade transition %.1fs", len(clips), transition_duration)
     normalized_clips, cleanup = normalize_clips(
         args.root_dir,
         args.ffmpeg_path,

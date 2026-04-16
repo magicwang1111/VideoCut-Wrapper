@@ -1,0 +1,3 @@
+# Convenience entrypoint for environments that expect requirements.txt.
+# The dependency source of truth remains pyproject.toml.
+-e .

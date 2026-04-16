@@ -17,8 +17,9 @@
   ],
   "transitions": [
     { "type": "flash-black", "duration": 0.5 },
-    { "type": "dissolve",    "duration": 0.8 },
-    { "type": "flash-black", "duration": 0.4 }
+    { "type": "dissolve",    "duration": 0.5 },
+    { "type": "flash-black", "duration": 0.5 },
+    { "type": "dissolve",    "duration": 0.5 }
   ],
   "default_transition": {
     "type": "dissolve",

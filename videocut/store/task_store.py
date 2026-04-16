@@ -4,6 +4,7 @@ import json
 import sqlite3
 import threading
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
@@ -98,7 +99,7 @@ class TaskStore:
         with self._lock:
             self._db.execute(
                 "UPDATE tasks SET status='rendering', started_at=?, attempt=attempt+1 WHERE id=?",
-                (__import__("datetime").datetime.utcnow().isoformat(), task_id),
+                (datetime.utcnow().isoformat(), task_id),
             )
             self._db.commit()
 
@@ -111,7 +112,7 @@ class TaskStore:
         with self._lock:
             self._db.execute(
                 "UPDATE tasks SET status='completed', progress=100, oss_key=?, completed_at=? WHERE id=?",
-                (oss_key, __import__("datetime").datetime.utcnow().isoformat(), task_id),
+                (oss_key, datetime.utcnow().isoformat(), task_id),
             )
             self._db.commit()
 
@@ -119,7 +120,7 @@ class TaskStore:
         with self._lock:
             self._db.execute(
                 "UPDATE tasks SET status='failed', error=?, completed_at=? WHERE id=?",
-                (error, __import__("datetime").datetime.utcnow().isoformat(), task_id),
+                (error, datetime.utcnow().isoformat(), task_id),
             )
             self._db.commit()
 
@@ -136,10 +137,7 @@ class TaskStore:
         return [self._row_to_record(row) for row in rows]
 
     def cleanup_old_tasks(self, ttl_days: int) -> int:
-        cutoff = (
-            __import__("datetime").datetime.utcnow()
-            - __import__("datetime").timedelta(days=ttl_days)
-        ).isoformat()
+        cutoff = (datetime.utcnow() - timedelta(days=ttl_days)).isoformat()
         with self._lock:
             cursor = self._db.execute(
                 "DELETE FROM tasks WHERE status IN ('completed','failed') AND created_at < ?",
@@ -152,7 +150,7 @@ class TaskStore:
         with self._lock:
             self._db.execute(
                 "INSERT OR REPLACE INTO files (file_id, oss_key, created_at) VALUES (?, ?, ?)",
-                (file_id, oss_key, __import__("datetime").datetime.utcnow().isoformat()),
+                (file_id, oss_key, datetime.utcnow().isoformat()),
             )
             self._db.commit()
 

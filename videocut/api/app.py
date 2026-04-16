@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -10,9 +11,13 @@ from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
+from videocut.errors import VideoCutError
+from videocut.log import get_logger, setup_logging
 from videocut.oss import OssClient
 from videocut.queue import TaskQueue, WorkerTask
 from videocut.store import TaskRecord, TaskStore
+
+logger = get_logger(__name__)
 
 ALLOWED_UPLOAD_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".mp3", ".wav", ".aac", ".png", ".jpg", ".jpeg", ".webp"}
 MAX_UPLOAD_BYTES = 500 * 1024 * 1024
@@ -55,8 +60,6 @@ def require_content_type(request: Request, expected: str) -> None:
 
 
 def _create_store_record(task_id: str, template_id: str, variables: dict[str, Any]) -> TaskRecord:
-    from datetime import datetime
-
     return TaskRecord(
         id=task_id,
         template_id=template_id,
@@ -74,6 +77,7 @@ def _create_store_record(task_id: str, template_id: str, variables: dict[str, An
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    setup_logging()
     root_dir = Path(__file__).resolve().parents[2]
     db_path = Path(os.getenv("DB_PATH", str(root_dir / "data" / "tasks.db"))).resolve()
     worker_count = int(os.getenv("WORKER_COUNT", "0")) or max(1, (os.cpu_count() or 2) // 2)
@@ -84,13 +88,13 @@ async def lifespan(app: FastAPI):
         store,
         oss,
         worker_count,
-        lambda event: print(f"[Task] {event}"),
+        lambda event: logger.debug("task event: %s", event),
         root_dir=root_dir,
     )
     task_queue.start()
     cleaned = store.cleanup_old_tasks(int(os.getenv("TASK_TTL_DAYS", "7")))
     if cleaned:
-        print(f"[Store] cleaned {cleaned} expired task(s)")
+        logger.info("cleaned %d expired task(s)", cleaned)
 
     app.state.root_dir = root_dir
     app.state.store = store
@@ -112,6 +116,10 @@ def create_app() -> FastAPI:
         if isinstance(exc.detail, dict):
             return JSONResponse(status_code=exc.status_code, content=exc.detail)
         return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
+
+    @app.exception_handler(VideoCutError)
+    async def videocut_error_handler(_: Request, exc: VideoCutError):
+        return JSONResponse(status_code=400, content={"code": exc.code, "error": str(exc)})
 
     @app.get("/health")
     async def health() -> dict[str, Any]:

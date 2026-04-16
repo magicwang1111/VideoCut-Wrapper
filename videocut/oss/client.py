@@ -44,7 +44,8 @@ class OssClient:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(local_path, target)
             return
-        assert self.bucket is not None
+        if self.bucket is None:
+            raise DependencyError("OSS bucket", "Bucket not initialized; set OSS credentials or OSS_LOCAL_ROOT.")
         self.bucket.put_object_from_file(oss_key, str(local_path))
 
     def download(self, oss_key: str, local_path: str | Path) -> None:
@@ -54,12 +55,14 @@ class OssClient:
             source = Path(self.local_root) / oss_key
             shutil.copy2(source, target_path)
             return
-        assert self.bucket is not None
+        if self.bucket is None:
+            raise DependencyError("OSS bucket", "Bucket not initialized; set OSS credentials or OSS_LOCAL_ROOT.")
         self.bucket.get_object_to_file(oss_key, str(target_path))
 
     def presign_url(self, oss_key: str, expires_seconds: int = 3600) -> str:
         if self.local_root:
             return str((Path(self.local_root) / oss_key).resolve())
-        assert self.bucket is not None
+        if self.bucket is None:
+            raise DependencyError("OSS bucket", "Bucket not initialized; set OSS credentials or OSS_LOCAL_ROOT.")
         return self.bucket.sign_url("GET", oss_key, expires_seconds)
 

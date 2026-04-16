@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Literal
 
 from videocut.errors import RenderError
+from videocut.log import get_logger
 from videocut.presets import QualityPreset, ResolutionPreset
 from videocut.render.task import RenderTask, update_progress
 from videocut.render.transitions.shared import (
@@ -85,15 +86,13 @@ def ffmpeg_trim_mixed_concat(
         if junction == "flash-black":
             effective = min(half_duration, current_duration / 2, next_duration / 2)
             if effective < half_duration - 0.001:
-                print(
-                    f"  Warning: junction {index + 1} flash-black shortened to {(effective * 2):.2f}s"
-                )
+                logger.warning("junction %d flash-black shortened to %.2fs", index + 1, effective * 2)
             tail_consumed[index] = effective
             head_consumed[index + 1] = effective
         elif junction == "dissolve":
             effective = min(total_transition, current_duration / 2)
             if effective < total_transition - 0.001:
-                print(f"  Warning: junction {index + 1} dissolve shortened to {effective:.2f}s")
+                logger.warning("junction %d dissolve shortened to %.2fs", index + 1, effective)
             tail_consumed[index] = effective
 
     filter_parts: list[str] = []
@@ -109,7 +108,7 @@ def ffmpeg_trim_mixed_concat(
             )
             segment_labels.append(f"[body{index}]")
         elif body_duration > 0:
-            print(f"  Warning: {clips[index].key} body segment too short ({body_duration:.3f}s), skip")
+            logger.warning("%s body segment too short (%.3fs), skip", clips[index].key, body_duration)
 
         if index >= clip_count - 1:
             continue
@@ -149,10 +148,7 @@ def ffmpeg_trim_mixed_concat(
         raise RenderError("No usable video segments after transition building.")
 
     filter_parts.append(f"{''.join(segment_labels)}concat=n={len(segment_labels)}:v=1:a=0[vout]")
-    print(
-        f"\n[2/3] FFmpeg mixed-transition concat {clip_count} clips "
-        f"(trim {trim_start}s, junctions {' -> '.join(junctions)})..."
-    )
+    logger.info("[2/3] FFmpeg mixed-transition concat %d clips (trim %.1fs, junctions %s)...", clip_count, trim_start, " -> ".join(junctions))
     _run_ffmpeg(
         [
             ffmpeg_path,
@@ -178,8 +174,11 @@ def ffmpeg_trim_mixed_concat(
     update_progress(task, 1.0)
 
 
+logger = get_logger(__name__)
+
+
 def handle_trim_mixed_concat(args: TransitionHandlerArgs) -> TransitionHandlerResult:
-    print("\n[1/3] Collecting input clips...")
+    logger.info("[1/3] Collecting input clips...")
     trim_start = (
         float(args.request.variables["trim_start"])
         if isinstance(args.request.variables.get("trim_start"), (int, float))
@@ -195,9 +194,7 @@ def handle_trim_mixed_concat(args: TransitionHandlerArgs) -> TransitionHandlerRe
         raise RenderError("No usable video clips were provided.")
 
     junctions = [parse_junction_type(args.request.variables.get(f"transition_{index}")) for index in range(1, len(clips))]
-    print(
-        f"  {len(clips)} clip(s), trim {trim_start}s, transitions {junctions}, duration {transition_duration}s"
-    )
+    logger.info("  %d clip(s), trim %.1fs, transitions %s, duration %.1fs", len(clips), trim_start, junctions, transition_duration)
     normalized_clips, cleanup = normalize_clips(
         args.root_dir,
         args.ffmpeg_path,

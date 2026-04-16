@@ -12,6 +12,7 @@ from typing import Any
 
 from videocut.bgm import apply_bgm, scan_bgm_files
 from videocut.errors import DependencyError, RenderError
+from videocut.log import get_logger
 from videocut.presets import AUTO_PRESET, ResolutionPreset, get_quality_preset, get_resolution_preset
 from videocut.render.task import RenderTask, complete_task, create_task, fail_task, start_task
 from videocut.render.transitions import (
@@ -33,6 +34,9 @@ TRANSITION_TEMPLATE_IDS = {
     "flash-black-concat",
     "trim-mixed-concat",
 }
+
+
+logger = get_logger(__name__)
 
 
 def find_file_recursive(directory: Path, filename: str, max_depth: int = 3) -> Path | None:
@@ -221,10 +225,10 @@ class RenderService:
             )
             bgm_files = scan_bgm_files(bgm_dir_path)
             chosen = random.choice(bgm_files)
-            print(f"[2.5/3] 混入 BGM: {chosen.name}（volume={request.bgm.volume}）")
+            logger.info("[2.5/3] 混入 BGM: %s (volume=%.2f)", chosen.name, request.bgm.volume)
             apply_bgm(ffmpeg_path, ffprobe_path, output_path, chosen, request.bgm.volume, request.bgm.fade_out)
         completed = self._finalize_success(task, output_path, start_time)
-        print("[3/3] Writing metadata...")
+        logger.info("[3/3] Writing metadata...")
         self.write_meta(out_dir, task, request, res_preset, completed.duration or 0.0)
         return completed
 
@@ -252,9 +256,9 @@ class RenderService:
             video_path = request_variables.get(first_video_key) if first_video_key else None
             probed = video_info.get(first_video_key) if first_video_key else None
             if probed:
-                print(
-                    f"  Auto-detected resolution {probed.width}x{probed.height} {probed.fps}fps "
-                    f"(source: {Path(str(video_path)).name})"
+                logger.info(
+                    "  Auto-detected resolution %dx%d %dfps (source: %s)",
+                    probed.width, probed.height, probed.fps, Path(str(video_path)).name,
                 )
                 res_preset: ResolutionPreset = ResolutionPreset(
                     width=probed.width,
@@ -263,7 +267,7 @@ class RenderService:
                     label=probed.label,
                 )
             else:
-                print("  Warning: unable to auto-detect video metadata, fallback to douyin_vertical")
+                logger.warning("unable to auto-detect video metadata, fallback to douyin_vertical")
                 res_preset = get_resolution_preset("douyin_vertical")
         else:
             res_preset = get_resolution_preset(request.preset)
@@ -323,7 +327,7 @@ class RenderService:
                 )
 
             raise RenderError(f'Template "{request.template_id}" is not implemented in the Python runtime.')
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # intentional: isolate render failure from caller
             elapsed = time.time() - start_time
             fail_task(task, str(exc))
             return RenderResult(task_id=task.id, status="failed", duration=elapsed, error=str(exc))
@@ -331,7 +335,7 @@ class RenderService:
             for cleanup in cleanup_fns:
                 try:
                     cleanup()
-                except Exception:  # noqa: BLE001
+                except Exception:  # intentional: best-effort cleanup, never suppress render result
                     pass
 
     def write_meta(

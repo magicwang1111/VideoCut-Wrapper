@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from videocut.log import get_logger
 from videocut.oss import OssClient
 from videocut.queue.worker_process import worker_main
 from videocut.store import TaskStore
@@ -28,13 +29,16 @@ class WorkerTask:
     quality: str
 
 
-@dataclass
+@dataclass(slots=True)
 class WorkerState:
     worker_id: int
     process: mp.Process
     input_queue: mp.Queue
     current_task_id: str | None = None
     ready: bool = False
+
+
+logger = get_logger(__name__)
 
 
 class WorkerPool:
@@ -141,7 +145,7 @@ class WorkerPool:
         for worker in self.workers:
             try:
                 worker.input_queue.put(None)
-            except Exception:  # noqa: BLE001
+            except Exception:  # intentional: best-effort shutdown signal
                 pass
         for worker in self.workers:
             worker.process.join(timeout=5)
@@ -193,7 +197,7 @@ class TaskQueue:
                     )
                 )
         if stalled:
-            print(f"[Queue] Replayed {len(stalled)} pending/rendering task(s)")
+            logger.info("Replayed %d pending/rendering task(s)", len(stalled))
 
     def enqueue(self, task: WorkerTask) -> bool:
         with self._lock:

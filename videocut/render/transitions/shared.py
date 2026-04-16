@@ -7,9 +7,12 @@ from pathlib import Path
 from typing import Callable
 
 from videocut.errors import RenderError
+from videocut.log import get_logger
 from videocut.presets import QualityPreset, ResolutionPreset
 from videocut.render.task import RenderTask, update_progress
 from videocut.render.types import ProbedVideoInfo, RenderRequest, VideoClip
+
+logger = get_logger(__name__)
 
 
 @dataclass(slots=True)
@@ -112,9 +115,9 @@ def normalize_clips(
                 pass
 
     try:
-        print(
-            f"  [normalize] all input videos -> "
-            f"{res_preset.width}x{res_preset.height} {res_preset.fps}fps (lanczos)"
+        logger.info(
+            "  [normalize] all input videos -> %dx%d %dfps (lanczos)",
+            res_preset.width, res_preset.height, res_preset.fps,
         )
         normalized: list[VideoClip] = []
         for index, clip in enumerate(clips):
@@ -164,11 +167,11 @@ def ffmpeg_trim_concat(
     list_file = temp_dir / f"concat_{session_id}.txt"
 
     try:
-        print(f"\n[2/3] FFmpeg trimming {len(clips)} clips...")
+        logger.info("[2/3] FFmpeg trimming %d clips...", len(clips))
         for index, clip in enumerate(clips):
             temp_file = temp_dir / f"trim_{session_id}_{index}.mp4"
             temp_files.append(temp_file)
-            print(f"  [{index + 1}/{len(clips)}] trimming {Path(clip.src).name}, skip first {trim_start}s")
+            logger.info("  [%d/%d] trimming %s, skip first %.1fs", index + 1, len(clips), Path(clip.src).name, trim_start)
             _run_ffmpeg(
                 [
                     ffmpeg_path,
@@ -194,7 +197,7 @@ def ffmpeg_trim_concat(
             "\n".join(f"file '{str(file_path).replace(chr(92), '/')}'" for file_path in temp_files),
             encoding="utf-8",
         )
-        print(f"  concatenating {len(clips)} clips -> {Path(output_path).name}")
+        logger.info("  concatenating %d clips -> %s", len(clips), Path(output_path).name)
         _run_ffmpeg(
             [
                 ffmpeg_path,

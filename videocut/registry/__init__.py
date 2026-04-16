@@ -6,6 +6,9 @@ from pathlib import Path
 from typing import Any, Literal
 
 from videocut.errors import ManifestError, TemplateNotFoundError
+from videocut.log import get_logger
+
+logger = get_logger(__name__)
 
 VariableType = Literal[
     "video",
@@ -81,8 +84,8 @@ class TemplateRegistry:
                 continue
             try:
                 info = self._register_from_manifest(entry, manifest_path)
-            except Exception as exc:  # noqa: BLE001
-                print(f'Warning: skipping template "{entry.name}": {exc}')
+            except (OSError, ManifestError) as exc:
+                logger.warning('skipping template "%s": %s', entry.name, exc)
                 continue
             if info.manifest.id not in SUPPORTED_TEMPLATE_IDS:
                 continue

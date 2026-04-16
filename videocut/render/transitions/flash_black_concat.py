@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from videocut.errors import RenderError
+from videocut.log import get_logger
 from videocut.presets import QualityPreset, ResolutionPreset
 from videocut.render.task import RenderTask, update_progress
 from videocut.render.transitions.shared import (
@@ -27,7 +28,8 @@ def ffmpeg_flash_black_concat(
     clip_count = len(clips)
     half_duration = transition_duration / 2
     fps = res_preset.fps
-    format_seconds = lambda value: f"{value:.6f}"
+    def format_seconds(value: float) -> str:
+        return f"{value:.6f}"
     input_args: list[str] = []
     for clip in clips:
         input_args.extend(["-i", clip.src])
@@ -65,9 +67,9 @@ def ffmpeg_flash_black_concat(
         is_last = index == clip_count - 1
         effective_half = min(half_duration, duration / 2)
         if effective_half < half_duration:
-            print(
-                f"  Warning: {clip.key} duration {duration:.2f}s too short, "
-                f"shrink flash-black to {(effective_half * 2):.2f}s"
+            logger.warning(
+                "%s duration %.2fs too short, shrink flash-black to %.2fs",
+                clip.key, duration, effective_half * 2,
             )
         fade_out_start = max(0.0, duration - effective_half)
         chain = f"[{index}:v]setpts=PTS-STARTPTS"
@@ -80,10 +82,7 @@ def ffmpeg_flash_black_concat(
 
     concat_inputs = "".join(f"[v{index}]" for index in range(clip_count))
     filter_parts.append(f"{concat_inputs}concat=n={clip_count}:v=1:a=0[vout]")
-    print(
-        f"\n[2/3] FFmpeg flash-black concat {clip_count} clips "
-        f"(transition {transition_duration}s, half {half_duration}s)..."
-    )
+    logger.info("[2/3] FFmpeg flash-black concat %d clips (transition %.1fs, half %.2fs)...", clip_count, transition_duration, half_duration)
     _run_ffmpeg(
         [
             ffmpeg_path,
@@ -109,8 +108,11 @@ def ffmpeg_flash_black_concat(
     update_progress(task, 1.0)
 
 
+logger = get_logger(__name__)
+
+
 def handle_flash_black_concat(args: TransitionHandlerArgs) -> TransitionHandlerResult:
-    print("\n[1/3] Collecting input clips...")
+    logger.info("[1/3] Collecting input clips...")
     transition_duration = (
         float(args.request.variables["transition_duration"])
         if isinstance(args.request.variables.get("transition_duration"), (int, float))
@@ -119,10 +121,7 @@ def handle_flash_black_concat(args: TransitionHandlerArgs) -> TransitionHandlerR
     clips = collect_clips(args.request.variables, args.request.template_info, args.video_info)
     if not clips:
         raise RenderError("No usable video clips were provided.")
-    print(
-        f"  {len(clips)} clip(s), flash-black transition {transition_duration}s "
-        f"(each half {(transition_duration / 2):.2f}s)"
-    )
+    logger.info("  %d clip(s), flash-black transition %.1fs (each half %.2fs)", len(clips), transition_duration, transition_duration / 2)
     normalized_clips, cleanup = normalize_clips(
         args.root_dir,
         args.ffmpeg_path,

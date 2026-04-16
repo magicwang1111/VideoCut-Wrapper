@@ -129,7 +129,7 @@ def worker_main(
             event_queue.put(
                 {"type": "task_done", "worker_id": worker_id, "task_id": task_id, "oss_key": oss_key}
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # intentional: worker must report failure, not crash the process
             event_queue.put(
                 {"type": "task_failed", "worker_id": worker_id, "task_id": task_id, "error": str(exc)}
             )

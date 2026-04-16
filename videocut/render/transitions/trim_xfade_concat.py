@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from videocut.errors import RenderError
+from videocut.log import get_logger
 from videocut.render.transitions.shared import (
     TransitionHandlerArgs,
     TransitionHandlerResult,
@@ -12,8 +13,11 @@ from videocut.render.transitions.shared import (
 from videocut.render.transitions.xfade_concat import ffmpeg_xfade_concat
 
 
+logger = get_logger(__name__)
+
+
 def handle_trim_xfade_concat(args: TransitionHandlerArgs) -> TransitionHandlerResult:
-    print("\n[1/3] Collecting input clips...")
+    logger.info("[1/3] Collecting input clips...")
     trim_start = (
         float(args.request.variables["trim_start"])
         if isinstance(args.request.variables.get("trim_start"), (int, float))
@@ -28,14 +32,12 @@ def handle_trim_xfade_concat(args: TransitionHandlerArgs) -> TransitionHandlerRe
     clips = []
     for clip in all_clips:
         if clip.duration > 0 and clip.duration <= trim_start:
-            print(f"  Warning: skipping {clip.key}, duration {clip.duration:.1f}s <= {trim_start}s")
+            logger.warning("  skipping %s, duration %.1fs <= %.1fs", clip.key, clip.duration, trim_start)
             continue
         clips.append(clip)
     if not clips:
         raise RenderError("No usable video clips after trim filtering.")
-    print(
-        f"  {len(clips)} clip(s), trim first {trim_start}s, front fade transition {transition_duration}s"
-    )
+    logger.info("  %d clip(s), trim first %.1fs, front fade transition %.1fs", len(clips), trim_start, transition_duration)
     normalized_clips, cleanup = normalize_clips(
         args.root_dir,
         args.ffmpeg_path,

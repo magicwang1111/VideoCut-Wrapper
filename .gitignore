@@ -16,3 +16,5 @@ __pycache__/
 *.mp3
 *.wav
 *.aac
+input/
+videocut_wrapper.egg-info/

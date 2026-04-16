@@ -7,7 +7,8 @@ from typing import Any
 
 import yaml
 
-from videocut.errors import VideoCutError
+from videocut.errors import ConfigNotFoundError, ConfigParseError, VideoCutError
+from videocut.pipeline.config import parse_bgm_config
 from videocut.pipeline.types import PipelineBgmConfig
 
 
@@ -29,13 +30,13 @@ class ProjectConfig:
 def parse_project_config(config_path: str | Path) -> ProjectConfig:
     abs_path = Path(config_path).resolve()
     if not abs_path.exists():
-        raise VideoCutError(f"Config file does not exist: {abs_path}")
+        raise ConfigNotFoundError(str(abs_path))
 
     raw = abs_path.read_text(encoding="utf-8")
     try:
         parsed = json.loads(raw) if abs_path.suffix.lower() == ".json" else yaml.safe_load(raw)
-    except Exception as exc:  # noqa: BLE001
-        raise VideoCutError(f"Failed to parse config: {abs_path}\n  {exc}") from exc
+    except (json.JSONDecodeError, yaml.YAMLError, ValueError) as exc:
+        raise ConfigParseError(str(abs_path), str(exc)) from exc
 
     if not isinstance(parsed, dict):
         raise VideoCutError(f"Config root must be an object, got {type(parsed).__name__}.")
@@ -50,15 +51,7 @@ def parse_project_config(config_path: str | Path) -> ProjectConfig:
         output = ProjectOutputConfig(filename=output_raw.get("filename"))
 
     variables = parsed.get("variables")
-    bgm_raw = parsed.get("bgm")
-    bgm = None
-    if isinstance(bgm_raw, dict):
-        bgm = PipelineBgmConfig(
-            enabled=bool(bgm_raw.get("enabled", True)),
-            dir=bgm_raw.get("dir") if isinstance(bgm_raw.get("dir"), str) else None,
-            volume=float(bgm_raw["volume"]) if isinstance(bgm_raw.get("volume"), (int, float)) else 0.3,
-            fade_out=float(bgm_raw["fade_out"]) if isinstance(bgm_raw.get("fade_out"), (int, float)) else 0.0,
-        )
+    bgm = parse_bgm_config(parsed.get("bgm"))
     return ProjectConfig(
         template=template,
         preset=parsed.get("preset") if isinstance(parsed.get("preset"), str) else None,

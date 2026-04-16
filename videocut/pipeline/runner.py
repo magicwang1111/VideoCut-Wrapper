@@ -9,12 +9,13 @@ from pathlib import Path
 
 from videocut.bgm import apply_bgm, scan_bgm_files
 from videocut.errors import RenderError
+from videocut.log import get_logger
 from videocut.pipeline.config import ParsedPipelineContext
 from videocut.pipeline.types import PipelineTransitionConfig, ResolvedPipelineClip
 from videocut.presets import AUTO_PRESET, QualityPreset, ResolutionPreset, get_quality_preset, get_resolution_preset
 from videocut.render.task import complete_task, create_task, fail_task, start_task, update_progress
 from videocut.render.transitions.shared import normalize_clips
-from videocut.render.types import RenderResult
+from videocut.render.types import RenderResult, VideoClip
 
 
 def probe_single_video(ffprobe_path: str, video_path: str) -> dict[str, float | int]:
@@ -61,7 +62,8 @@ def ffmpeg_pipeline_concat(
     fps = res_preset.fps
     frame_duration = 1 / fps
     min_segment = frame_duration / 2
-    fmt = lambda value: f"{value:.6f}"
+    def __fmt(value: float) -> str:
+        return f"{value:.6f}"
 
     input_args: list[str] = []
     for clip in clips:
@@ -120,7 +122,7 @@ def ffmpeg_pipeline_concat(
         body_duration = duration - head_consumed[index] - tail_consumed[index]
         if body_duration > min_segment:
             filter_parts.append(
-                f"[{index}:v]trim=start={fmt(body_start)}:duration={fmt(body_duration)},"
+                f"[{index}:v]trim=start={_fmt(body_start)}:duration={_fmt(body_duration)},"
                 f"setpts=PTS-STARTPTS,fps=fps={fps}[body{index}]"
             )
             segment_labels.append(f"[body{index}]")
@@ -131,26 +133,26 @@ def ffmpeg_pipeline_concat(
         if junction.type == "flash-black":
             effective = tail_consumed[index]
             filter_parts.append(
-                f"[{index}:v]trim=start={fmt(duration - effective)}:duration={fmt(effective)},"
-                f"setpts=PTS-STARTPTS,fade=t=out:st=0:d={fmt(effective)},fps=fps={fps}[fb_tail{index}]"
+                f"[{index}:v]trim=start={_fmt(duration - effective)}:duration={_fmt(effective)},"
+                f"setpts=PTS-STARTPTS,fade=t=out:st=0:d={_fmt(effective)},fps=fps={fps}[fb_tail{index}]"
             )
             segment_labels.append(f"[fb_tail{index}]")
             filter_parts.append(
-                f"[{index + 1}:v]trim=duration={fmt(effective)},setpts=PTS-STARTPTS,"
-                f"fade=t=in:st=0:d={fmt(effective)},fps=fps={fps}[fb_head{index + 1}]"
+                f"[{index + 1}:v]trim=duration={_fmt(effective)},setpts=PTS-STARTPTS,"
+                f"fade=t=in:st=0:d={_fmt(effective)},fps=fps={fps}[fb_head{index + 1}]"
             )
             segment_labels.append(f"[fb_head{index + 1}]")
         elif junction.type == "dissolve":
             effective = tail_consumed[index]
             still_duration = max(0.0, effective - frame_duration)
             filter_parts.append(
-                f"[{index}:v]trim=start={fmt(duration - effective)}:duration={fmt(effective)},"
-                f"setpts=PTS-STARTPTS,format=rgba,fade=t=out:st=0:d={fmt(effective)}:alpha=1,"
+                f"[{index}:v]trim=start={_fmt(duration - effective)}:duration={_fmt(effective)},"
+                f"setpts=PTS-STARTPTS,format=rgba,fade=t=out:st=0:d={_fmt(effective)}:alpha=1,"
                 f"fps=fps={fps}[diss_tail{index}]"
             )
             filter_parts.append(
                 f"[{index + 1}:v]trim=end_frame=1,setpts=PTS-STARTPTS,"
-                f"tpad=stop_mode=clone:stop_duration={fmt(still_duration)},fps=fps={fps}[diss_still{index}]"
+                f"tpad=stop_mode=clone:stop_duration={_fmt(still_duration)},fps=fps={fps}[diss_still{index}]"
             )
             filter_parts.append(
                 f"[diss_still{index}][diss_tail{index}]overlay=eof_action=pass:shortest=1,"
@@ -186,6 +188,9 @@ def ffmpeg_pipeline_concat(
         timeout=600,
     )
     update_progress(task, 1.0)
+
+
+logger = get_logger(__name__)
 
 
 class PipelineRunner:
@@ -224,7 +229,7 @@ class PipelineRunner:
         cleanup = None
 
         try:
-            print(f"\n[1/3] Probing and validating {len(resolved_srcs)} clips...")
+            logger.info("[1/3] Probing and validating %d clips...", len(resolved_srcs))
             res_preset = None
             resolved_clips: list[ResolvedPipelineClip] = []
             for index, src in enumerate(resolved_srcs):
@@ -238,9 +243,9 @@ class PipelineRunner:
                         f"clips[{index}] ({Path(src).name}) has non-positive duration after trim: "
                         f"source={probed['duration']:.2f}s trim_start={trim_start}s trim_end={trim_end}s"
                     )
-                print(
-                    f"  clip_{index + 1}: {Path(src).name} "
-                    f"(source {probed['duration']:.2f}s, effective {effective_duration:.2f}s)"
+                logger.info(
+                    "  clip_%d: %s (source %.2fs, effective %.2fs)",
+                    index + 1, Path(src).name, probed["duration"], effective_duration,
                 )
                 if index == 0 and preset == AUTO_PRESET and probed["width"] and probed["height"]:
                     res_preset = ResolutionPreset(
@@ -249,7 +254,7 @@ class PipelineRunner:
                         fps=int(probed["fps"]),
                         label=f"Auto {probed['width']}x{probed['height']} {probed['fps']}fps",
                     )
-                    print(f"  Auto-detected resolution {probed['width']}x{probed['height']} {probed['fps']}fps")
+                    logger.info("  Auto-detected resolution %dx%d %dfps", probed["width"], probed["height"], probed["fps"])
                 resolved_clips.append(
                     ResolvedPipelineClip(
                         key=f"clip_{index + 1}",
@@ -264,13 +269,13 @@ class PipelineRunner:
             if preset != AUTO_PRESET:
                 res_preset = get_resolution_preset(preset)
             elif res_preset is None:
-                print("  Warning: unable to auto-detect resolution, fallback to douyin_vertical")
+                logger.warning("unable to auto-detect resolution, fallback to douyin_vertical")
                 res_preset = get_resolution_preset("douyin_vertical")
 
             qual_preset = get_quality_preset(quality)
 
             video_clips = [
-                type("VideoClipProxy", (), {"key": clip.key, "src": clip.src, "duration": clip.probed_duration})()
+                VideoClip(key=clip.key, src=clip.src, duration=clip.probed_duration)
                 for clip in resolved_clips
             ]
             normalized_clips, cleanup = normalize_clips(self.root_dir, ffmpeg_path, video_clips, qual_preset, res_preset)
@@ -286,7 +291,7 @@ class PipelineRunner:
                 for index in range(len(resolved_clips))
             ]
 
-            print("[2/3] Building pipeline transitions...")
+            logger.info("[2/3] Building pipeline transitions...")
             ffmpeg_pipeline_concat(
                 ffmpeg_path,
                 normalized_pipeline_clips,
@@ -305,7 +310,7 @@ class PipelineRunner:
                 )
                 bgm_files = scan_bgm_files(bgm_dir_path)
                 chosen = random.choice(bgm_files)
-                print(f"[2.5/3] 混入 BGM: {chosen.name}（volume={config.bgm.volume}）")
+                logger.info("[2.5/3] 混入 BGM: %s (volume=%.2f)", chosen.name, config.bgm.volume)
                 apply_bgm(ffmpeg_path, ffprobe_path, output_path, chosen, config.bgm.volume, config.bgm.fade_out)
                 bgm_file_used = str(chosen)
 
@@ -337,9 +342,9 @@ class PipelineRunner:
                 } if bgm_file_used else None,
             }
             (out_dir / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
-            print("[3/3] Writing metadata...")
+            logger.info("[3/3] Metadata written")
             return RenderResult(task_id=task.id, status="completed", output_path=output_path, duration=elapsed)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # intentional: isolate render failure from caller
             elapsed = time.time() - start_time
             fail_task(task, str(exc))
             return RenderResult(task_id=task.id, status="failed", duration=elapsed, error=str(exc))
@@ -347,6 +352,6 @@ class PipelineRunner:
             if cleanup:
                 try:
                     cleanup()
-                except Exception:  # noqa: BLE001
+                except Exception:  # intentional: best-effort cleanup, never suppress render result
                     pass
 

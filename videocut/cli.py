@@ -9,6 +9,7 @@ import typer
 import uvicorn
 
 from videocut.errors import VideoCutError
+from videocut.log import setup_logging
 from videocut.pipeline import PipelineRunner, is_pipeline_config, load_raw_yaml, resolve_pipeline_config
 from videocut.presets import AUTO_PRESET, QUALITY_PRESETS, RESOLUTION_PRESETS, get_resolution_preset
 from videocut.project import ProjectManager
@@ -135,7 +136,7 @@ def validate(config: str) -> None:
         typer.echo(f"  Variables: {len(resolved.variables)}")
         typer.echo("")
     except VideoCutError as exc:
-        typer.echo(f"\n{exc}\n", err=True)
+        typer.secho(f"\n[E{exc.code}] {exc}\n", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1)
 
 
@@ -183,7 +184,7 @@ def render(
     try:
         raw_yaml = load_raw_yaml(Path(config).resolve())
     except VideoCutError as exc:
-        typer.echo(f"\n{exc}\n", err=True)
+        typer.secho(f"\n[E{exc.code}] {exc}\n", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1)
 
     try:
@@ -247,7 +248,7 @@ def render(
         typer.echo(f"\nRender failed: {result.error}\n", err=True)
         raise typer.Exit(code=1)
     except VideoCutError as exc:
-        typer.echo(f"\n{exc}\n", err=True)
+        typer.secho(f"\n[E{exc.code}] {exc}\n", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1)
 
 
@@ -257,6 +258,7 @@ def serve(host: str = "0.0.0.0", port: int = 3000) -> None:
 
 
 def main() -> None:
+    setup_logging()
     app()
 
 

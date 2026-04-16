@@ -7,7 +7,7 @@ from typing import Any
 
 import yaml
 
-from videocut.errors import VideoCutError
+from videocut.errors import ConfigNotFoundError, ConfigParseError, VideoCutError
 from videocut.pipeline.types import (
     PipelineBgmConfig,
     PipelineClipConfig,
@@ -25,12 +25,12 @@ def is_pipeline_config(raw: Any) -> bool:
 def load_raw_yaml(config_path: str | Path) -> Any:
     abs_path = Path(config_path).resolve()
     if not abs_path.exists():
-        raise VideoCutError(f"Config file does not exist: {abs_path}")
+        raise ConfigNotFoundError(str(abs_path))
     raw = abs_path.read_text(encoding="utf-8")
     try:
         return json.loads(raw) if abs_path.suffix.lower() == ".json" else yaml.safe_load(raw)
-    except Exception as exc:  # noqa: BLE001
-        raise VideoCutError(f"Failed to parse config: {abs_path}\n  {exc}") from exc
+    except (json.JSONDecodeError, yaml.YAMLError, ValueError) as exc:
+        raise ConfigParseError(str(abs_path), str(exc)) from exc
 
 
 def parse_junction_type(raw: object, location: str) -> PipelineJunctionType:
