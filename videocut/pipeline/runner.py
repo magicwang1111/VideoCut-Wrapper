@@ -62,7 +62,7 @@ def ffmpeg_pipeline_concat(
     fps = res_preset.fps
     frame_duration = 1 / fps
     min_segment = frame_duration / 2
-    def __fmt(value: float) -> str:
+    def _fmt(value: float) -> str:
         return f"{value:.6f}"
 
     input_args: list[str] = []
