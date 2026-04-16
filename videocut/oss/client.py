@@ -14,7 +14,7 @@ class OssClient:
 
         self.bucket_name = os.getenv("OSS_BUCKET", "goumee-coze")
         self.prefix = os.getenv("OSS_PREFIX", "GouMei-Video-Cut")
-        endpoint = os.getenv("OSS_ENDPOINT", "oss-cn-hangzhou-internal.aliyuncs.com")
+        endpoint = os.getenv("OSS_ENDPOINT", "oss-cn-hangzhou.aliyuncs.com")
         access_key_id = os.getenv("OSS_ACCESS_KEY_ID")
         access_key_secret = os.getenv("OSS_ACCESS_KEY_SECRET")
         self.local_root = os.getenv("OSS_LOCAL_ROOT")
@@ -65,4 +65,3 @@ class OssClient:
         if self.bucket is None:
             raise DependencyError("OSS bucket", "Bucket not initialized; set OSS credentials or OSS_LOCAL_ROOT.")
         return self.bucket.sign_url("GET", oss_key, expires_seconds)
-

@@ -2,7 +2,7 @@
   "template": "trim-mixed-concat",
   "bgm": {
     "enabled": true,
-    "dir": null,
+    "dir": "D:/VideoCut-Wrapper/input/bgm",
     "volume": 1,
     "fade_out": 0
   },
@@ -17,7 +17,6 @@
     "transition_2": "dissolve",
     "transition_3": "flash-black",
     "transition_4": "dissolve",
-    "transition_5": "flash-black",
     "transition_duration": 0.5
   }
 }

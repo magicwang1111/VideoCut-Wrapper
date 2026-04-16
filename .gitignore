@@ -1,8 +1,10 @@
 node_modules/
 dist/
+.env
 output/
 temp/
 data/
+oss-local/
 .venv/
 venv/
 __pycache__/
