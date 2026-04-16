@@ -37,6 +37,7 @@ def handle_trim_concat(args: TransitionHandlerArgs) -> TransitionHandlerResult:
         clips,
         args.qual_preset,
         args.res_preset,
+        args.video_settings,
     )
     output_path = str(Path(args.out_dir) / args.out_file)
     ffmpeg_trim_concat(
@@ -45,8 +46,8 @@ def handle_trim_concat(args: TransitionHandlerArgs) -> TransitionHandlerResult:
         normalized_clips,
         output_path,
         args.qual_preset,
+        args.video_settings,
         args.task,
         trim_start,
     )
     return TransitionHandlerResult(cleanup=cleanup, output_path=output_path)
-

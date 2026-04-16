@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Callable
 
 from videocut.errors import RenderError
+from videocut.ffmpeg_config import FFmpegVideoSettings
 from videocut.log import get_logger
 from videocut.presets import QualityPreset, ResolutionPreset
 from videocut.render.task import RenderTask, update_progress
@@ -20,6 +21,7 @@ class TransitionHandlerArgs:
     root_dir: Path
     ffmpeg_path: str
     ffprobe_path: str
+    video_settings: FFmpegVideoSettings
     request: RenderRequest
     video_info: dict[str, ProbedVideoInfo]
     qual_preset: QualityPreset
@@ -100,6 +102,7 @@ def normalize_clips(
     clips: list[VideoClip],
     qual_preset: QualityPreset,
     res_preset: ResolutionPreset,
+    video_settings: FFmpegVideoSettings,
 ) -> tuple[list[VideoClip], Callable[[], None]]:
     temp_dir = root_dir / "temp"
     temp_dir.mkdir(parents=True, exist_ok=True)
@@ -126,18 +129,12 @@ def normalize_clips(
             _run_ffmpeg(
                 [
                     ffmpeg_path,
+                    *video_settings.input_args(),
                     "-i",
                     clip.src,
                     "-vf",
                     normalize_filter,
-                    "-c:v",
-                    "libx264",
-                    "-preset",
-                    qual_preset.ffmpeg_preset,
-                    "-crf",
-                    str(qual_preset.crf),
-                    "-pix_fmt",
-                    "yuv420p",
+                    *video_settings.output_args(qual_preset),
                     "-an",
                     "-y",
                     str(temp_file),
@@ -157,6 +154,7 @@ def ffmpeg_trim_concat(
     clips: list[VideoClip],
     output_path: str,
     qual_preset: QualityPreset,
+    video_settings: FFmpegVideoSettings,
     task: RenderTask,
     trim_start: float,
 ) -> None:
@@ -175,16 +173,12 @@ def ffmpeg_trim_concat(
             _run_ffmpeg(
                 [
                     ffmpeg_path,
+                    *video_settings.input_args(),
                     "-ss",
                     str(trim_start),
                     "-i",
                     clip.src,
-                    "-c:v",
-                    "libx264",
-                    "-preset",
-                    qual_preset.ffmpeg_preset,
-                    "-crf",
-                    str(qual_preset.crf),
+                    *video_settings.output_args(qual_preset, pix_fmt=""),
                     "-an",
                     "-y",
                     str(temp_file),
@@ -222,4 +216,3 @@ def ffmpeg_trim_concat(
                 file_path.unlink()
             except FileNotFoundError:
                 pass
-

@@ -9,6 +9,7 @@ import typer
 import uvicorn
 
 from videocut.errors import VideoCutError
+from videocut.ffmpeg_config import resolve_runtime_video_settings, resolve_video_settings
 from videocut.log import setup_logging
 from videocut.pipeline import PipelineRunner, is_pipeline_config, load_raw_yaml, resolve_pipeline_config
 from videocut.presets import AUTO_PRESET, QUALITY_PRESETS, RESOLUTION_PRESETS, get_resolution_preset
@@ -161,6 +162,10 @@ def check() -> None:
     if ffmpeg_path:
         version = subprocess.check_output([ffmpeg_path, "-version"], encoding="utf-8").splitlines()[0]
         typer.echo(f"  FFmpeg: {version}")
+        video_settings = resolve_runtime_video_settings(ffmpeg_path, resolve_video_settings())
+        typer.echo(f"  Video encoder: {video_settings.encoder}")
+        if video_settings.hwaccel:
+            typer.echo(f"  HWAccel: {video_settings.hwaccel}")
     else:
         typer.echo("  FFmpeg: not found")
     typer.echo(f"  ffprobe: {ffprobe_path or 'not found'}")

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from videocut.errors import RenderError
+from videocut.ffmpeg_config import FFmpegVideoSettings
 from videocut.log import get_logger
 from videocut.presets import QualityPreset, ResolutionPreset
 from videocut.render.task import RenderTask, update_progress
@@ -21,6 +22,7 @@ def ffmpeg_zoom_dissolve_concat(
     clips: list[VideoClip],
     output_path: str,
     qual_preset: QualityPreset,
+    video_settings: FFmpegVideoSettings,
     task: RenderTask,
     res_preset: ResolutionPreset,
     transition_duration: float,
@@ -116,19 +118,13 @@ def ffmpeg_zoom_dissolve_concat(
     _run_ffmpeg(
         [
             ffmpeg_path,
+            *video_settings.input_args(),
             *input_args,
             "-filter_complex",
             ";".join(filter_parts),
             "-map",
             "[vout]",
-            "-c:v",
-            "libx264",
-            "-preset",
-            qual_preset.ffmpeg_preset,
-            "-crf",
-            str(qual_preset.crf),
-            "-pix_fmt",
-            "yuv420p",
+            *video_settings.output_args(qual_preset),
             "-an",
             "-y",
             output_path,
@@ -163,6 +159,7 @@ def handle_zoom_dissolve_concat(args: TransitionHandlerArgs) -> TransitionHandle
         clips,
         args.qual_preset,
         args.res_preset,
+        args.video_settings,
     )
     output_path = str(Path(args.out_dir) / args.out_file)
     ffmpeg_zoom_dissolve_concat(
@@ -170,10 +167,10 @@ def handle_zoom_dissolve_concat(args: TransitionHandlerArgs) -> TransitionHandle
         normalized_clips,
         output_path,
         args.qual_preset,
+        args.video_settings,
         args.task,
         args.res_preset,
         transition_duration,
         zoom_scale,
     )
     return TransitionHandlerResult(cleanup=cleanup, output_path=output_path)
-

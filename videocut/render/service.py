@@ -12,6 +12,7 @@ from typing import Any
 
 from videocut.bgm import apply_bgm, scan_bgm_files
 from videocut.errors import DependencyError, RenderError
+from videocut.ffmpeg_config import resolve_runtime_video_settings, resolve_video_settings
 from videocut.log import get_logger
 from videocut.presets import AUTO_PRESET, ResolutionPreset, get_quality_preset, get_resolution_preset
 from videocut.render.task import RenderTask, complete_task, create_task, fail_task, start_task
@@ -235,6 +236,11 @@ class RenderService:
     def render(self, request: RenderRequest) -> RenderResult:
         ffprobe_path = resolve_ffprobe_path(self.root_dir)
         ffmpeg_path = resolve_ffmpeg_path(self.root_dir)
+        video_settings = (
+            resolve_runtime_video_settings(ffmpeg_path, resolve_video_settings())
+            if ffmpeg_path
+            else resolve_video_settings()
+        )
         request_variables = dict(request.variables)
         video_info, failures = collect_video_info(ffprobe_path, request_variables, request.template_info)
         render_variables = inject_video_metadata_variables(request_variables, video_info)
@@ -293,6 +299,7 @@ class RenderService:
                 root_dir=self.root_dir,
                 ffmpeg_path=ffmpeg_path or "",
                 ffprobe_path=ffprobe_path or "",
+                video_settings=video_settings,
                 request=RenderRequest(
                     template_id=request.template_id,
                     template_info=request.template_info,
@@ -309,6 +316,12 @@ class RenderService:
                 task=task,
                 out_dir=out_dir,
                 out_file=out_file,
+            )
+
+            logger.info(
+                "FFmpeg video encoder selected: %s%s",
+                video_settings.encoder,
+                f" (hwaccel={video_settings.hwaccel})" if video_settings.hwaccel else "",
             )
 
             _handler_map = {
@@ -358,4 +371,3 @@ class RenderService:
             "resolution": f"{res_preset.width}x{res_preset.height}",
         }
         (out_dir / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
-

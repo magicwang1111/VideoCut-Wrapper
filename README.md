@@ -22,7 +22,10 @@
 ```powershell
 $env:FFMPEG_PATH = 'D:\ffmpeg\bin\ffmpeg.exe'
 $env:FFPROBE_PATH = 'D:\ffmpeg\bin\ffprobe.exe'
+$env:FFMPEG_ENCODER = 'auto'
 ```
+
+默认 `FFMPEG_ENCODER=auto`，会优先尝试 `h264_nvenc -> h264_qsv -> h264_amf`，都不可用时自动回退到 `libx264`。
 
 ## 安装
 
@@ -198,6 +201,8 @@ curl -X POST "http://127.0.0.1:3000/render" \
 - `API_KEYS`: 允许访问 API 的 key，逗号分隔
 - `FFMPEG_PATH`: 可选，指定 ffmpeg 可执行文件路径
 - `FFPROBE_PATH`: 可选，指定 ffprobe 可执行文件路径
+- `FFMPEG_ENCODER`: 可选，默认 `auto`，优先探测 GPU 编码器，失败回退到 `libx264`
+- `FFMPEG_HWACCEL`: 可选，需要时手动指定 `cuda` 等硬件解码参数
 - `OSS_ENDPOINT`
 - `OSS_ACCESS_KEY_ID`
 - `OSS_ACCESS_KEY_SECRET`

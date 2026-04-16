@@ -9,6 +9,7 @@ from pathlib import Path
 
 from videocut.bgm import apply_bgm, scan_bgm_files
 from videocut.errors import RenderError
+from videocut.ffmpeg_config import FFmpegVideoSettings, resolve_runtime_video_settings, resolve_video_settings
 from videocut.log import get_logger
 from videocut.pipeline.config import ParsedPipelineContext
 from videocut.pipeline.types import PipelineTransitionConfig, ResolvedPipelineClip
@@ -56,6 +57,7 @@ def ffmpeg_pipeline_concat(
     output_path: str,
     qual_preset: QualityPreset,
     res_preset: ResolutionPreset,
+    video_settings: FFmpegVideoSettings,
     task,
 ) -> None:
     clip_count = len(clips)
@@ -77,19 +79,13 @@ def ffmpeg_pipeline_concat(
         subprocess.run(
             [
                 ffmpeg_path,
+                *video_settings.input_args(),
                 *input_args,
                 "-filter_complex",
                 f"[0:v]setpts=PTS-STARTPTS,fps=fps={fps}[vout]",
                 "-map",
                 "[vout]",
-                "-c:v",
-                "libx264",
-                "-preset",
-                qual_preset.ffmpeg_preset,
-                "-crf",
-                str(qual_preset.crf),
-                "-pix_fmt",
-                "yuv420p",
+                *video_settings.output_args(qual_preset),
                 "-an",
                 "-y",
                 output_path,
@@ -167,19 +163,13 @@ def ffmpeg_pipeline_concat(
     subprocess.run(
         [
             ffmpeg_path,
+            *video_settings.input_args(),
             *input_args,
             "-filter_complex",
             ";".join(filter_parts),
             "-map",
             "[vout]",
-            "-c:v",
-            "libx264",
-            "-preset",
-            qual_preset.ffmpeg_preset,
-            "-crf",
-            str(qual_preset.crf),
-            "-pix_fmt",
-            "yuv420p",
+            *video_settings.output_args(qual_preset),
             "-an",
             "-y",
             output_path,
@@ -206,6 +196,7 @@ class PipelineRunner:
         overrides: dict[str, str],
     ) -> RenderResult:
         config = ctx.config
+        video_settings = resolve_runtime_video_settings(ffmpeg_path, resolve_video_settings())
         project_dir = ctx.project_dir
         config_path = ctx.config_path
         resolved_srcs = ctx.resolved_srcs
@@ -278,7 +269,19 @@ class PipelineRunner:
                 VideoClip(key=clip.key, src=clip.src, duration=clip.probed_duration)
                 for clip in resolved_clips
             ]
-            normalized_clips, cleanup = normalize_clips(self.root_dir, ffmpeg_path, video_clips, qual_preset, res_preset)
+            logger.info(
+                "FFmpeg video encoder selected: %s%s",
+                video_settings.encoder,
+                f" (hwaccel={video_settings.hwaccel})" if video_settings.hwaccel else "",
+            )
+            normalized_clips, cleanup = normalize_clips(
+                self.root_dir,
+                ffmpeg_path,
+                video_clips,
+                qual_preset,
+                res_preset,
+                video_settings,
+            )
             normalized_pipeline_clips = [
                 ResolvedPipelineClip(
                     key=resolved_clips[index].key,
@@ -299,6 +302,7 @@ class PipelineRunner:
                 output_path,
                 qual_preset,
                 res_preset,
+                video_settings,
                 task,
             )
 
@@ -354,4 +358,3 @@ class PipelineRunner:
                     cleanup()
                 except Exception:  # intentional: best-effort cleanup, never suppress render result
                     pass
-
