@@ -16,6 +16,7 @@ const DB_PATH = process.env.DB_PATH
   ? path.resolve(process.env.DB_PATH)
   : path.join(ROOT_DIR, 'data', 'tasks.db');
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
+const BODY_LIMIT_BYTES = parseInt(process.env.BODY_LIMIT_BYTES ?? `${500 * 1024 * 1024}`, 10);
 const WORKER_COUNT =
   parseInt(process.env.WORKER_COUNT || '0', 10) || Math.max(1, Math.floor(os.cpus().length / 2));
 
@@ -34,8 +35,16 @@ async function main(): Promise<void> {
   const cleaned = store.cleanupOldTasks(parseInt(process.env.TASK_TTL_DAYS ?? '7', 10));
   if (cleaned > 0) console.log(`[Store] 清理 ${cleaned} 条过期任务`);
 
-  const app = Fastify({ logger: true });
-  await app.register(multipart);
+  const app = Fastify({
+    logger: true,
+    bodyLimit: BODY_LIMIT_BYTES,
+  });
+  await app.register(multipart, {
+    limits: {
+      files: 1,
+      fileSize: BODY_LIMIT_BYTES,
+    },
+  });
 
   await app.register(uploadRoutes, { store, oss });
   await app.register(renderRoutes, { store, queue, oss });

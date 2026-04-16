@@ -26,6 +26,11 @@ set FFPROBE_PATH=D:\ffmpeg\bin\ffprobe.exe
 npm install
 ```
 
+安全说明：
+- `fastify` 已提升到安全补丁版本，公网 API 路径优先修复。
+- `follow-redirects` 通过包解析覆盖到安全版本，避免转发认证头泄露问题。
+- `npm audit` 中若仍有 `vite` / `esbuild` / `@revideo/renderer` 告警，属于 Revideo 开发链及其上游依赖版本约束，彻底清理需要单独评估 `@revideo` 1.x 与 `vite` 大版本兼容性。
+
 ## 快速开始
 
 ```bash
@@ -398,10 +403,12 @@ npm run start:api
 | `TASK_TTL_DAYS` | `7` | 已完成/失败任务清理周期（天） |
 | `DB_PATH` | `./data/tasks.db` | SQLite 数据库路径 |
 | `TEMP_DIR` | `./temp` | 渲染临时文件目录 |
+| `BODY_LIMIT_BYTES` | `524288000` | API 请求体大小上限（默认 500MB） |
 
 ### 接口速览
 
 所有接口需携带 `X-Api-Key` Header，值为 `API_KEYS` 中的任意一个。
+`POST /upload` 仅接受 `multipart/form-data`，`POST /render` 仅接受 `application/json`；异常或带前后空白的 `Content-Type` 会直接返回 `415`。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|

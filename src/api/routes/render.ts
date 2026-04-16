@@ -1,10 +1,13 @@
 // src/api/routes/render.ts
 import { FastifyInstance } from 'fastify';
 import { authMiddleware } from '../middleware/auth.js';
+import { requireContentType } from '../middleware/contentType.js';
 import { TaskStore } from '../../store/TaskStore.js';
 import { TaskQueue } from '../../queue/TaskQueue.js';
 import { OssClient } from '../../oss/OssClient.js';
 import crypto from 'node:crypto';
+
+const MAX_RENDER_BODY_BYTES = 1024 * 1024;
 
 export async function renderRoutes(
   app: FastifyInstance,
@@ -16,7 +19,10 @@ export async function renderRoutes(
       clips: string[];
       params?: Record<string, unknown>;
     };
-  }>('/render', { preHandler: authMiddleware }, async (request, reply) => {
+  }>('/render', {
+    preHandler: [authMiddleware, requireContentType('application/json')],
+    bodyLimit: MAX_RENDER_BODY_BYTES,
+  }, async (request, reply) => {
     const { template, clips, params = {} } = request.body;
 
     if (!template || !Array.isArray(clips) || clips.length === 0) {

@@ -3,6 +3,7 @@ import { FastifyInstance } from 'fastify';
 import { OssClient } from '../../oss/OssClient.js';
 import { TaskStore } from '../../store/TaskStore.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { requireContentType } from '../middleware/contentType.js';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -15,7 +16,10 @@ export async function uploadRoutes(
   app: FastifyInstance,
   { store, oss }: { store: TaskStore; oss: OssClient },
 ): Promise<void> {
-  app.post('/upload', { preHandler: authMiddleware }, async (request, reply) => {
+  app.post('/upload', {
+    preHandler: [authMiddleware, requireContentType('multipart/form-data')],
+    bodyLimit: MAX_BYTES,
+  }, async (request, reply) => {
     const data = await request.file({ limits: { fileSize: MAX_BYTES } });
     if (!data) return reply.code(400).send({ error: 'no_file' });
 

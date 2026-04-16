@@ -23,9 +23,12 @@
     "ali-oss": "^6.23.0",
     "better-sqlite3": "^12.9.0",
     "commander": "^13.0",
-    "fastify": "^5.8.4",
+    "fastify": "^5.8.5",
     "vite": "^5.4",
     "yaml": "^2.7"
+  },
+  "overrides": {
+    "follow-redirects": "^1.16.0"
   },
   "devDependencies": {
     "@types/ali-oss": "^6.23.3",
