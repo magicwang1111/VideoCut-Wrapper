@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=videocut-base:latest
+ARG BASE_IMAGE=magicwang/pytorch-base:torch210-cu128-runtime-v1
 FROM ${BASE_IMAGE}
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

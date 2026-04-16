@@ -594,7 +594,7 @@ cp .env.example .env
 3. 先构建基础镜像：
 
 ```bash
-docker build -f docker/base/Dockerfile -t videocut-base:latest .
+docker build -f docker/base/Dockerfile -t magicwang/pytorch-base:torch210-cu128-runtime-v1 .
 ```
 
 4. 启动业务容器：
@@ -640,7 +640,7 @@ docker compose logs -f videocut
 当前这套 Docker 配置适合标准 Linux 主机和通用 CPU 环境。要点如下：
 
 - `.env.example` 里的路径已经改成 Linux 容器绝对路径
-- `Dockerfile` 现在通过 `BASE_IMAGE` 从基础镜像构建业务镜像
+- `Dockerfile` 默认通过 `magicwang/pytorch-base:torch210-cu128-runtime-v1` 构建业务镜像，也可以用 `BASE_IMAGE` 覆盖
 - 业务镜像启动前会自动把 `oss://goumee-coze/GouMei-Video-Cut/bgm/` 同步到 `BGM_DIR`
 - `WORKER_COUNT` 默认使用 `0`，表示自动按 CPU 数量推导，避免空值导致启动报错
 - `FFMPEG_ENCODER` 默认改成 `libx264`，更适合通用 CPU 容器
