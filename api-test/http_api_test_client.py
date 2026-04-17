@@ -21,7 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from videocut.config import REGISTERED_PIPELINE_NAMES, REGISTERED_TEMPLATE_IDS  # noqa: E402
+from videocut.config import REGISTERED_PIPELINE_NAMES  # noqa: E402
 
 
 API_BASE_URL = os.getenv("API_BASE_URL") or os.getenv("VIDEOCUT_API_BASE_URL") or "http://127.0.0.1:3000"
@@ -31,9 +31,8 @@ REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "60"))
 POLL_INTERVAL_SECONDS = float(os.getenv("POLL_INTERVAL_SECONDS", "5"))
 POLL_TIMEOUT_SECONDS = int(os.getenv("POLL_TIMEOUT_SECONDS", "1800"))
 
-DEFAULT_TEMPLATE = "trim-mixed-concat"
-DEFAULT_PIPELINE = "trim-mixed-dissolve-v1"
-DEFAULT_PIPELINE_OVERRIDES = {"bgm": {"enabled": False}}
+DEFAULT_PIPELINE = "trim-mixed-concat"
+DEFAULT_PIPELINE_OVERRIDES: dict[str, Any] = {}
 
 REAL_OSS_TEST_CLIP_GROUPS: dict[int, list[str]] = {
     1: [
@@ -105,8 +104,6 @@ def _raise_for_error(response: requests.Response, label: str) -> None:
 
 
 def validate_registered_sources() -> None:
-    if DEFAULT_TEMPLATE not in REGISTERED_TEMPLATE_IDS:
-        raise RuntimeError(f"Template not registered: {DEFAULT_TEMPLATE}")
     if DEFAULT_PIPELINE not in REGISTERED_PIPELINE_NAMES:
         raise RuntimeError(f"Pipeline not registered: {DEFAULT_PIPELINE}")
 
@@ -144,13 +141,6 @@ def upload_local_file(file_path: str | Path) -> dict[str, Any]:
     return data
 
 
-def build_template_payload(group_id: int) -> dict[str, Any]:
-    return {
-        "template": DEFAULT_TEMPLATE,
-        "clips": REAL_OSS_TEST_CLIP_GROUPS[group_id],
-    }
-
-
 def build_pipeline_payload(group_id: int) -> dict[str, Any]:
     return {
         "pipeline": DEFAULT_PIPELINE,
@@ -159,8 +149,8 @@ def build_pipeline_payload(group_id: int) -> dict[str, Any]:
     }
 
 
-def create_render_task(mode: str, group_id: int, *, label: str | None = None) -> str:
-    payload = build_template_payload(group_id) if mode == "template" else build_pipeline_payload(group_id)
+def create_render_task(group_id: int, *, label: str | None = None) -> str:
+    payload = build_pipeline_payload(group_id)
     url = f"{API_BASE_URL.rstrip('/')}/render"
     print(f"{_prefix(label)}[render] POST {url}")
     print(f"{_prefix(label)}[render] payload:")
@@ -215,10 +205,10 @@ def poll_task(task_id: str, *, label: str | None = None) -> dict[str, Any]:
         time.sleep(POLL_INTERVAL_SECONDS)
 
 
-def download_task(task_id: str, mode: str, group_id: int, *, label: str | None = None) -> Path:
+def download_task(task_id: str, group_id: int, *, label: str | None = None) -> Path:
     url = f"{API_BASE_URL.rstrip('/')}/tasks/{task_id}/download"
     DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    target = DOWNLOAD_DIR / f"{mode}-group{group_id}-{task_id}.mp4"
+    target = DOWNLOAD_DIR / f"group{group_id}-{task_id}.mp4"
 
     print(f"{_prefix(label)}[download] GET {url}")
     response = requests.get(
@@ -240,13 +230,13 @@ def download_task(task_id: str, mode: str, group_id: int, *, label: str | None =
     return target
 
 
-def run_one(mode: str, group_id: int, download: bool) -> dict[str, Any]:
-    label = f"{mode}-group{group_id}"
-    task_id = create_render_task(mode, group_id, label=label)
+def run_one(group_id: int, download: bool) -> dict[str, Any]:
+    label = f"group{group_id}"
+    task_id = create_render_task(group_id, label=label)
     task = poll_task(task_id, label=label)
     output_path = None
     if download:
-        output_path = str(download_task(task_id, mode, group_id, label=label))
+        output_path = str(download_task(task_id, group_id, label=label))
     return {
         "label": label,
         "group": group_id,
@@ -257,11 +247,11 @@ def run_one(mode: str, group_id: int, download: bool) -> dict[str, Any]:
     }
 
 
-def run(mode: str, group_ids: list[int], download: bool) -> None:
+def run(group_ids: list[int], download: bool) -> None:
     validate_registered_sources()
     test_health()
     if len(group_ids) == 1:
-        summary = run_one(mode, group_ids[0], download)
+        summary = run_one(group_ids[0], download)
         print("[summary]")
         print(_pretty(summary))
         return
@@ -269,7 +259,7 @@ def run(mode: str, group_ids: list[int], download: bool) -> None:
     print(f"[batch] submitting {len(group_ids)} requests concurrently: groups={group_ids}")
     results: list[dict[str, Any]] = []
     with ThreadPoolExecutor(max_workers=len(group_ids)) as executor:
-        future_map = {executor.submit(run_one, mode, group_id, download): group_id for group_id in group_ids}
+        future_map = {executor.submit(run_one, group_id, download): group_id for group_id in group_ids}
         for future in as_completed(future_map):
             group_id = future_map[future]
             try:
@@ -277,7 +267,7 @@ def run(mode: str, group_ids: list[int], download: bool) -> None:
             except Exception as exc:
                 results.append(
                     {
-                        "label": f"{mode}-group{group_id}",
+                        "label": f"group{group_id}",
                         "group": group_id,
                         "status": "failed",
                         "error": str(exc),
@@ -306,7 +296,7 @@ def parse_group_ids(group: int, groups_text: str | None) -> list[int]:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="VideoCut HTTP API real OSS test client.")
-    parser.add_argument("--mode", choices=("template", "pipeline"), default="pipeline")
+    parser.add_argument("--pipeline", default=DEFAULT_PIPELINE, help="Pipeline name to render (default: %(default)s)")
     parser.add_argument("--group", type=int, choices=sorted(REAL_OSS_TEST_CLIP_GROUPS), default=1)
     parser.add_argument(
         "--groups",
@@ -322,12 +312,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
+    global DEFAULT_PIPELINE
+    DEFAULT_PIPELINE = args.pipeline
     group_ids = parse_group_ids(args.group, args.groups)
     print(f"[config] API_BASE_URL={API_BASE_URL}")
     print(f"[config] API_KEY_SET={bool(API_KEY and API_KEY != 'change-me')}")
-    print(f"[config] mode={args.mode}, groups={group_ids}, download={not args.skip_download}")
+    print(f"[config] pipeline={DEFAULT_PIPELINE}, groups={group_ids}, download={not args.skip_download}")
     print(f"[config] download_dir={DOWNLOAD_DIR}")
-    run(args.mode, group_ids, download=not args.skip_download)
+    run(group_ids, download=not args.skip_download)
     return 0
 
 
