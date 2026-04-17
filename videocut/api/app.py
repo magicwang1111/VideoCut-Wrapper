@@ -18,6 +18,7 @@ from videocut.log import get_logger, setup_logging
 from videocut.oss import OssClient
 from videocut.pipeline import PipelineRegistry
 from videocut.queue import TaskQueue, WorkerTask
+from videocut.render.task import generate_task_id
 from videocut.runtime_paths import resolve_runtime_path
 from videocut.store import PipelineRecord, TaskRecord, TaskStore
 
@@ -238,7 +239,7 @@ def create_app() -> FastAPI:
             "pipeline_source_path": pipeline_record.source_path,
             "overrides": body.overrides,
         }
-        task_id = f"t_{uuid4().hex[:8]}"
+        task_id = generate_task_id(prefix="t_")
         store.create(_create_store_record(task_id, "pipeline", pipeline_name, payload))
         queue_obj: TaskQueue = app.state.task_queue
         enqueued = queue_obj.enqueue(

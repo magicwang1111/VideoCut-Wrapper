@@ -6,6 +6,11 @@ from typing import Any, Literal
 from uuid import uuid4
 
 TaskStatus = Literal["pending", "rendering", "completed", "failed"]
+TASK_ID_HEX_LENGTH = 16
+
+
+def generate_task_id(*, prefix: str = "") -> str:
+    return f"{prefix}{uuid4().hex[:TASK_ID_HEX_LENGTH]}"
 
 
 @dataclass(slots=True)
@@ -25,7 +30,7 @@ class RenderTask:
 
 def create_task(template_id: str, variables: dict[str, Any]) -> RenderTask:
     return RenderTask(
-        id=uuid4().hex[:8],
+        id=generate_task_id(),
         template_id=template_id,
         status="pending",
         progress=0,
@@ -55,4 +60,3 @@ def fail_task(task: RenderTask, error: str) -> None:
     task.status = "failed"
     task.completed_at = datetime.utcnow()
     task.error = error
-

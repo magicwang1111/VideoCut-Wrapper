@@ -162,7 +162,7 @@ curl -X POST "http://127.0.0.1:3000/upload" \
 
 ```json
 {
-  "taskId": "t_ab12cd34"
+  "taskId": "t_ab12cd34ef56ab78"
 }
 ```
 
@@ -222,7 +222,7 @@ pipeline 素材引用不合法：
 示例：
 
 ```bash
-curl "http://127.0.0.1:3000/tasks/t_ab12cd34" \
+curl "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78" \
   -H "X-Api-Key: your-api-key"
 ```
 
@@ -230,7 +230,7 @@ curl "http://127.0.0.1:3000/tasks/t_ab12cd34" \
 
 ```json
 {
-  "taskId": "t_ab12cd34",
+  "taskId": "t_ab12cd34ef56ab78",
   "status": "completed",
   "progress": 100,
   "attempt": 1,
@@ -273,7 +273,7 @@ curl "http://127.0.0.1:3000/tasks/t_ab12cd34" \
 示例：
 
 ```bash
-curl -L "http://127.0.0.1:3000/tasks/t_ab12cd34/download" \
+curl -L "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78/download" \
   -H "X-Api-Key: your-api-key" \
   -o final.mp4
 ```

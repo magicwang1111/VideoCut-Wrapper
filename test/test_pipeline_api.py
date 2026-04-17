@@ -164,8 +164,12 @@ def test_render_endpoint_pipeline_mode(tmp_path, monkeypatch) -> None:
             },
         )
         assert pipeline_response.status_code == 200
+        body = pipeline_response.json()
+        assert body["taskId"].startswith("t_")
+        assert len(body["taskId"]) == 18
 
         pipeline_task = FakeTaskQueue.instances[-1].tasks[-1]
+        assert pipeline_task.task_id == body["taskId"]
         assert pipeline_task.task_kind == "pipeline"
         assert pipeline_task.source_name == "trim-mixed-dissolve-v1"
         assert pipeline_task.payload["pipeline_config"]["name"] == "trim-mixed-dissolve-v1"
