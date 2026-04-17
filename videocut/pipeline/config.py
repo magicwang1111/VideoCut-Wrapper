@@ -95,7 +95,7 @@ def parse_variable_def(raw: object, name: str) -> PipelineVariableDef:
             raise VideoCutError(f'variables.{name}: options must be a list of strings')
     if var_type == "select" and not options:
         raise VideoCutError(f'variables.{name}: select type requires a non-empty options list')
-    return PipelineVariableDef(
+    var_def = PipelineVariableDef(
         type=var_type,  # type: ignore[arg-type]
         required=required,
         default=default,
@@ -103,6 +103,12 @@ def parse_variable_def(raw: object, name: str) -> PipelineVariableDef:
         max=max_val,
         options=options,
     )
+    if default is not None:
+        try:
+            validate_variables({name: var_def}, {name: default})
+        except VideoCutError as exc:
+            raise VideoCutError(f'variables.{name}: invalid default — {exc}') from exc
+    return var_def
 
 
 def parse_variables(raw: object) -> dict[str, PipelineVariableDef] | None:
@@ -145,6 +151,10 @@ def resolve_variable_values(
             merged[name] = var_def.default
     merged.update(raw_values)
     validate_variables(schema, merged)
+    # Normalise boolean 0/1 integers to bool after validation
+    for name, var_def in schema.items():
+        if var_def.type == "boolean" and name in merged and not isinstance(merged[name], bool):
+            merged[name] = bool(merged[name])
     return merged
 
 
@@ -339,6 +349,10 @@ def _parse_transition_override_map(raw: object) -> dict[int, dict[str, object]]:
             if not isinstance(item.get("duration"), (int, float)):
                 raise VideoCutError(f"{location}.duration must be a number.")
             values["duration"] = float(item["duration"])
+        if "scale" in item:
+            if not isinstance(item.get("scale"), (int, float)):
+                raise VideoCutError(f"{location}.scale must be a number.")
+            values["scale"] = float(item["scale"])
         overrides[override_index] = values
     return overrides
 
