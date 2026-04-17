@@ -1,0 +1,25 @@
+{
+  "name": "trim-concat",
+  "mode": "pipeline",
+  "preset": "douyin_vertical",
+  "quality": "high",
+  "clips": [
+    { "trim_start": 2, "trim_end": 0 },
+    { "trim_start": 2, "trim_end": 0 },
+    { "trim_start": 2, "trim_end": 0 },
+    { "trim_start": 2, "trim_end": 0 },
+    { "trim_start": 2, "trim_end": 0 },
+    { "trim_start": 2, "trim_end": 0 }
+  ],
+  "default_transition": { "type": "cut", "duration": 0 },
+  "variables": {
+    "trim_start": {
+      "type": "number",
+      "required": false,
+      "default": 2,
+      "min": 0,
+      "max": 30
+    }
+  },
+  "overridable": ["trim_start"]
+}
