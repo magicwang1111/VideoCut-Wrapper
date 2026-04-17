@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
-PipelineJunctionType = Literal["flash-black", "dissolve", "cut"]
+PipelineJunctionType = Literal["flash-black", "dissolve", "cut", "zoom-dissolve"]
 
 
 @dataclass(slots=True)
@@ -17,6 +17,7 @@ class PipelineClipConfig:
 class PipelineTransitionConfig:
     type: PipelineJunctionType
     duration: float
+    scale: float | None = None
 
 
 @dataclass(slots=True)
@@ -33,6 +34,16 @@ class PipelineBgmConfig:
 
 
 @dataclass(slots=True)
+class PipelineVariableDef:
+    type: Literal["number", "boolean", "select"]
+    required: bool = False
+    default: Any = None
+    min: float | None = None
+    max: float | None = None
+    options: list[str] | None = None
+
+
+@dataclass(slots=True)
 class PipelineConfig:
     mode: Literal["pipeline"]
     clips: list[PipelineClipConfig]
@@ -43,6 +54,8 @@ class PipelineConfig:
     transitions: list[PipelineTransitionConfig] | None = None
     default_transition: PipelineTransitionConfig | None = None
     bgm: PipelineBgmConfig | None = None
+    variables: dict[str, PipelineVariableDef] | None = None
+    overridable: list[str] | None = None
 
 
 @dataclass(slots=True)

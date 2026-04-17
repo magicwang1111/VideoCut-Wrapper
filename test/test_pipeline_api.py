@@ -7,8 +7,10 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from videocut.errors import PipelineDefinitionError
+from videocut.errors import PipelineDefinitionError, VideoCutError
 from videocut.pipeline import PipelineRegistry, build_pipeline_context, parse_pipeline_config
+from videocut.pipeline.config import validate_variables, resolve_variable_values
+from videocut.pipeline.types import PipelineVariableDef
 from videocut.store import PipelineRecord, TaskStore
 
 api_app_module = importlib.import_module("videocut.api.app")
@@ -129,7 +131,7 @@ def test_build_pipeline_context_applies_binding_and_overrides(tmp_path) -> None:
     ]
 
 
-def test_render_endpoint_supports_template_and_pipeline_modes(tmp_path, monkeypatch) -> None:
+def test_render_endpoint_pipeline_mode(tmp_path, monkeypatch) -> None:
     FakeTaskQueue.instances.clear()
     pipelines_root = tmp_path / "pipelines"
     _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
@@ -151,25 +153,6 @@ def test_render_endpoint_supports_template_and_pipeline_modes(tmp_path, monkeypa
         assert health.json()["pipelines"] == 1
 
         headers = {"X-Api-Key": "test-key", "Content-Type": "application/json"}
-        template_response = client.post(
-            "/render",
-            headers=headers,
-            json={
-                "template": "trim-mixed-concat",
-                "clips": ["file1", "file2"],
-                "params": {"preset": "auto", "quality": "high"},
-            },
-        )
-        assert template_response.status_code == 200
-
-        queue = FakeTaskQueue.instances[-1]
-        template_task = queue.tasks[-1]
-        assert template_task.task_kind == "template"
-        assert template_task.source_name == "trim-mixed-concat"
-        assert template_task.payload["variables"]["clips"] == [
-            "GouMei-Video-Cut/inputs/file1.mp4",
-            "GouMei-Video-Cut/inputs/file2.mp4",
-        ]
 
         pipeline_response = client.post(
             "/render",
@@ -182,7 +165,7 @@ def test_render_endpoint_supports_template_and_pipeline_modes(tmp_path, monkeypa
         )
         assert pipeline_response.status_code == 200
 
-        pipeline_task = queue.tasks[-1]
+        pipeline_task = FakeTaskQueue.instances[-1].tasks[-1]
         assert pipeline_task.task_kind == "pipeline"
         assert pipeline_task.source_name == "trim-mixed-dissolve-v1"
         assert pipeline_task.payload["pipeline_config"]["name"] == "trim-mixed-dissolve-v1"
@@ -191,6 +174,74 @@ def test_render_endpoint_supports_template_and_pipeline_modes(tmp_path, monkeypa
             "GouMei-Video-Cut/inputs/file2.mp4",
             "GouMei-Video-Cut/inputs/file3.mp4",
         ]
+
+        # legacy template body is rejected with 422
+        bad_response = client.post(
+            "/render",
+            headers=headers,
+            json={
+                "template": "trim-mixed-concat",
+                "clips": ["file1", "file2"],
+                "params": {"preset": "auto"},
+            },
+        )
+        assert bad_response.status_code == 422
+
+
+def test_validate_variables_required_missing() -> None:
+    schema = {"clip_count": PipelineVariableDef(type="number", required=True)}
+    with pytest.raises(VideoCutError, match="required"):
+        validate_variables(schema, {})
+
+
+def test_validate_variables_number_out_of_range() -> None:
+    schema = {"trim_start": PipelineVariableDef(type="number", min=0.0, max=30.0)}
+    with pytest.raises(VideoCutError, match="trim_start"):
+        validate_variables(schema, {"trim_start": 99})
+
+
+def test_validate_variables_select_invalid_option() -> None:
+    schema = {"trans": PipelineVariableDef(type="select", options=["dissolve", "cut"])}
+    with pytest.raises(VideoCutError, match="trans"):
+        validate_variables(schema, {"trans": "zoom-dissolve"})
+
+
+def test_validate_variables_boolean_type_error() -> None:
+    schema = {"show_logo": PipelineVariableDef(type="boolean")}
+    with pytest.raises(VideoCutError, match="show_logo"):
+        validate_variables(schema, {"show_logo": "yes"})
+
+
+def test_resolve_variable_values_fills_defaults_and_normalises_bool() -> None:
+    schema = {
+        "trim_start": PipelineVariableDef(type="number", default=2.0),
+        "enabled": PipelineVariableDef(type="boolean", default=False),
+    }
+    result = resolve_variable_values(schema, {"trim_start": 5})
+    assert result["trim_start"] == 5
+    assert result["enabled"] is False
+
+
+def test_zoom_dissolve_pipeline_config_parses() -> None:
+    payload = {
+        "name": "zoom-dissolve-concat",
+        "mode": "pipeline",
+        "preset": "auto",
+        "quality": "high",
+        "clips": [{"trim_start": 0, "trim_end": 0}] * 3,
+        "default_transition": {"type": "zoom-dissolve", "duration": 0.4, "scale": 1.18},
+        "variables": {
+            "zoom_scale": {"type": "number", "default": 1.18, "min": 1.05, "max": 2.0},
+        },
+        "overridable": ["zoom_scale"],
+    }
+    from pathlib import Path
+    config = parse_pipeline_config(payload, Path("/tmp/config.json"), require_name=True)
+    assert config.default_transition is not None
+    assert config.default_transition.type == "zoom-dissolve"
+    assert config.default_transition.scale == pytest.approx(1.18)
+    assert config.variables is not None
+    assert "zoom_scale" in config.variables
 
 
 def test_pipeline_render_rejects_local_paths(tmp_path, monkeypatch) -> None:

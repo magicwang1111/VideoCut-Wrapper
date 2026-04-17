@@ -27,10 +27,8 @@ MAX_UPLOAD_BYTES = 500 * 1024 * 1024
 
 
 class RenderBody(BaseModel):
-    template: str | None = None
-    pipeline: str | None = None
+    pipeline: str
     clips: list[str] = Field(default_factory=list)
-    params: dict[str, Any] = Field(default_factory=dict)
     overrides: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -219,53 +217,28 @@ def create_app() -> FastAPI:
     @app.post("/render", dependencies=[Depends(auth_guard)])
     async def render(request: Request, body: RenderBody) -> dict[str, str]:
         require_content_type(request, "application/json")
-        if (not body.template and not body.pipeline) or (body.template and body.pipeline) or not body.clips:
-            raise HTTPException(status_code=400, detail={"error": "invalid_body"})
-        if body.template and body.overrides:
-            raise HTTPException(status_code=400, detail={"error": "invalid_body"})
-        if body.pipeline and body.params:
+        if not body.pipeline or not body.clips:
             raise HTTPException(status_code=400, detail={"error": "invalid_body"})
 
         store: TaskStore = app.state.store
         oss: OssClient = app.state.oss
 
-        if body.template:
-            resolved_keys = _resolve_clip_refs(store, oss, body.clips, strict_pipeline=False)
-            preset = str(body.params.get("preset", "auto"))
-            quality = str(body.params.get("quality", "high"))
-            payload = {
-                "variables": {"clips": resolved_keys, **body.params, "_preset": preset, "_quality": quality},
-                "preset": preset,
-                "quality": quality,
-            }
-            source_name = body.template
-            task_kind = "template"
-        else:
-            resolved_keys = _resolve_clip_refs(store, oss, body.clips, strict_pipeline=True)
-            pipeline_name = body.pipeline or ""
-            pipeline_record = store.get_pipeline(pipeline_name)
-            if pipeline_record is None:
-                raise PipelineNotFoundError(pipeline_name, [item.name for item in store.list_pipelines()])
-            payload = {
-                "clips": resolved_keys,
-                "pipeline_config": pipeline_record.config,
-                "pipeline_source_path": pipeline_record.source_path,
-                "overrides": body.overrides,
-            }
-            source_name = pipeline_name
-            task_kind = "pipeline"
-
+        resolved_keys = _resolve_clip_refs(store, oss, body.clips, strict_pipeline=True)
+        pipeline_name = body.pipeline
+        pipeline_record = store.get_pipeline(pipeline_name)
+        if pipeline_record is None:
+            raise PipelineNotFoundError(pipeline_name, [item.name for item in store.list_pipelines()])
+        payload = {
+            "clips": resolved_keys,
+            "pipeline_config": pipeline_record.config,
+            "pipeline_source_path": pipeline_record.source_path,
+            "overrides": body.overrides,
+        }
         task_id = f"t_{uuid4().hex[:8]}"
-        store.create(_create_store_record(task_id, task_kind, source_name, payload))
-
+        store.create(_create_store_record(task_id, "pipeline", pipeline_name, payload))
         queue_obj: TaskQueue = app.state.task_queue
         enqueued = queue_obj.enqueue(
-            WorkerTask(
-                task_id=task_id,
-                task_kind=task_kind,
-                source_name=source_name,
-                payload=payload,
-            )
+            WorkerTask(task_id=task_id, task_kind="pipeline", source_name=pipeline_name, payload=payload)
         )
         if not enqueued:
             store.mark_failed(task_id, "Queue is full.")

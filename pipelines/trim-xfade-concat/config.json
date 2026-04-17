@@ -1,0 +1,32 @@
+{
+  "name": "trim-xfade-concat",
+  "mode": "pipeline",
+  "preset": "auto",
+  "quality": "high",
+  "clips": [
+    { "trim_start": 2, "trim_end": 0 },
+    { "trim_start": 2, "trim_end": 0 },
+    { "trim_start": 2, "trim_end": 0 },
+    { "trim_start": 2, "trim_end": 0 },
+    { "trim_start": 2, "trim_end": 0 },
+    { "trim_start": 2, "trim_end": 0 }
+  ],
+  "default_transition": { "type": "dissolve", "duration": 0.5 },
+  "variables": {
+    "trim_start": {
+      "type": "number",
+      "required": false,
+      "default": 2,
+      "min": 0,
+      "max": 10
+    },
+    "transition_duration": {
+      "type": "number",
+      "required": false,
+      "default": 0.5,
+      "min": 0.1,
+      "max": 3.0
+    }
+  },
+  "overridable": ["trim_start", "transition_duration"]
+}

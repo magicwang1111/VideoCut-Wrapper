@@ -1,31 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Literal
 
 from videocut.presets import ResolutionPreset
-from videocut.registry import TemplateInfo
-
-if TYPE_CHECKING:
-    from videocut.pipeline.types import PipelineBgmConfig
 
 
 @dataclass(slots=True)
 class ProbedVideoInfo(ResolutionPreset):
     duration: float
-
-
-@dataclass(slots=True)
-class RenderRequest:
-    template_id: str
-    template_info: TemplateInfo
-    variables: dict[str, Any]
-    preset: str
-    quality: str
-    output_filename: str | None
-    project_dir: str
-    task_id: str | None = None
-    bgm: PipelineBgmConfig | None = None
 
 
 @dataclass(slots=True)

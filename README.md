@@ -1,14 +1,13 @@
 # VideoCut Wrapper
 
-基于 `Python + FFmpeg` 的模板化视频渲染工具，支持：
+基于 `Python + FFmpeg` 的 Pipeline 视频渲染工具，支持：
 
 - CLI 渲染
 - HTTP API 异步渲染
 - SQLite 任务持久化
 - 阿里云 OSS 或本地 OSS 模式
-- 现有 FFmpeg 模板与 `pipeline` 模式
 
-当前仓库已经移除 Node.js/Revideo 运行时，默认只保留 Python 版本。
+当前仓库已经移除 Node.js/Revideo 运行时与 Template 系统，默认只保留 Python Pipeline 版本。
 
 ## 依赖
 
@@ -42,111 +41,147 @@ python -m videocut --help
 ## 快速开始
 
 ```bash
-# 1. 查看可用模板
-python -m videocut list
+# 1. 查看已注册的 Pipeline
+videocut pipelines
 
-# 2. 初始化项目
-python -m videocut init trim-xfade-concat my-project
+# 2. 渲染（直接传 pipeline 名称和素材路径）
+videocut render trim-mixed-concat D:/input/1.mp4 D:/input/2.mp4 D:/input/3.mp4
 
-# 3. 编辑配置
-# projects/my-project/config.yaml
-
-# 4. 渲染
-python -m videocut render projects/my-project/config.yaml
+# 3. 覆盖变量（可选）
+videocut render trim-mixed-concat D:/input/1.mp4 D:/input/2.mp4 D:/input/3.mp4 \
+  --override trim_start=3 --override transition_1=dissolve
 ```
 
-输出文件默认位于 `output/<project-name>/final.mp4`。
+输出文件默认位于 `output/<pipeline-name>/final.mp4`。
 
 ## CLI
 
 支持的命令：
 
-- `videocut list`
-- `videocut info <template-id>`
-- `videocut init <template-id> <project-name>`
-- `videocut validate <config>`
-- `videocut render <config>`
-- `videocut presets`
-- `videocut check`
-- `videocut serve`
+- `videocut pipelines` — 列出所有已注册的 pipeline（名称 + 配置路径）
+- `videocut render <pipeline> <clip1> [clip2 ...] [--override key=val ...]` — 执行渲染
+- `videocut presets` — 列出分辨率预设
+- `videocut check` — 检查 ffmpeg / ffprobe 可用性
+- `videocut serve` — 启动 HTTP API 服务
 
 示例：
 
 ```bash
-videocut render projects/test-trim-xfade/config.yaml --preview
-videocut render projects/test-xfade/config.yaml --preset douyin_vertical --quality medium
+videocut render trim-xfade-concat D:/a.mp4 D:/b.mp4 D:/c.mp4
+videocut render flash-black-concat D:/a.mp4 D:/b.mp4 --preset douyin_vertical --quality medium
+videocut render zoom-dissolve-concat D:/a.mp4 D:/b.mp4 --override zoom_scale=1.3
 videocut serve --host 0.0.0.0 --port 3000
 ```
 
-## 支持的模板
+## 支持的 Pipeline
 
-当前只保留 FFmpeg 模板：
+当前已注册的 Pipeline：
 
-- `trim-concat`
-- `xfade-concat`
-- `trim-xfade-concat`
-- `zoom-dissolve-concat`
-- `flash-black-concat`
-- `trim-mixed-concat`
+| Pipeline ID | 转场 | 主要变量 |
+|---|---|---|
+| `trim-concat` | 直切 | `trim_start` |
+| `xfade-concat` | dissolve | `transition_duration` |
+| `trim-xfade-concat` | dissolve + trim | `trim_start`, `transition_duration` |
+| `flash-black-concat` | flash-black | `transition_duration` |
+| `zoom-dissolve-concat` | zoom-dissolve | `transition_duration`, `zoom_scale` |
+| `trim-mixed-concat` | 每段独立转场 | `trim_start`, `transition_1`…`transition_5`, `transition_duration` |
+| `trim-mixed-dissolve-v1` | flash-black + dissolve | — |
 
-`simple-slideshow` 和 `product-showcase` 已下线，不再作为可用模板注册。
+运行 `videocut pipelines` 查看完整列表和配置文件路径。
 
-## 配置文件
+## Pipeline 配置文件
 
-普通模板项目示例：
+每个 pipeline 对应 `pipelines/<id>/config.json`，格式如下：
 
-```yaml
-template: "trim-xfade-concat"
-preset: "auto"
-quality: "high"
-
-variables:
-  clip_1: "materials/a.mp4"
-  clip_2: "materials/b.mp4"
-  trim_start: 2
-  transition_duration: 0.5
+```json
+{
+  "name": "my-pipeline",
+  "mode": "pipeline",
+  "preset": "auto",
+  "quality": "high",
+  "clips": [
+    { "trim_start": 2, "trim_end": 0 },
+    { "trim_start": 2, "trim_end": 0 },
+    { "trim_start": 2, "trim_end": 0 }
+  ],
+  "default_transition": { "type": "dissolve", "duration": 0.5 },
+  "transitions": [
+    { "type": "flash-black", "duration": 0.4 },
+    { "type": "dissolve",    "duration": 0.6 }
+  ],
+  "variables": {
+    "trim_start": {
+      "type": "number",
+      "required": false,
+      "default": 2,
+      "min": 0,
+      "max": 30
+    },
+    "transition_duration": {
+      "type": "number",
+      "default": 0.5,
+      "min": 0.1,
+      "max": 2.0
+    }
+  },
+  "overridable": ["trim_start", "transition_duration"]
+}
 ```
 
-素材路径解析顺序：
+### 转场类型
 
-- 项目目录
-- 模板目录
-- 仓库根目录
+| type | 说明 |
+|---|---|
+| `cut` | 直切，无转场帧 |
+| `dissolve` | alpha 淡入淡出 |
+| `flash-black` | 闪黑过渡 |
+| `zoom-dissolve` | 放大拉近 + dissolve，可用 `scale` 控制缩放倍率（默认 `1.18`） |
 
-## Pipeline 模式
+### Variables Schema
 
-`pipeline` 模式不依赖模板，适合按配置自由组合素材、裁剪和转场。
+`variables` 字段定义可覆盖的参数类型：
 
-```yaml
-mode: pipeline
-preset: auto
-quality: high
+| type | 校验规则 | 额外字段 |
+|---|---|---|
+| `number` | 数值类型，可设 `min` / `max` | `min`, `max` |
+| `boolean` | `true` / `false`，或 `0` / `1` | — |
+| `select` | 枚举值，必须提供 `options` | `options` |
 
-clips:
-  - src: "D:/input/1.mp4"
-    trim_start: 3
-    trim_end: 0
-  - src: "D:/input/2.mp4"
-    trim_start: 2
-    trim_end: 1
-  - src: "D:/input/3.mp4"
-    trim_start: 1
+字段说明：
 
-transitions:
-  - type: flash-black
-    duration: 0.5
-  - type: dissolve
-    duration: 0.8
+- `required: true` — 调用时必须显式传入，无默认值时渲染会报错
+- `default` — 未传入时使用的默认值
+- `overridable` — 列在这里的变量才允许通过 `overrides` 覆盖
 
-default_transition:
-  type: cut
-  duration: 0
-```
+### Overrides
 
-运行：
+运行时覆盖变量，支持 CLI 和 API 两种方式：
 
 ```bash
-videocut render projects/pipeline-example/config.yaml
+# CLI
+videocut render trim-mixed-concat a.mp4 b.mp4 c.mp4 \
+  --override trim_start=3 \
+  --override transition_1=dissolve \
+  --override transition_duration=0.8
+```
+
+```json
+// API POST /render body
+{
+  "pipeline": "trim-mixed-concat",
+  "clips": ["file1", "file2", "file3"],
+  "overrides": {
+    "trim_start": 3,
+    "transition_1": "dissolve",
+    "transition_duration": 0.8,
+    "clip_overrides": [
+      { "index": 1, "trim_start": 5 }
+    ],
+    "transition_overrides": [
+      { "index": 2, "type": "cut", "duration": 0 }
+    ]
+  }
+}
 ```
 
 ## API
@@ -167,11 +202,12 @@ videocut serve --host 0.0.0.0 --port 3000
 6. 把上次异常退出时遗留的 `pending` / `rendering` 任务重新放回队列。
 7. 清理超过 `TASK_TTL_DAYS` 的历史已完成/失败任务。
 
-代码入口见 [app.py](d:/VideoCut-Wrapper/videocut/api/app.py)、[task_queue.py](d:/VideoCut-Wrapper/videocut/queue/task_queue.py)、[task_store.py](d:/VideoCut-Wrapper/videocut/store/task_store.py)。
+代码入口见 [app.py](videocut/api/app.py)、[task_queue.py](videocut/queue/task_queue.py)、[task_store.py](videocut/store/task_store.py)。
 
 ### 接口列表
 
 - `GET /health`
+- `GET /pipelines`
 - `POST /upload`
 - `POST /render`
 - `GET /tasks/{id}`
@@ -194,11 +230,11 @@ X-Api-Key: your-api-key-here
 1. 客户端先调用 `/upload` 上传原始素材。
 2. 服务端把上传文件写到临时目录，再上传到 OSS 或本地 OSS。
 3. 服务端把 `fileId -> ossKey` 的映射写入 SQLite 的 `files` 表。
-4. 客户端调用 `/render`，提交模板名、素材列表、参数。
+4. 客户端调用 `/render`，提交 pipeline 名称、素材列表、overrides。
 5. `/render` 会把传入的 `fileId` 解析成真实 `ossKey`，生成 `taskId`，并把任务写入 SQLite 的 `tasks` 表，初始状态是 `pending`。
 6. `TaskQueue` 把任务投递给空闲 worker。
 7. worker 从 OSS 或本地 OSS 下载素材到 `temp/<taskId>/`。
-8. worker 调用当前 Python 渲染器执行模板渲染。
+8. worker 调用 `PipelineRunner` 执行渲染（含 trim、转场、BGM 混合）。
 9. 渲染完成后，worker 把结果上传到 OSS 或本地 OSS 的 `outputs/<taskId>/final.mp4`。
 10. `TaskQueue` 把任务状态更新为 `completed`，并记录输出 `ossKey`。
 11. 客户端轮询 `/tasks/{id}` 获取状态。
@@ -218,7 +254,8 @@ curl "http://127.0.0.1:3000/health"
 {
   "ok": true,
   "workers": 4,
-  "queueSize": 0
+  "queueSize": 0,
+  "pipelines": 7
 }
 ```
 
@@ -227,16 +264,41 @@ curl "http://127.0.0.1:3000/health"
 - `ok`: 服务是否已启动。
 - `workers`: 当前 worker 进程数量。
 - `queueSize`: 当前等待中的任务数，不含正在渲染的任务。
+- `pipelines`: 已注册的 pipeline 数量。
 
-### 2. 上传素材 `POST /upload`
+### 2. 查看已注册 Pipeline `GET /pipelines`
+
+请求：
+
+```bash
+curl "http://127.0.0.1:3000/pipelines" \
+  -H "X-Api-Key: your-api-key-here"
+```
+
+返回示例：
+
+```json
+[
+  {
+    "name": "trim-mixed-concat",
+    "sourcePath": "/app/pipelines/trim-mixed-concat/config.json",
+    "variables": {
+      "trim_start": { "type": "number", "default": 2, "min": 0, "max": 30 },
+      "transition_duration": { "type": "number", "default": 0.5 }
+    },
+    "overridable": ["trim_start", "transition_duration", "transition_1", "transition_2"]
+  }
+]
+```
+
+### 3. 上传素材 `POST /upload`
 
 请求要求：
 
 - `Content-Type` 必须是 `multipart/form-data`
 - 表单字段名固定是 `file`
 - 单文件大小上限 500 MB
-- 当前允许的扩展名：
-  `mp4 mov avi mkv webm mp3 wav aac png jpg jpeg webp`
+- 当前允许的扩展名：`mp4 mov avi mkv webm mp3 wav aac png jpg jpeg webp`
 
 示例：
 
@@ -245,20 +307,6 @@ curl -X POST "http://127.0.0.1:3000/upload" \
   -H "X-Api-Key: your-api-key-here" \
   -F "file=@input/1.mp4"
 ```
-
-服务端行为：
-
-1. 校验 `X-Api-Key`。
-2. 校验 `Content-Type`。
-3. 校验文件扩展名。
-4. 把上传内容流式写入临时文件，默认目录是 `temp/`，也可以用 `TEMP_DIR` 指定。
-5. 超过 500 MB 会立即中断并返回 `413 file_too_large`。
-6. 生成 12 位随机 `fileId`。
-7. 生成输入素材 OSS 路径：
-   `GouMei-Video-Cut/inputs/<fileId>.<ext>`
-8. 上传到真实 OSS，或者复制到 `OSS_LOCAL_ROOT` 对应的本地目录。
-9. 把 `fileId -> ossKey` 写入 SQLite `files` 表。
-10. 删除服务端临时上传文件。
 
 成功返回示例：
 
@@ -269,35 +317,34 @@ curl -X POST "http://127.0.0.1:3000/upload" \
 }
 ```
 
-### 3. 提交渲染 `POST /render`
+### 4. 提交渲染 `POST /render`
 
 请求要求：
 
 - `Content-Type` 必须是 `application/json`
-- `template` 是模板 ID
-- `clips` 是素材列表
-- `params` 是模板变量和附加渲染参数
-
-当前 API 走的是“模板渲染”流程，不是 `pipeline` 配置文件直传模式。
+- `pipeline` 是 pipeline ID（必填）
+- `clips` 是素材列表（必填），每项可以是 `fileId` 或直接的 `ossKey`
+- `overrides` 是运行时覆盖参数（可选）
 
 请求体示例：
 
 ```json
 {
-  "template": "xfade-concat",
-  "clips": ["file_id_1", "file_id_2"],
-  "params": {
-    "transition_duration": 0.5,
-    "preset": "auto",
-    "quality": "high"
+  "pipeline": "trim-mixed-concat",
+  "clips": ["abc123def456", "bbb222ccc333", "ddd444eee555"],
+  "overrides": {
+    "trim_start": 2,
+    "transition_1": "flash-black",
+    "transition_2": "dissolve",
+    "transition_duration": 0.5
   }
 }
 ```
 
-也可以直接传已知的 `ossKey`，不是必须传 `fileId`。判断规则很简单：
+`clips` 判断规则：
 
-- `clips` 元素里如果包含 `/`，服务端把它当成 `ossKey`
-- 否则当成 `fileId`，再去 `files` 表里查真实 `ossKey`
+- 包含 `/` → 当成 `ossKey` 直接使用
+- 否则 → 当成 `fileId`，从 `files` 表查询真实 `ossKey`
 
 示例：
 
@@ -306,42 +353,15 @@ curl -X POST "http://127.0.0.1:3000/render" \
   -H "X-Api-Key: your-api-key-here" \
   -H "Content-Type: application/json" \
   -d '{
-    "template": "trim-mixed-concat",
+    "pipeline": "trim-mixed-concat",
     "clips": ["abc123def456", "bbb222ccc333", "ddd444eee555"],
-    "params": {
+    "overrides": {
       "trim_start": 2,
       "transition_1": "flash-black",
-      "transition_2": "dissolve",
-      "preset": "auto",
-      "quality": "high"
+      "transition_2": "dissolve"
     }
   }'
 ```
-
-服务端行为：
-
-1. 校验 `X-Api-Key`。
-2. 校验 `Content-Type`。
-3. 校验 `template` 和 `clips` 非空。
-4. 逐个解析 `clips`：
-   - 如果是 `fileId`，从 SQLite `files` 表查询对应 `ossKey`
-   - 如果是 `ossKey`，直接使用
-5. 从 `params` 中提取：
-   - `preset`，默认 `auto`
-   - `quality`，默认 `high`
-6. 生成任务 ID，例如 `t_ab12cd34`
-7. 组装任务变量：
-   - `clips`: 解析后的 `ossKey` 列表
-   - 其余 `params`
-   - `_preset`
-   - `_quality`
-8. 把任务写入 SQLite `tasks` 表，初始状态：
-   - `status = pending`
-   - `progress = 0`
-   - `attempt = 0`
-9. 交给 `TaskQueue.enqueue(...)`
-10. 如果队列已满，直接返回 `503 queue_full`
-11. 如果入队成功，立即返回 `taskId`
 
 成功返回示例：
 
@@ -353,26 +373,20 @@ curl -X POST "http://127.0.0.1:3000/render" \
 
 注意：
 
-- `/render` 只是“创建任务并入队”，不会同步等待渲染结束。
+- `/render` 只是"创建任务并入队"，不会同步等待渲染结束。
 - 任务真正执行发生在 worker 进程里。
 
-### 4. worker 实际做了什么
+### 5. worker 实际做了什么
 
-worker 的逻辑在 [worker_process.py](d:/VideoCut-Wrapper/videocut/queue/worker_process.py)。
+worker 的逻辑在 [worker_process.py](videocut/queue/worker_process.py)。
 
 拿到任务后，worker 会按下面的顺序执行：
 
-1. 根据 `template_id` 从模板注册表里取模板定义。
-2. 把 API 请求里的 `clips` 自动映射成模板变量：
-   - 如果模板里有 `video_list`，直接映射成列表变量
-   - 否则按顺序映射到 `clip_1`、`clip_2`、`clip_3`...
-3. 把所有素材从 OSS 或本地 OSS 下载到：
-   `temp/<taskId>/`
-4. 调用 `RenderService.render(...)` 进行模板渲染。
-5. 渲染成功后，把结果上传到：
-   `GouMei-Video-Cut/outputs/<taskId>/final.mp4`
-6. 通知 `TaskQueue` 当前任务完成。
-7. 删除 `temp/<taskId>/` 临时目录。
+1. 把所有素材从 OSS 或本地 OSS 下载到 `temp/<taskId>/`。
+2. 调用 `PipelineRunner` 执行渲染（含 trim、转场、BGM 混合）。
+3. 渲染成功后，把结果上传到 `GouMei-Video-Cut/outputs/<taskId>/final.mp4`。
+4. 通知 `TaskQueue` 当前任务完成。
+5. 删除 `temp/<taskId>/` 临时目录。
 
 如果失败：
 
@@ -380,7 +394,7 @@ worker 的逻辑在 [worker_process.py](d:/VideoCut-Wrapper/videocut/queue/worke
 - `TaskQueue` 会根据 `TASK_MAX_ATTEMPT` 自动重试
 - 超过最大重试次数后，任务会被标记为 `failed`
 
-### 5. 查询任务状态 `GET /tasks/{id}`
+### 6. 查询任务状态 `GET /tasks/{id}`
 
 示例：
 
@@ -412,19 +426,7 @@ curl "http://127.0.0.1:3000/tasks/t_ab12cd34" \
 - `completed`: 渲染完成，结果已上传
 - `failed`: 渲染失败，且已超过重试次数或不可恢复
 
-其余字段说明：
-
-- `progress`: 当前进度，队列层按节流方式更新，不保证每个模板都严格线性
-- `attempt`: 已尝试次数，每次进入 worker 渲染前会加 1
-- `outputUrl`: 仅 `completed` 时返回
-- `error`: 仅 `failed` 时通常有值
-
-`outputUrl` 的行为分两种：
-
-- 真实 OSS 模式：返回一个 1 小时有效的预签名下载链接
-- 本地 OSS 模式：返回本地文件绝对路径字符串
-
-### 6. 下载结果 `GET /tasks/{id}/download`
+### 7. 下载结果 `GET /tasks/{id}/download`
 
 示例：
 
@@ -446,7 +448,7 @@ curl -L "http://127.0.0.1:3000/tasks/t_ab12cd34/download" \
 2. 再请求 `/tasks/{id}/download`
 3. 或直接使用 `/tasks/{id}` 返回的 `outputUrl`
 
-### 7. 任务状态流转
+### 8. 任务状态流转
 
 典型状态流转如下：
 
@@ -473,7 +475,7 @@ render failure
   -> else tasks.status = failed
 ```
 
-### 8. 本地联调推荐流程
+### 9. 本地联调推荐流程
 
 如果你不想连真实 OSS，建议启用本地 OSS 模式：
 
@@ -509,6 +511,7 @@ videocut serve --port 3000
 - `FFPROBE_PATH`: 可选，指定 ffprobe 可执行文件路径
 - `FFMPEG_ENCODER`: 可选，默认 `auto`，优先探测 GPU 编码器，失败回退到 `libx264`
 - `FFMPEG_HWACCEL`: 可选，需要时手动指定 `cuda` 等硬件解码参数
+- `PIPELINES_DIR`: 可选，pipeline 配置目录，默认 `pipelines/`
 - `OSS_ENDPOINT`
 - `OSS_ACCESS_KEY_ID`
 - `OSS_ACCESS_KEY_SECRET`
@@ -524,42 +527,58 @@ videocut serve --port 3000
 
 ## 本地 API 测试
 
-如果不想连真实 OSS，可以启用本地 OSS 模式：
+使用 `api-test/http_api_test_client.py`：
 
-```powershell
-$env:API_KEYS = 'demo-key'
-$env:OSS_LOCAL_ROOT = 'D:\VideoCut-Wrapper\temp\oss-local'
-$env:DB_PATH = 'D:\VideoCut-Wrapper\temp\tasks.db'
-videocut serve --port 3000
+```bash
+# 单组素材，默认使用 trim-mixed-concat pipeline
+python api-test/http_api_test_client.py --group 1
+
+# 指定 pipeline
+python api-test/http_api_test_client.py --pipeline zoom-dissolve-concat --group 2
+
+# 批量并发，5 组
+python api-test/http_api_test_client.py --groups 1,2,3,4,5
 ```
 
-这种模式下：
+需要先设置环境变量：
 
-- 上传文件会复制到本地目录
-- 输出文件也写到本地目录
-- `/tasks/{id}/download` 会直接返回文件
+```powershell
+$env:API_BASE_URL = 'http://127.0.0.1:3000'
+$env:API_KEY = 'demo-key'
+```
 
 ## 仓库结构
 
 ```text
 videocut/            Python 运行时
-templates/           模板 manifest
-projects/            示例项目配置
+  pipeline/          Pipeline 引擎（config、runner、registry、types）
+  api/               HTTP API (FastAPI)
+  queue/             TaskQueue + worker_process
+  store/             SQLite TaskStore
+  render/            ffmpeg 工具函数
+pipelines/           Pipeline 配置目录（每个子目录一份 config.json）
 input/               测试素材
 output/              渲染输出
 temp/                临时目录
 fonts/               字体目录
+api-test/            API 集成测试客户端
 ```
 
 ## 验证建议
 
-迁移后的最小验证流程：
+```bash
+videocut check
+videocut pipelines
+videocut render trim-xfade-concat D:/a.mp4 D:/b.mp4 D:/c.mp4 --preview
+```
 
-- `videocut check`
-- `videocut list`
-- `videocut validate projects/test-xfade/config.yaml`
-- `videocut render projects/test-xfade/config.yaml`
-- 启动 `videocut serve` 后验证 `upload -> render -> tasks -> download`
+启动 API 后验证完整链路：
+
+```bash
+videocut serve --port 3000
+# 另一个终端
+python api-test/http_api_test_client.py --group 1
+```
 
 ## Docker
 

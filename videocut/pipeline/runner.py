@@ -4,6 +4,7 @@ import json
 import random
 import subprocess
 import time
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
@@ -109,6 +110,8 @@ def ffmpeg_pipeline_concat(
             head_consumed[index + 1] = effective
         elif junction.type == "dissolve":
             tail_consumed[index] = min(junction.duration, current_duration / 2)
+        elif junction.type == "zoom-dissolve":
+            tail_consumed[index] = min(junction.duration, current_duration / 2)
 
     filter_parts: list[str] = []
     segment_labels: list[str] = []
@@ -155,6 +158,47 @@ def ffmpeg_pipeline_concat(
                 f"format=yuv420p,fps=fps={fps}[diss_trans{index}]"
             )
             segment_labels.append(f"[diss_trans{index}]")
+        elif junction.type == "zoom-dissolve":
+            scale = junction.scale if junction.scale is not None else 1.18
+            effective = tail_consumed[index]
+            tail_start = duration - effective
+            available_tail = effective
+            tail_pad = max(0.0, junction.duration - available_tail)
+            still_pad = max(0.0, junction.duration - frame_duration)
+            oversample = 8
+            fps_hi = fps * oversample
+            frames_hi = max(2, round(fps_hi * junction.duration))
+            z_delta = f"{scale - 1:.6f}"
+            width = res_preset.width
+            height = res_preset.height
+            frame_progress = f"(n/{frames_hi - 1})"
+            eased_progress = f"({frame_progress}*{frame_progress}*{frame_progress}*{frame_progress})"
+            zoom_expr = f"(1+{z_delta}*{eased_progress})"
+            scale_w = f"floor({width}*{zoom_expr}/2)*2"
+            scale_h = f"floor({height}*{zoom_expr}/2)*2"
+            crop_x = f"{width}*{z_delta}*{eased_progress}/2"
+            crop_y = f"{height}*{z_delta}*{eased_progress}/2"
+            zoom_filter = (
+                f"[{index}:v]trim=start={_fmt(tail_start)}:duration={_fmt(available_tail)},setpts=PTS-STARTPTS"
+                + (f",tpad=stop_mode=clone:stop_duration={_fmt(tail_pad)}" if tail_pad > 0 else "")
+                + f",fps=fps={fps_hi}"
+                + f",scale='{scale_w}':'{scale_h}':eval=frame"
+                + f",crop={width}:{height}:x='{crop_x}':y='{crop_y}'"
+                + f",tmix=frames={oversample}"
+                + f",fps=fps={fps}"
+                + f",format=rgba,fade=t=out:st={_fmt(junction.duration * 0.65)}:"
+                + f"d={_fmt(junction.duration * 0.35)}:alpha=1[zoomfade{index}]"
+            )
+            filter_parts.append(zoom_filter)
+            filter_parts.append(
+                f"[{index + 1}:v]trim=end_frame=1,setpts=PTS-STARTPTS,"
+                f"tpad=stop_mode=clone:stop_duration={_fmt(still_pad)},fps=fps={fps}[zd_still{index}]"
+            )
+            filter_parts.append(
+                f"[zd_still{index}][zoomfade{index}]overlay=eof_action=pass:shortest=1,"
+                f"format=yuv420p,fps=fps={fps}[zd_trans{index}]"
+            )
+            segment_labels.append(f"[zd_trans{index}]")
 
     if not segment_labels:
         raise RenderError("No usable video segments after pipeline transition building.")
@@ -335,7 +379,10 @@ class PipelineRunner:
                     }
                     for clip in resolved_clips
                 ],
-                "junctions": [{"type": item.type, "duration": item.duration} for item in junctions],
+                "junctions": [
+                    {"type": item.type, "duration": item.duration, **({"scale": item.scale} if item.scale is not None else {})}
+                    for item in junctions
+                ],
                 "renderedAt": datetime.utcnow().isoformat(),
                 "duration": round(elapsed, 1),
                 "resolution": f"{res_preset.width}x{res_preset.height}",
@@ -344,6 +391,7 @@ class PipelineRunner:
                     "volume": config.bgm.volume,
                     "fade_out": config.bgm.fade_out,
                 } if bgm_file_used else None,
+                "variables": {k: asdict(v) for k, v in ctx.config.variables.items()} if ctx.config.variables else None,
             }
             (out_dir / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
             logger.info("[3/3] Metadata written")

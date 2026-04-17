@@ -54,7 +54,6 @@ class WorkerPool:
         self.on_message = on_message
         self.on_worker_dead = on_worker_dead
         self.temp_dir = Path(os.getenv("TEMP_DIR", str(root_dir / "temp"))).resolve()
-        self.templates_dir = (root_dir / "templates").resolve()
         self.event_queue: mp.Queue = mp.Queue()
         self.workers: list[WorkerState] = []
         self._stop_event = threading.Event()
@@ -82,7 +81,6 @@ class WorkerPool:
                 self.event_queue,
                 str(self.root_dir),
                 str(self.temp_dir),
-                str(self.templates_dir),
             ),
             daemon=True,
         )

@@ -1,0 +1,69 @@
+{
+  "name": "trim-mixed-concat",
+  "mode": "pipeline",
+  "preset": "auto",
+  "quality": "high",
+  "clips": [
+    { "trim_start": 2, "trim_end": 0 },
+    { "trim_start": 2, "trim_end": 0 },
+    { "trim_start": 2, "trim_end": 0 },
+    { "trim_start": 2, "trim_end": 0 },
+    { "trim_start": 2, "trim_end": 0 },
+    { "trim_start": 2, "trim_end": 0 }
+  ],
+  "transitions": [
+    { "type": "flash-black", "duration": 0.5 },
+    { "type": "dissolve",    "duration": 0.5 },
+    { "type": "flash-black", "duration": 0.5 },
+    { "type": "dissolve",    "duration": 0.5 },
+    { "type": "flash-black", "duration": 0.5 }
+  ],
+  "default_transition": { "type": "flash-black", "duration": 0.5 },
+  "variables": {
+    "trim_start": {
+      "type": "number",
+      "required": false,
+      "default": 2,
+      "min": 0,
+      "max": 30
+    },
+    "transition_duration": {
+      "type": "number",
+      "required": false,
+      "default": 0.5,
+      "min": 0.1,
+      "max": 2.0
+    },
+    "transition_1": {
+      "type": "select",
+      "required": false,
+      "default": "flash-black",
+      "options": ["flash-black", "dissolve", "cut"]
+    },
+    "transition_2": {
+      "type": "select",
+      "required": false,
+      "default": "dissolve",
+      "options": ["flash-black", "dissolve", "cut"]
+    },
+    "transition_3": {
+      "type": "select",
+      "required": false,
+      "default": "flash-black",
+      "options": ["flash-black", "dissolve", "cut"]
+    },
+    "transition_4": {
+      "type": "select",
+      "required": false,
+      "default": "dissolve",
+      "options": ["flash-black", "dissolve", "cut"]
+    },
+    "transition_5": {
+      "type": "select",
+      "required": false,
+      "default": "flash-black",
+      "options": ["flash-black", "dissolve", "cut"]
+    }
+  },
+  "overridable": ["trim_start", "transition_duration", "transition_1", "transition_2", "transition_3", "transition_4", "transition_5"]
+}
