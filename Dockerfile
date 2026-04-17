@@ -21,7 +21,8 @@ COPY pipelines ./pipelines
 COPY fonts ./fonts
 COPY docker/entrypoint.sh /usr/local/bin/videocut-entrypoint
 
-RUN chmod +x /usr/local/bin/videocut-entrypoint \
+RUN sed -i 's/\r$//' /usr/local/bin/videocut-entrypoint \
+    && chmod +x /usr/local/bin/videocut-entrypoint \
     && python -m pip install --upgrade pip \
     && python -m pip install . \
     && mkdir -p /app/input/bgm /app/output /srv/videocut/data /srv/videocut/temp /srv/videocut/oss-local
