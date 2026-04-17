@@ -20,3 +20,4 @@ __pycache__/
 *.aac
 input/
 videocut_wrapper.egg-info/
+.worktrees/
