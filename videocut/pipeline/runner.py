@@ -192,10 +192,10 @@ def ffmpeg_pipeline_concat(
             filter_parts.append(zoom_filter)
             filter_parts.append(
                 f"[{index + 1}:v]trim=end_frame=1,setpts=PTS-STARTPTS,"
-                f"tpad=stop_mode=clone:stop_duration={_fmt(still_pad)},fps=fps={fps}[still{index}]"
+                f"tpad=stop_mode=clone:stop_duration={_fmt(still_pad)},fps=fps={fps}[zd_still{index}]"
             )
             filter_parts.append(
-                f"[still{index}][zoomfade{index}]overlay=eof_action=pass:shortest=1,"
+                f"[zd_still{index}][zoomfade{index}]overlay=eof_action=pass:shortest=1,"
                 f"format=yuv420p,fps=fps={fps}[zd_trans{index}]"
             )
             segment_labels.append(f"[zd_trans{index}]")
