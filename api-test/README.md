@@ -8,9 +8,10 @@
 
 - [http_api_test_client.py](D:/VideoCut-Wrapper/api-test/http_api_test_client.py)
 
-当前已注册的 template / pipeline 清单可在这里查看：
+当前已注册的 pipeline 清单可在这里查看：
 
-- [videocut/config.py](D:/VideoCut-Wrapper/videocut/config.py)
+- [pipelines/](D:/VideoCut-Wrapper/pipelines/)
+- 或运行 `videocut pipelines`
 
 ## 阶段 0：鉴权与健康检查
 
@@ -136,31 +137,16 @@ curl -X POST "http://127.0.0.1:3000/upload" \
 
 工程端只需要知道以下最小请求体：
 
-- template 模式：只暴露 `template + clips`
-- pipeline 模式：只额外暴露 `overrides={"bgm":{"enabled":false}}`
+- 必填：`pipeline`（pipeline ID）+ `clips`（素材列表）
+- 可选：`overrides`（运行时覆盖参数，如 `{"bgm":{"enabled":false}}`）
 
 其它算法参数不属于工程端对接范围。
 
-### template 请求示例
+### 请求示例
 
 ```json
 {
-  "template": "trim-mixed-concat",
-  "clips": [
-    "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4390_0.mp4",
-    "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4504_0.mp4",
-    "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4567_0.mp4",
-    "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4662_0.mp4",
-    "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4663_0.mp4"
-  ]
-}
-```
-
-### pipeline 请求示例
-
-```json
-{
-  "pipeline": "trim-mixed-dissolve-v1",
+  "pipeline": "trim-mixed-concat",
   "clips": [
     "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4390_0.mp4",
     "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4504_0.mp4",
@@ -168,11 +154,7 @@ curl -X POST "http://127.0.0.1:3000/upload" \
     "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4662_0.mp4",
     "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4663_0.mp4"
   ],
-  "overrides": {
-    "bgm": {
-      "enabled": false
-    }
-  }
+  "overrides": {}
 }
 ```
 
@@ -258,7 +240,7 @@ curl "http://127.0.0.1:3000/tasks/t_ab12cd34" \
   "outputUrl": "https://...",
   "error": null,
   "taskKind": "pipeline",
-  "sourceName": "trim-mixed-dissolve-v1"
+  "sourceName": "trim-mixed-concat"
 }
 ```
 
@@ -273,8 +255,8 @@ curl "http://127.0.0.1:3000/tasks/t_ab12cd34" \
 - `completedAt`：完成时间
 - `outputUrl`：仅 `completed` 时返回。真实 OSS 模式下通常是预签名下载 URL
 - `error`：失败时的错误信息
-- `taskKind`：`template` 或 `pipeline`
-- `sourceName`：template ID 或 pipeline 名称
+- `taskKind`：`pipeline`
+- `sourceName`：pipeline 名称
 
 常见错误：
 
@@ -352,8 +334,7 @@ curl -L "http://127.0.0.1:3000/tasks/t_ab12cd34/download" \
 处理建议：
 
 - 核对请求 JSON 字段
-- 确认 `template` 和 `pipeline` 只传一个
-- 确认 `clips` 非空
+- 确认 `pipeline` 和 `clips` 非空
 - 确认传入的是有效 `fileId` 或有效 `GouMei-Video-Cut/...` OSS key
 
 ### 404 Not Found
@@ -411,7 +392,7 @@ headers = {
 }
 
 payload = {
-    "pipeline": "trim-mixed-dissolve-v1",
+    "pipeline": "trim-mixed-concat",
     "clips": [
         "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4390_0.mp4",
         "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4504_0.mp4",
@@ -419,11 +400,7 @@ payload = {
         "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4662_0.mp4",
         "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4663_0.mp4",
     ],
-    "overrides": {
-        "bgm": {
-            "enabled": False
-        }
-    }
+    "overrides": {}
 }
 
 render_resp = requests.post(f"{base_url}/render", headers=headers, json=payload, timeout=60)
@@ -461,7 +438,7 @@ curl -X POST "http://127.0.0.1:3000/render" \
   -H "X-Api-Key: your-api-key" \
   -H "Content-Type: application/json" \
   -d '{
-    "pipeline": "trim-mixed-dissolve-v1",
+    "pipeline": "trim-mixed-concat",
     "clips": [
       "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4390_0.mp4",
       "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4504_0.mp4",
@@ -498,12 +475,18 @@ oss://goumee-coze/GouMei-Video-Cut/test-input/
 直接运行：
 
 ```bash
-python api-test/http_api_test_client.py --mode pipeline --group 1
-python api-test/http_api_test_client.py --mode template --group 1
-python api-test/http_api_test_client.py --mode pipeline --groups 1,2,3,4,5 --skip-download
+# 单任务联调（默认使用 trim-mixed-concat pipeline）
+python api-test/http_api_test_client.py --group 1
+
+# 指定 pipeline
+python api-test/http_api_test_client.py --pipeline zoom-dissolve-concat --group 1
+
+# 并发提交多组，更接近真实 worker 排队 / 并发场景
+python api-test/http_api_test_client.py --groups 1,2,3,4,5 --skip-download
 ```
 
 说明：
 
 - `--group 1` 是单任务联调
-- `--groups 1,2,3,4,5` 会并发提交多个 `/render` 请求，更接近真实 worker 渲染排队 / 并发场景
+- `--pipeline <name>` 指定要测试的 pipeline，默认 `trim-mixed-concat`
+- `--groups 1,2,3,4,5` 会并发提交多个 `/render` 请求
