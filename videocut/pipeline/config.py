@@ -15,6 +15,7 @@ from videocut.pipeline.types import (
     PipelineJunctionType,
     PipelineOutputConfig,
     PipelineTransitionConfig,
+    PipelineVariableDef,
 )
 
 
@@ -34,11 +35,11 @@ def load_raw_yaml(config_path: str | Path) -> Any:
 
 
 def parse_junction_type(raw: object, location: str) -> PipelineJunctionType:
-    if raw in {"flash-black", "dissolve", "cut"}:
+    if raw in {"flash-black", "dissolve", "cut", "zoom-dissolve"}:
         return raw  # type: ignore[return-value]
     if raw is None:
         return "cut"
-    raise VideoCutError(f'{location}: invalid transition type "{raw}", expected flash-black|dissolve|cut')
+    raise VideoCutError(f'{location}: invalid transition type "{raw}", expected flash-black|dissolve|cut|zoom-dissolve')
 
 
 def parse_transition_config(raw: object, location: str) -> PipelineTransitionConfig:
@@ -46,9 +47,12 @@ def parse_transition_config(raw: object, location: str) -> PipelineTransitionCon
         raise VideoCutError(f"{location}: transition must be an object")
     duration_raw = raw.get("duration")
     duration = float(duration_raw) if isinstance(duration_raw, (int, float)) else 0.5
+    scale_raw = raw.get("scale")
+    scale = float(scale_raw) if isinstance(scale_raw, (int, float)) else None
     return PipelineTransitionConfig(
         type=parse_junction_type(raw.get("type"), f"{location}.type"),
         duration=duration,
+        scale=scale,
     )
 
 
@@ -68,6 +72,80 @@ def parse_bgm_config(raw: object) -> PipelineBgmConfig | None:
         volume=float(raw["volume"]) if isinstance(raw.get("volume"), (int, float)) else 0.3,
         fade_out=float(raw["fade_out"]) if isinstance(raw.get("fade_out"), (int, float)) else 0.0,
     )
+
+
+def parse_variable_def(raw: object, name: str) -> PipelineVariableDef:
+    if not isinstance(raw, dict):
+        raise VideoCutError(f'variables.{name}: must be an object')
+    var_type = raw.get("type")
+    if var_type not in {"number", "boolean", "select"}:
+        raise VideoCutError(f'variables.{name}: invalid type "{var_type}", expected number|boolean|select')
+    required = bool(raw.get("required", False))
+    default = raw.get("default")
+    min_raw = raw.get("min")
+    min_val = float(min_raw) if isinstance(min_raw, (int, float)) else None
+    max_raw = raw.get("max")
+    max_val = float(max_raw) if isinstance(max_raw, (int, float)) else None
+    options_raw = raw.get("options")
+    options: list[str] | None = None
+    if options_raw is not None:
+        if isinstance(options_raw, list) and all(isinstance(o, str) for o in options_raw):
+            options = list(options_raw)
+        else:
+            raise VideoCutError(f'variables.{name}: options must be a list of strings')
+    if var_type == "select" and not options:
+        raise VideoCutError(f'variables.{name}: select type requires a non-empty options list')
+    return PipelineVariableDef(
+        type=var_type,  # type: ignore[arg-type]
+        required=required,
+        default=default,
+        min=min_val,
+        max=max_val,
+        options=options,
+    )
+
+
+def parse_variables(raw: object) -> dict[str, PipelineVariableDef] | None:
+    if not isinstance(raw, dict) or not raw:
+        return None
+    return {key: parse_variable_def(value, key) for key, value in raw.items()}
+
+
+def validate_variables(schema: dict[str, PipelineVariableDef], values: dict[str, object]) -> None:
+    for name, var_def in schema.items():
+        value = values.get(name)
+        has_value = name in values
+        if var_def.required and not has_value and var_def.default is None:
+            raise VideoCutError(f'variable "{name}" is required but not provided')
+        if not has_value:
+            continue
+        if var_def.type == "number":
+            if not isinstance(value, (int, float)):
+                raise VideoCutError(f'variable "{name}" must be a number')
+            num_val = float(value)  # type: ignore[arg-type]
+            if var_def.min is not None and num_val < var_def.min:
+                raise VideoCutError(f'variable "{name}" value {num_val} is less than min {var_def.min}')
+            if var_def.max is not None and num_val > var_def.max:
+                raise VideoCutError(f'variable "{name}" value {num_val} is greater than max {var_def.max}')
+        elif var_def.type == "select":
+            if var_def.options and value not in var_def.options:
+                raise VideoCutError(f'variable "{name}" value "{value}" is not one of {var_def.options}')
+        elif var_def.type == "boolean":
+            if not isinstance(value, bool) and value not in (0, 1):
+                raise VideoCutError(f'variable "{name}" must be a boolean or 0/1')
+
+
+def resolve_variable_values(
+    schema: dict[str, PipelineVariableDef],
+    raw_values: dict[str, object],
+) -> dict[str, object]:
+    merged: dict[str, object] = {}
+    for name, var_def in schema.items():
+        if var_def.default is not None:
+            merged[name] = var_def.default
+    merged.update(raw_values)
+    validate_variables(schema, merged)
+    return merged
 
 
 def _parse_clip_config(raw: object, location: str, require_src: bool) -> PipelineClipConfig:
@@ -122,6 +200,10 @@ def parse_pipeline_config(
         else None
     )
 
+    variables = parse_variables(raw.get("variables"))
+    overridable_raw = raw.get("overridable")
+    overridable = [str(item) for item in overridable_raw if isinstance(item, str)] if isinstance(overridable_raw, list) else None
+
     return PipelineConfig(
         mode="pipeline",
         name=name,
@@ -132,6 +214,8 @@ def parse_pipeline_config(
         transitions=transitions,
         default_transition=default_transition,
         bgm=parse_bgm_config(raw.get("bgm")),
+        variables=variables,
+        overridable=overridable,
     )
 
 
@@ -187,7 +271,7 @@ def resolve_pipeline_config(config_path: str | Path) -> ParsedPipelineContext:
 def _clone_transition(config: PipelineTransitionConfig | None) -> PipelineTransitionConfig | None:
     if config is None:
         return None
-    return PipelineTransitionConfig(type=config.type, duration=config.duration)
+    return PipelineTransitionConfig(type=config.type, duration=config.duration, scale=config.scale)
 
 
 def _clone_output(config: PipelineOutputConfig | None) -> PipelineOutputConfig | None:
@@ -316,6 +400,8 @@ def bind_pipeline_config(
             transition.type = override_values["type"]  # type: ignore[assignment]
         if "duration" in override_values:
             transition.duration = float(override_values["duration"])
+        if "scale" in override_values and isinstance(override_values["scale"], (int, float)):
+            transition.scale = float(override_values["scale"])
         bound_transitions.append(transition)
 
     preset = overrides.get("preset") if isinstance(overrides.get("preset"), str) else config.preset
@@ -331,6 +417,8 @@ def bind_pipeline_config(
         transitions=bound_transitions or None,
         default_transition=default_transition,
         bgm=bgm,
+        variables=config.variables,
+        overridable=config.overridable,
     )
 
 
