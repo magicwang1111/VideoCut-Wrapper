@@ -6,6 +6,7 @@ from pathlib import Path
 import oss2
 
 from videocut.errors import DependencyError
+from videocut.runtime_paths import project_root, resolve_runtime_path
 
 
 class OssClient:
@@ -19,7 +20,7 @@ class OssClient:
         access_key_secret = os.getenv("OSS_ACCESS_KEY_SECRET")
         self.local_root = os.getenv("OSS_LOCAL_ROOT")
         if self.local_root:
-            self.local_root = str(Path(self.local_root).resolve())
+            self.local_root = str(resolve_runtime_path(self.local_root, project_root() / "oss-local"))
             self.bucket = None
             self.endpoint = endpoint
             return

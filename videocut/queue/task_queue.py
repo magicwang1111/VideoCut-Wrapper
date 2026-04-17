@@ -12,6 +12,7 @@ from typing import Any, Callable
 from videocut.log import get_logger
 from videocut.oss import OssClient
 from videocut.queue.worker_process import worker_main
+from videocut.runtime_paths import resolve_runtime_path
 from videocut.store import TaskStore
 
 TASK_MAX_ATTEMPT = int(os.getenv("TASK_MAX_ATTEMPT", "3"))
@@ -53,7 +54,7 @@ class WorkerPool:
         self.root_dir = root_dir
         self.on_message = on_message
         self.on_worker_dead = on_worker_dead
-        self.temp_dir = Path(os.getenv("TEMP_DIR", str(root_dir / "temp"))).resolve()
+        self.temp_dir = resolve_runtime_path(os.getenv("TEMP_DIR"), root_dir / "temp", root_dir=root_dir)
         self.event_queue: mp.Queue = mp.Queue()
         self.workers: list[WorkerState] = []
         self._stop_event = threading.Event()
@@ -179,6 +180,7 @@ class TaskQueue:
         with self._lock:
             for task in stalled:
                 if task.status == "rendering":
+                    self.store.record_failure(task.id, "Task replayed after service restart or unexpected shutdown.")
                     self.store.reset_to_queue(task.id)
                 if task.attempt >= TASK_MAX_ATTEMPT:
                     self.store.mark_failed(task.id, "Exceeded max retry attempts.")
@@ -232,6 +234,7 @@ class TaskQueue:
         if message_type == "task_failed":
             record = self.store.get(task_id)
             if record and record.attempt < TASK_MAX_ATTEMPT:
+                self.store.record_failure(task_id, message["error"])
                 self.store.reset_to_queue(task_id)
                 with self._lock:
                     self.queue.append(
@@ -266,6 +269,7 @@ class TaskQueue:
             self.store.mark_failed(task_id, "Worker crashed and exceeded retry limit.")
             self.on_event({"type": "failed", "taskId": task_id, "error": "Worker crashed"})
             return
+        self.store.record_failure(task_id, "Worker process exited unexpectedly.")
         self.store.reset_to_queue(task_id)
         with self._lock:
             self.queue.append(

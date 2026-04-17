@@ -23,9 +23,19 @@ class TaskRecord:
     payload: dict[str, Any]
     oss_key: str | None
     error: str | None
+    last_error: str | None
+    last_error_at: str | None
     created_at: str
     started_at: str | None
     completed_at: str | None
+
+
+@dataclass(slots=True)
+class TaskFailureRecord:
+    task_id: str
+    attempt: int
+    error: str
+    created_at: str
 
 
 @dataclass(slots=True)
@@ -61,6 +71,8 @@ class TaskStore:
                   variables TEXT NOT NULL,
                   oss_key TEXT,
                   error TEXT,
+                  last_error TEXT,
+                  last_error_at TEXT,
                   created_at TEXT NOT NULL,
                   started_at TEXT,
                   completed_at TEXT
@@ -77,6 +89,15 @@ class TaskStore:
                   config_json TEXT NOT NULL,
                   updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS task_failures (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  task_id TEXT NOT NULL,
+                  attempt INTEGER NOT NULL,
+                  error TEXT NOT NULL,
+                  created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_task_failures_task_created
+                ON task_failures(task_id, created_at);
                 """
             )
             columns = {
@@ -85,6 +106,10 @@ class TaskStore:
             }
             if "task_kind" not in columns:
                 self._db.execute("ALTER TABLE tasks ADD COLUMN task_kind TEXT NOT NULL DEFAULT 'template'")
+            if "last_error" not in columns:
+                self._db.execute("ALTER TABLE tasks ADD COLUMN last_error TEXT")
+            if "last_error_at" not in columns:
+                self._db.execute("ALTER TABLE tasks ADD COLUMN last_error_at TEXT")
             self._db.commit()
 
     def create(self, record: TaskRecord) -> TaskRecord:
@@ -93,8 +118,8 @@ class TaskStore:
                 """
                 INSERT INTO tasks (
                   id, template_id, task_kind, status, progress, attempt, variables, oss_key, error,
-                  created_at, started_at, completed_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  last_error, last_error_at, created_at, started_at, completed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.id,
@@ -106,6 +131,8 @@ class TaskStore:
                     json.dumps(record.payload, ensure_ascii=False),
                     record.oss_key,
                     record.error,
+                    record.last_error,
+                    record.last_error_at,
                     record.created_at,
                     record.started_at,
                     record.completed_at,
@@ -122,7 +149,7 @@ class TaskStore:
     def mark_rendering(self, task_id: str) -> None:
         with self._lock:
             self._db.execute(
-                "UPDATE tasks SET status='rendering', started_at=?, attempt=attempt+1 WHERE id=?",
+                "UPDATE tasks SET status='rendering', progress=0, started_at=?, completed_at=NULL, error=NULL, attempt=attempt+1 WHERE id=?",
                 (datetime.now(UTC).isoformat(), task_id),
             )
             self._db.commit()
@@ -135,12 +162,13 @@ class TaskStore:
     def mark_completed(self, task_id: str, oss_key: str) -> None:
         with self._lock:
             self._db.execute(
-                "UPDATE tasks SET status='completed', progress=100, oss_key=?, completed_at=? WHERE id=?",
+                "UPDATE tasks SET status='completed', progress=100, oss_key=?, error=NULL, completed_at=? WHERE id=?",
                 (oss_key, datetime.now(UTC).isoformat(), task_id),
             )
             self._db.commit()
 
     def mark_failed(self, task_id: str, error: str) -> None:
+        self.record_failure(task_id, error)
         with self._lock:
             self._db.execute(
                 "UPDATE tasks SET status='failed', error=?, completed_at=? WHERE id=?",
@@ -150,7 +178,10 @@ class TaskStore:
 
     def reset_to_queue(self, task_id: str) -> None:
         with self._lock:
-            self._db.execute("UPDATE tasks SET status='pending', started_at=NULL WHERE id=?", (task_id,))
+            self._db.execute(
+                "UPDATE tasks SET status='pending', progress=0, started_at=NULL, completed_at=NULL, error=NULL WHERE id=?",
+                (task_id,),
+            )
             self._db.commit()
 
     def get_pending_and_stalled(self) -> list[TaskRecord]:
@@ -163,12 +194,60 @@ class TaskStore:
     def cleanup_old_tasks(self, ttl_days: int) -> int:
         cutoff = (datetime.now(UTC) - timedelta(days=ttl_days)).isoformat()
         with self._lock:
+            self._db.execute(
+                """
+                DELETE FROM task_failures
+                WHERE task_id IN (
+                  SELECT id FROM tasks WHERE status IN ('completed','failed') AND created_at < ?
+                )
+                """,
+                (cutoff,),
+            )
             cursor = self._db.execute(
                 "DELETE FROM tasks WHERE status IN ('completed','failed') AND created_at < ?",
                 (cutoff,),
             )
             self._db.commit()
             return cursor.rowcount
+
+    def record_failure(self, task_id: str, error: str) -> TaskFailureRecord | None:
+        created_at = datetime.now(UTC).isoformat()
+        with self._lock:
+            row = self._db.execute("SELECT attempt FROM tasks WHERE id = ?", (task_id,)).fetchone()
+            if row is None:
+                return None
+            record = TaskFailureRecord(
+                task_id=task_id,
+                attempt=int(row["attempt"]),
+                error=error,
+                created_at=created_at,
+            )
+            self._db.execute(
+                "INSERT INTO task_failures (task_id, attempt, error, created_at) VALUES (?, ?, ?, ?)",
+                (record.task_id, record.attempt, record.error, record.created_at),
+            )
+            self._db.execute(
+                "UPDATE tasks SET last_error=?, last_error_at=? WHERE id=?",
+                (record.error, record.created_at, task_id),
+            )
+            self._db.commit()
+        return record
+
+    def list_failures(self, task_id: str) -> list[TaskFailureRecord]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT task_id, attempt, error, created_at FROM task_failures WHERE task_id=? ORDER BY created_at ASC",
+                (task_id,),
+            ).fetchall()
+        return [
+            TaskFailureRecord(
+                task_id=str(row["task_id"]),
+                attempt=int(row["attempt"]),
+                error=str(row["error"]),
+                created_at=str(row["created_at"]),
+            )
+            for row in rows
+        ]
 
     def sync_pipelines(self, records: list[PipelineRecord]) -> None:
         with self._lock:
@@ -256,6 +335,8 @@ class TaskStore:
             payload=json.loads(row["variables"]),
             oss_key=row["oss_key"],
             error=row["error"],
+            last_error=row["last_error"] if "last_error" in row.keys() else None,
+            last_error_at=row["last_error_at"] if "last_error_at" in row.keys() else None,
             created_at=str(row["created_at"]),
             started_at=row["started_at"],
             completed_at=row["completed_at"],

@@ -18,6 +18,7 @@ from videocut.log import get_logger, setup_logging
 from videocut.oss import OssClient
 from videocut.pipeline import PipelineRegistry
 from videocut.queue import TaskQueue, WorkerTask
+from videocut.runtime_paths import resolve_runtime_path
 from videocut.store import PipelineRecord, TaskRecord, TaskStore
 
 logger = get_logger(__name__)
@@ -72,6 +73,8 @@ def _create_store_record(task_id: str, task_kind: str, source_name: str, payload
         payload=payload,
         oss_key=None,
         error=None,
+        last_error=None,
+        last_error_at=None,
         created_at=datetime.now(UTC).isoformat(),
         started_at=None,
         completed_at=None,
@@ -110,8 +113,8 @@ def _resolve_clip_refs(store: TaskStore, oss: OssClient, clips: list[str], *, st
 async def lifespan(app: FastAPI):
     setup_logging()
     root_dir = Path(__file__).resolve().parents[2]
-    db_path = Path(os.getenv("DB_PATH", str(root_dir / "data" / "tasks.db"))).resolve()
-    pipelines_dir = Path(os.getenv("PIPELINES_DIR", str(root_dir / "pipelines"))).resolve()
+    db_path = resolve_runtime_path(os.getenv("DB_PATH"), root_dir / "data" / "tasks.db", root_dir=root_dir)
+    pipelines_dir = resolve_runtime_path(os.getenv("PIPELINES_DIR"), root_dir / "pipelines", root_dir=root_dir)
     worker_count = int(os.getenv("WORKER_COUNT", "0")) or max(1, (os.cpu_count() or 2) // 2)
 
     store = TaskStore(db_path)
@@ -190,7 +193,8 @@ def create_app() -> FastAPI:
         file_id = uuid4().hex[:12]
         oss: OssClient = app.state.oss
         oss_key = oss.input_key(file_id, ext)
-        temp_path = Path(os.getenv("TEMP_DIR", str(app.state.root_dir / "temp"))).resolve() / f"upload_{file_id}{ext}"
+        temp_root = resolve_runtime_path(os.getenv("TEMP_DIR"), app.state.root_dir / "temp", root_dir=app.state.root_dir)
+        temp_path = temp_root / f"upload_{file_id}{ext}"
         temp_path.parent.mkdir(parents=True, exist_ok=True)
 
         size = 0
@@ -251,6 +255,7 @@ def create_app() -> FastAPI:
         task = store.get(task_id)
         if not task:
             raise HTTPException(status_code=404, detail={"error": "not_found"})
+        failures = store.list_failures(task_id)
         oss: OssClient = app.state.oss
         output_url = oss.presign_url(task.oss_key, 3600) if task.status == "completed" and task.oss_key else None
         return {
@@ -263,6 +268,16 @@ def create_app() -> FastAPI:
             "completedAt": task.completed_at,
             "outputUrl": output_url,
             "error": task.error,
+            "lastError": task.last_error,
+            "lastErrorAt": task.last_error_at,
+            "failureHistory": [
+                {
+                    "attempt": item.attempt,
+                    "error": item.error,
+                    "createdAt": item.created_at,
+                }
+                for item in failures
+            ],
             "taskKind": task.task_kind,
             "sourceName": task.source_name,
         }

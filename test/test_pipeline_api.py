@@ -266,3 +266,48 @@ def test_pipeline_render_rejects_local_paths(tmp_path, monkeypatch) -> None:
         )
         assert response.status_code == 400
         assert response.json()["error"] == "invalid_clip_reference"
+
+
+def test_get_task_returns_failure_history(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    monkeypatch.setenv("API_KEYS", "test-key")
+    monkeypatch.setenv("OSS_LOCAL_ROOT", str(tmp_path / "oss"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "tasks.db"))
+    monkeypatch.setenv("TEMP_DIR", str(tmp_path / "temp"))
+    monkeypatch.setenv("PIPELINES_DIR", str(pipelines_root))
+    monkeypatch.setattr(api_app_module, "TaskQueue", FakeTaskQueue)
+
+    with TestClient(api_app_module.create_app()) as client:
+        store = client.app.state.store
+        task_id = "t_history"
+        store.create(
+            api_app_module._create_store_record(
+                task_id,
+                "pipeline",
+                "trim-mixed-dissolve-v1",
+                {"clips": ["GouMei-Video-Cut/inputs/file1.mp4"]},
+            )
+        )
+        store.mark_rendering(task_id)
+        store.record_failure(task_id, "download timeout")
+        store.reset_to_queue(task_id)
+        store.mark_rendering(task_id)
+        store.mark_completed(task_id, "GouMei-Video-Cut/outputs/t_history/final.mp4")
+
+        response = client.get(f"/tasks/{task_id}", headers={"X-Api-Key": "test-key"})
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "completed"
+        assert body["attempt"] == 2
+        assert body["error"] is None
+        assert body["lastError"] == "download timeout"
+        assert body["lastErrorAt"] is not None
+        assert body["failureHistory"] == [
+            {
+                "attempt": 1,
+                "error": "download timeout",
+                "createdAt": body["lastErrorAt"],
+            }
+        ]
