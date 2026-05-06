@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 import importlib
 import json
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -257,6 +258,23 @@ def test_zoom_dissolve_pipeline_config_parses() -> None:
     assert config.default_transition.scale == pytest.approx(1.18)
     assert config.variables is not None
     assert "zoom_scale" in config.variables
+
+
+def test_bgm_concat_pipeline_config_parses() -> None:
+    config_path = Path(__file__).resolve().parents[1] / "pipelines" / "bgm-concat" / "config.json"
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+    config = parse_pipeline_config(payload, config_path, require_name=True)
+
+    assert config.name == "bgm-concat"
+    assert len(config.clips) == 1
+    assert config.clips[0].trim_start == 0
+    assert config.clips[0].trim_end == 0
+    assert config.default_transition is not None
+    assert config.default_transition.type == "cut"
+    assert config.default_transition.duration == 0
+    assert config.bgm is not None
+    assert config.bgm.enabled is True
+    assert config.bgm.dir == "input/bgm"
 
 
 def test_pipeline_render_rejects_local_paths(tmp_path, monkeypatch) -> None:

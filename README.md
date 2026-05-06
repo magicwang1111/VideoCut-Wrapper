@@ -79,6 +79,7 @@ videocut serve --host 0.0.0.0 --port 3000
 
 | Pipeline ID | 转场 | 主要变量 |
 |---|---|---|
+| `bgm-concat` | 直切 + BGM | — |
 | `trim-concat` | 直切 | `trim_start` |
 | `xfade-concat` | dissolve | `transition_duration` |
 | `trim-xfade-concat` | dissolve + trim | `trim_start`, `transition_duration` |
@@ -252,7 +253,7 @@ curl "http://127.0.0.1:3000/health"
   "ok": true,
   "workers": 4,
   "queueSize": 0,
-  "pipelines": 7
+  "pipelines": 8
 }
 ```
 

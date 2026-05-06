@@ -163,7 +163,7 @@ curl "http://127.0.0.1:3000/health"
   "ok": true,
   "workers": 4,
   "queueSize": 0,
-  "pipelines": 7
+  "pipelines": 8
 }
 ```
 
@@ -586,6 +586,7 @@ HTTP 状态码为 `404`。
 
 | Pipeline ID | 默认素材槽位 | 默认转场 | BGM | 备注 |
 |---|---:|---|---|---|
+| `bgm-concat` | 1 | `cut` | 是 | 纯拼接不做转场，最后混入 BGM；单个视频时用于给单视频添加 BGM |
 | `flash-black-concat` | 6 | `flash-black` | 否 | 闪黑转场拼接 |
 | `trim-concat` | 6 | `cut` | 否 | 裁剪后直切拼接 |
 | `trim-mixed-concat` | 6 | `flash-black` | 否 | 配置内前 5 个转场交替闪黑和溶解 |

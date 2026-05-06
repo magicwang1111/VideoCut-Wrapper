@@ -27,7 +27,7 @@ GET /health
   "ok": true,
   "workers": 4,
   "queueSize": 0,
-  "pipelines": 7
+  "pipelines": 8
 }
 ```
 
@@ -52,7 +52,7 @@ X-Api-Key: your-api-key
 
 ```json
 {
-  "pipeline": "trim-mixed-dissolve-v1",
+  "pipeline": "bgm-concat",
   "clips": [
     "GouMei-Video-Cut/test-input/1/clip_001.mp4",
     "GouMei-Video-Cut/test-input/1/clip_002.mp4"
@@ -119,7 +119,7 @@ X-Api-Key: your-api-key
   "lastErrorAt": null,
   "failureHistory": [],
   "taskKind": "pipeline",
-  "sourceName": "trim-mixed-dissolve-v1"
+  "sourceName": "bgm-concat"
 }
 ```
 
@@ -264,7 +264,7 @@ curl -X POST "http://127.0.0.1:3000/render" \
   -H "X-Api-Key: your-api-key" \
   -H "Content-Type: application/json" \
   -d '{
-    "pipeline": "trim-mixed-dissolve-v1",
+    "pipeline": "bgm-concat",
     "clips": [
       "GouMei-Video-Cut/test-input/1/clip_001.mp4",
       "GouMei-Video-Cut/test-input/1/clip_002.mp4",
@@ -292,6 +292,7 @@ curl -L "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78/download" \
 
 | Pipeline ID | 含义 |
 |---|---|
+| `bgm-concat` | 多段素材直接拼接，不做转场，最后混入 BGM；单个视频时用于给单视频添加 BGM |
 | `flash-black-concat` | 多段素材直接拼接，片段之间使用闪黑转场 |
 | `trim-concat` | 每段素材先裁掉开头固定时长，再直切拼接 |
 | `trim-mixed-concat` | 每段素材先裁掉开头固定时长，再按固定顺序混合闪黑和溶解转场 |
@@ -303,5 +304,5 @@ curl -L "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78/download" \
 推荐默认使用：
 
 ```text
-trim-mixed-dissolve-v1
+bgm-concat
 ```
