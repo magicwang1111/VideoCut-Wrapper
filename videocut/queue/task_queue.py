@@ -9,11 +9,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from videocut.env import load_project_env
 from videocut.log import get_logger
 from videocut.oss import OssClient
 from videocut.queue.worker_process import worker_main
 from videocut.runtime_paths import resolve_runtime_path
 from videocut.store import TaskStore
+
+load_project_env()
 
 TASK_MAX_ATTEMPT = int(os.getenv("TASK_MAX_ATTEMPT", "3"))
 QUEUE_MAX = int(os.getenv("QUEUE_MAX", "200"))

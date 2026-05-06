@@ -477,18 +477,18 @@ oss://goumee-coze/GouMei-Video-Cut/test-input/
 直接运行：
 
 ```bash
-# 单任务联调（默认使用 trim-mixed-concat pipeline）
+# 单任务联调（默认使用 bgm-concat pipeline）
 python api-test/http_api_test_client.py --group 1
 
 # 指定 pipeline
 python api-test/http_api_test_client.py --pipeline zoom-dissolve-concat --group 1
 
 # 并发提交多组，更接近真实 worker 排队 / 并发场景
-python api-test/http_api_test_client.py --groups 1,2,3,4,5 --skip-download
+python api-test/http_api_test_client.py --groups 1-16 --skip-download
 ```
 
 说明：
 
 - `--group 1` 是单任务联调
-- `--pipeline <name>` 指定要测试的 pipeline，默认 `trim-mixed-concat`
-- `--groups 1,2,3,4,5` 会并发提交多个 `/render` 请求
+- `--pipeline <name>` 指定要测试的 pipeline，默认 `bgm-concat`
+- `--groups 1-16` 会并发提交 16 个 `/render` 请求，也支持 `1,2,3` 这种逗号写法

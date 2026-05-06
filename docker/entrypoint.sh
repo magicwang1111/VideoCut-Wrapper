@@ -1,6 +1,45 @@
 #!/usr/bin/env sh
 set -eu
 
+load_env_file() {
+  ENV_FILE="${VIDEOCUT_ENV_FILE:-/app/.env}"
+  if [ ! -f "${ENV_FILE}" ]; then
+    return
+  fi
+
+  echo "[entrypoint] loading ${ENV_FILE}"
+  while IFS= read -r line || [ -n "${line}" ]; do
+    line="$(printf '%s' "${line}" | sed 's/\r$//;s/^[[:space:]]*//;s/[[:space:]]*$//')"
+    case "${line}" in
+      ""|\#*)
+        continue
+        ;;
+      export\ *)
+        line="${line#export }"
+        ;;
+    esac
+
+    key="${line%%=*}"
+    value="${line#*=}"
+    if [ "${key}" = "${line}" ]; then
+      continue
+    fi
+    key="$(printf '%s' "${key}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    case "${key}" in
+      ""|[0-9]*|*[!abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_]*)
+        continue
+        ;;
+    esac
+
+    eval "is_set=\${${key}+x}"
+    if [ -n "${is_set}" ]; then
+      continue
+    fi
+    value="$(printf '%s' "${value}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    export "${key}=${value}"
+  done < "${ENV_FILE}"
+}
+
 sync_bgm_from_oss() {
   if [ "${SYNC_BGM_ON_STARTUP:-1}" != "1" ]; then
     echo "[entrypoint] skip BGM sync because SYNC_BGM_ON_STARTUP=${SYNC_BGM_ON_STARTUP:-0}"
@@ -37,5 +76,6 @@ sync_bgm_from_oss() {
   "$@"
 }
 
+load_env_file
 sync_bgm_from_oss
 exec "$@"

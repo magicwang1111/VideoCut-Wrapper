@@ -7,6 +7,7 @@ from typing import Optional
 import typer
 import uvicorn
 
+from videocut.env import load_project_env
 from videocut.errors import VideoCutError
 from videocut.ffmpeg_config import resolve_runtime_video_settings, resolve_video_settings
 from videocut.log import setup_logging
@@ -18,6 +19,8 @@ app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 PIPELINES_DIR = ROOT_DIR / "pipelines"
+
+load_project_env(ROOT_DIR)
 
 
 @app.command()

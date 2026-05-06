@@ -31,7 +31,7 @@ REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "60"))
 POLL_INTERVAL_SECONDS = float(os.getenv("POLL_INTERVAL_SECONDS", "5"))
 POLL_TIMEOUT_SECONDS = int(os.getenv("POLL_TIMEOUT_SECONDS", "1800"))
 
-DEFAULT_PIPELINE = "trim-mixed-concat"
+DEFAULT_PIPELINE = "bgm-concat"
 DEFAULT_PIPELINE_OVERRIDES: dict[str, Any] = {}
 
 REAL_OSS_TEST_CLIP_GROUPS: dict[int, list[str]] = {
@@ -48,6 +48,11 @@ REAL_OSS_TEST_CLIP_GROUPS: dict[int, list[str]] = {
         "GouMei-Video-Cut/test-input/2/kling_20260328_作品_镜头固定_原地展示穿_4662_0.mp4",
         "GouMei-Video-Cut/test-input/2/kling_20260328_作品_镜头固定_原地展示穿_4666_0-2.mp4",
         "GouMei-Video-Cut/test-input/2/kling_20260328_作品_镜头固定_原地展示穿_4666_0.mp4",
+        "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4390_0.mp4",
+        "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4504_0.mp4",
+        "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4567_0.mp4",
+        "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4662_0.mp4",
+        "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4663_0.mp4",
     ],
     3: [
         "GouMei-Video-Cut/test-input/3/kling_20260328_作品_往前走_镜头固定_原_4520_0.mp4",
@@ -71,6 +76,37 @@ REAL_OSS_TEST_CLIP_GROUPS: dict[int, list[str]] = {
         "GouMei-Video-Cut/test-input/5/kling_20260327_作品_原地展示穿搭_3645_0.mp4",
     ],
 }
+
+
+BASE_REAL_OSS_TEST_GROUP_IDS = tuple(sorted(REAL_OSS_TEST_CLIP_GROUPS))
+MAX_GENERATED_GROUP_ID = 16
+
+
+def _take_group_clips(group_id: int, start: int, count: int) -> list[str]:
+    clips = REAL_OSS_TEST_CLIP_GROUPS[group_id]
+    return [clips[(start + offset) % len(clips)] for offset in range(count)]
+
+
+def _build_generated_group(group_id: int) -> list[str]:
+    base_ids = BASE_REAL_OSS_TEST_GROUP_IDS
+    offset = group_id - max(base_ids) - 1
+    if group_id <= max(base_ids) + len(base_ids):
+        primary = base_ids[offset % len(base_ids)]
+        secondary = base_ids[(offset + 1) % len(base_ids)]
+        return _take_group_clips(primary, offset, 3) + _take_group_clips(secondary, offset, 2)
+
+    primary = base_ids[offset % len(base_ids)]
+    secondary = base_ids[(offset + 2) % len(base_ids)]
+    tertiary = base_ids[(offset + 4) % len(base_ids)]
+    return (
+        _take_group_clips(primary, offset, 2)
+        + _take_group_clips(secondary, offset, 2)
+        + _take_group_clips(tertiary, offset, 1)
+    )
+
+
+for generated_group_id in range(max(BASE_REAL_OSS_TEST_GROUP_IDS) + 1, MAX_GENERATED_GROUP_ID + 1):
+    REAL_OSS_TEST_CLIP_GROUPS[generated_group_id] = _build_generated_group(generated_group_id)
 
 
 def _headers(*, json_body: bool = False) -> dict[str, str]:
@@ -285,10 +321,19 @@ def parse_group_ids(group: int, groups_text: str | None) -> list[int]:
         value = raw.strip()
         if not value:
             continue
-        group_id = int(value)
-        if group_id not in REAL_OSS_TEST_CLIP_GROUPS:
-            raise argparse.ArgumentTypeError(f"Unsupported group: {group_id}")
-        group_ids.append(group_id)
+        if "-" in value:
+            start_text, end_text = value.split("-", 1)
+            start = int(start_text.strip())
+            end = int(end_text.strip())
+            if start > end:
+                raise argparse.ArgumentTypeError(f"Invalid group range: {value}")
+            candidates = range(start, end + 1)
+        else:
+            candidates = [int(value)]
+        for group_id in candidates:
+            if group_id not in REAL_OSS_TEST_CLIP_GROUPS:
+                raise argparse.ArgumentTypeError(f"Unsupported group: {group_id}")
+            group_ids.append(group_id)
     if not group_ids:
         raise argparse.ArgumentTypeError("No valid groups provided.")
     return group_ids
@@ -300,7 +345,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--group", type=int, choices=sorted(REAL_OSS_TEST_CLIP_GROUPS), default=1)
     parser.add_argument(
         "--groups",
-        help="Comma-separated group ids, e.g. 1,2,3,4,5. When set, requests are submitted concurrently.",
+        help="Comma-separated group ids or ranges, e.g. 1,2,3 or 1-16. When set, requests are submitted concurrently.",
     )
     parser.add_argument(
         "--skip-download",

@@ -500,6 +500,8 @@ videocut serve --port 3000
 
 参考 `.env.example`：
 
+本机执行 `python -m videocut ...` 和容器内执行服务时，程序会自动读取仓库根目录的 `.env`。如果同名变量已经通过 PowerShell、Docker `environment` 或 `env_file` 注入，则以已存在的环境变量为准。
+
 - `API_KEYS`: 允许访问 API 的 key，逗号分隔
 - `FFMPEG_PATH`: 可选，指定 ffmpeg 可执行文件路径
 - `FFPROBE_PATH`: 可选，指定 ffprobe 可执行文件路径
@@ -615,6 +617,8 @@ docker build -f docker/base/Dockerfile -t magicwang/pytorch-base:torch210-cu128-
 ```bash
 docker compose up -d --build
 ```
+
+`docker-compose.yml` 会通过 `env_file: .env` 注入配置；如果你用 `docker run` 方式启动，也可以使用 `--env-file .env`，或者把 `.env` 挂载到 `/app/.env`，entrypoint 会在同步 BGM 前读取它。
 
 5. 查看服务状态：
 

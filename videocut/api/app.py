@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from videocut.env import load_project_env
 from videocut.errors import PipelineNotFoundError, VideoCutError
 from videocut.log import get_logger, setup_logging
 from videocut.oss import OssClient
@@ -25,6 +26,8 @@ from videocut.queue import TaskQueue, WorkerTask
 from videocut.render.task import generate_task_id
 from videocut.runtime_paths import resolve_runtime_path
 from videocut.store import PipelineRecord, TaskRecord, TaskStore
+
+load_project_env()
 
 logger = get_logger(__name__)
 
