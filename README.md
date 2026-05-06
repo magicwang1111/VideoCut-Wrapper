@@ -534,6 +534,7 @@ python api-test/http_api_test_client.py --pipeline zoom-dissolve-concat --group 
 
 # 批量并发，5 组
 python api-test/http_api_test_client.py --groups 1,2,3,4,5
+python api-test/http_api_test_client.py --groups 1-16 --skip-download
 ```
 
 需要先设置环境变量：

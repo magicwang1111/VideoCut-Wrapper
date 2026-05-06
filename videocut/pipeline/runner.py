@@ -251,8 +251,6 @@ class PipelineRunner:
         quality = overrides.get("quality") or config.quality or "high"
         base_name = config.output.filename if config.output and config.output.filename else "final.mp4"
         stem, ext = Path(base_name).stem, Path(base_name).suffix or ".mp4"
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_filename = f"{stem}_{timestamp}{ext}"
         project_name = project_dir.name
 
         task = create_task("pipeline", {})
@@ -260,6 +258,8 @@ class PipelineRunner:
             task.id = task_id
         start_task(task)
 
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        output_filename = f"{stem}_{task.id}_{timestamp}{ext}"
         start_time = time.time()
         out_dir = self.output_dir / project_name
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -359,7 +359,7 @@ class PipelineRunner:
                 bgm_files = scan_bgm_files(bgm_dir_path)
                 chosen = random.choice(bgm_files)
                 logger.info("[2.5/3] 混入 BGM: %s (volume=%.2f)", chosen.name, config.bgm.volume)
-                apply_bgm(ffmpeg_path, ffprobe_path, output_path, chosen, config.bgm.volume, config.bgm.fade_out)
+                apply_bgm(ffmpeg_path, ffprobe_path, output_path, chosen, config.bgm.volume, config.bgm.fade_out, task.id)
                 bgm_file_used = str(chosen)
 
             elapsed = time.time() - start_time
@@ -393,7 +393,8 @@ class PipelineRunner:
                 } if bgm_file_used else None,
                 "variables": {k: asdict(v) for k, v in ctx.config.variables.items()} if ctx.config.variables else None,
             }
-            (out_dir / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+            meta_filename = f"meta_{task.id}_{timestamp}.json"
+            (out_dir / meta_filename).write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
             logger.info("[3/3] Metadata written")
             return RenderResult(task_id=task.id, status="completed", output_path=output_path, duration=elapsed)
         except Exception as exc:  # intentional: isolate render failure from caller

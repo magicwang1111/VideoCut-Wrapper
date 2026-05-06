@@ -30,6 +30,7 @@ class WorkerTask:
     task_kind: str
     source_name: str
     payload: dict[str, Any]
+    attempt: int = 0
 
 
 @dataclass(slots=True)
@@ -132,6 +133,7 @@ class WorkerPool:
                 "task_kind": task.task_kind,
                 "source_name": task.source_name,
                 "payload": task.payload,
+                "attempt": task.attempt,
             }
         )
         return True
@@ -216,8 +218,15 @@ class TaskQueue:
         with self._lock:
             while self.queue and self.pool.idle_count > 0:
                 task = self.queue.pop(0)
-                self.store.mark_rendering(task.task_id)
-                if not self.pool.dispatch(task):
+                attempt = self.store.mark_rendering(task.task_id)
+                dispatch_task = WorkerTask(
+                    task_id=task.task_id,
+                    task_kind=task.task_kind,
+                    source_name=task.source_name,
+                    payload=task.payload,
+                    attempt=attempt,
+                )
+                if not self.pool.dispatch(dispatch_task):
                     self.queue.insert(0, task)
                     break
 

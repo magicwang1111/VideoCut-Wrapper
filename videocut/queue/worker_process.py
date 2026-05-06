@@ -9,6 +9,10 @@ from videocut.pipeline import PipelineRunner, build_pipeline_context, parse_pipe
 from videocut.render import resolve_ffmpeg_path, resolve_ffprobe_path
 
 
+def _task_temp_dir(temp_dir: str | Path, task_id: str, attempt: int, worker_id: int) -> Path:
+    return Path(temp_dir) / f"{task_id}_attempt{attempt}_worker{worker_id}"
+
+
 def _download_pipeline_clips(oss: OssClient, clip_keys: list[str], task_temp_dir: Path) -> list[str]:
     local_paths: list[str] = []
     for index, oss_key in enumerate(clip_keys):
@@ -37,11 +41,16 @@ def worker_main(
             return
 
         task_id = message["task_id"]
+        attempt = int(message.get("attempt") or 0)
         payload = dict(message["payload"])
-        task_temp_dir = Path(temp_dir) / task_id
-        task_temp_dir.mkdir(parents=True, exist_ok=True)
+        task_temp_dir = _task_temp_dir(temp_dir, task_id, attempt, worker_id)
 
         try:
+            try:
+                shutil.rmtree(task_temp_dir, ignore_errors=True)
+            except Exception:
+                pass
+            task_temp_dir.mkdir(parents=True, exist_ok=True)
             event_queue.put({"type": "lease_start", "worker_id": worker_id, "task_id": task_id})
             clip_keys = payload.get("clips")
             if not isinstance(clip_keys, list) or not all(isinstance(item, str) for item in clip_keys):

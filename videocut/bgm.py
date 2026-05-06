@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
+from uuid import uuid4
 
 from videocut.errors import RenderError
 
@@ -23,10 +24,10 @@ def resolve_bgm_dir(root_dir: str | Path, configured_dir: str | None = None) -> 
 
 def scan_bgm_files(bgm_dir: Path) -> list[Path]:
     if not bgm_dir.is_dir():
-        raise RenderError(f"BGM 目录不存在: {bgm_dir}")
+        raise RenderError(f"BGM directory does not exist: {bgm_dir}")
     files = [p for p in bgm_dir.iterdir() if p.suffix.lower() in _BGM_EXTENSIONS]
     if not files:
-        raise RenderError(f"BGM 目录中没有找到音频文件: {bgm_dir}")
+        raise RenderError(f"No audio files found in BGM directory: {bgm_dir}")
     return files
 
 
@@ -37,9 +38,11 @@ def apply_bgm(
     bgm_file: Path,
     volume: float,
     fade_out: float,
+    task_id: str | None = None,
 ) -> None:
-    """将 bgm_file 混入 video_path（视频 → 临时文件 → 覆盖原文件）。"""
-    tmp_path = video_path + ".bgm_tmp.mp4"
+    video_file = Path(video_path)
+    tmp_token = task_id or "bgm"
+    tmp_path = video_file.with_name(f"{video_file.name}.{tmp_token}.{uuid4().hex}.bgm_tmp.mp4")
     raw = subprocess.check_output(
         [ffprobe_path, "-v", "error", "-print_format", "json", "-show_format", video_path],
         encoding="utf-8",
@@ -57,15 +60,36 @@ def apply_bgm(
         audio_filter += f",afade=t=out:st={fade_start:.6f}:d={fade_out:.4f}"
     audio_filter += "[bgm]"
 
-    subprocess.run(
-        [
-            ffmpeg_path, "-i", video_path, "-i", str(bgm_file),
-            "-filter_complex", audio_filter,
-            "-map", "0:v", "-map", "[bgm]",
-            "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
-            "-y", tmp_path,
-        ],
-        check=True,
-        timeout=600,
-    )
-    Path(tmp_path).replace(video_path)
+    try:
+        subprocess.run(
+            [
+                ffmpeg_path,
+                "-i",
+                video_path,
+                "-i",
+                str(bgm_file),
+                "-filter_complex",
+                audio_filter,
+                "-map",
+                "0:v",
+                "-map",
+                "[bgm]",
+                "-c:v",
+                "copy",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-y",
+                str(tmp_path),
+            ],
+            check=True,
+            timeout=600,
+        )
+        tmp_path.replace(video_file)
+    except Exception:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        raise

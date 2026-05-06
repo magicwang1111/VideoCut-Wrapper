@@ -146,13 +146,15 @@ class TaskStore:
             row = self._db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         return self._row_to_record(row) if row else None
 
-    def mark_rendering(self, task_id: str) -> None:
+    def mark_rendering(self, task_id: str) -> int:
         with self._lock:
             self._db.execute(
                 "UPDATE tasks SET status='rendering', progress=0, started_at=?, completed_at=NULL, error=NULL, attempt=attempt+1 WHERE id=?",
                 (datetime.now(UTC).isoformat(), task_id),
             )
+            row = self._db.execute("SELECT attempt FROM tasks WHERE id = ?", (task_id,)).fetchone()
             self._db.commit()
+        return int(row["attempt"]) if row is not None else 0
 
     def update_progress(self, task_id: str, progress: int) -> None:
         with self._lock:

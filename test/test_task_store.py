@@ -28,10 +28,10 @@ def test_task_store_preserves_failure_history_across_retry(tmp_path) -> None:
     store = TaskStore(tmp_path / "tasks.db")
     store.create(_make_task())
 
-    store.mark_rendering("t_demo")
+    assert store.mark_rendering("t_demo") == 1
     store.record_failure("t_demo", "download timeout")
     store.reset_to_queue("t_demo")
-    store.mark_rendering("t_demo")
+    assert store.mark_rendering("t_demo") == 2
     store.mark_completed("t_demo", "GouMei-Video-Cut/outputs/t_demo/final.mp4")
 
     task = store.get("t_demo")
@@ -53,7 +53,7 @@ def test_task_store_records_final_failure(tmp_path) -> None:
     store = TaskStore(tmp_path / "tasks.db")
     store.create(_make_task("t_failed"))
 
-    store.mark_rendering("t_failed")
+    assert store.mark_rendering("t_failed") == 1
     store.mark_failed("t_failed", "ffmpeg exited with code 1")
 
     task = store.get("t_failed")
