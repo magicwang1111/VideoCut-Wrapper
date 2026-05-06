@@ -139,7 +139,7 @@ videocut serve --host 0.0.0.0 --port 3000
 
 ### Variables Schema
 
-`variables` 字段定义可覆盖的参数类型：
+`variables` 字段定义 pipeline 配置中的参数元数据：
 
 | type | 校验规则 | 额外字段 |
 |---|---|---|
@@ -149,21 +149,15 @@ videocut serve --host 0.0.0.0 --port 3000
 
 字段说明：
 
-- `required: true` — 调用时必须显式传入，无默认值时渲染会报错
-- `default` — 未传入时使用的默认值
-- `overridable` — 列在这里的变量才允许通过 `overrides` 覆盖
+- `required: true` — 参数是否要求提供
+- `default` — 默认值
+- `overridable` — 可覆盖参数名清单
+
+注意：当前 HTTP API 运行时没有把 `variables` 自动映射成渲染参数。对接时请使用下面结构化的 `clip_overrides`、`transition_overrides`、`default_transition`、`bgm` 等字段；完整说明见 [docs/API.md](docs/API.md)。
 
 ### Overrides
 
-运行时覆盖变量，支持 CLI 和 API 两种方式：
-
-```bash
-# CLI
-videocut render trim-mixed-concat a.mp4 b.mp4 c.mp4 \
-  --override trim_start=3 \
-  --override transition_1=dissolve \
-  --override transition_duration=0.8
-```
+运行时覆盖变量，HTTP API 当前支持结构化覆盖字段：
 
 ```json
 // API POST /render body
@@ -171,20 +165,22 @@ videocut render trim-mixed-concat a.mp4 b.mp4 c.mp4 \
   "pipeline": "trim-mixed-concat",
   "clips": ["file1", "file2", "file3"],
   "overrides": {
-    "trim_start": 3,
-    "transition_1": "dissolve",
-    "transition_duration": 0.8,
+    "quality": "medium",
     "clip_overrides": [
+      { "index": 0, "trim_start": 3 },
       { "index": 1, "trim_start": 5 }
     ],
     "transition_overrides": [
-      { "index": 2, "type": "cut", "duration": 0 }
+      { "index": 0, "type": "dissolve", "duration": 0.8 },
+      { "index": 1, "type": "cut", "duration": 0 }
     ]
   }
 }
 ```
 
 ## API
+
+完整、按当前代码校对过的对接文档见 [docs/API.md](docs/API.md)。下面是仓库 README 内的概要说明。
 
 ### 启动方式
 
@@ -207,11 +203,12 @@ videocut serve --host 0.0.0.0 --port 3000
 ### 接口列表
 
 - `GET /health`
-- `GET /pipelines`
 - `POST /upload`
 - `POST /render`
 - `GET /tasks/{id}`
 - `GET /tasks/{id}/download`
+
+注意：当前 `videocut/api/app.py` 没有实现 `GET /pipelines`。如需查看已注册 pipeline，请使用 `videocut pipelines` 或查看 `pipelines/*/config.json`。
 
 ### 鉴权
 
@@ -266,29 +263,18 @@ curl "http://127.0.0.1:3000/health"
 - `queueSize`: 当前等待中的任务数，不含正在渲染的任务。
 - `pipelines`: 已注册的 pipeline 数量。
 
-### 2. 查看已注册 Pipeline `GET /pipelines`
+### 2. 查看已注册 Pipeline
 
-请求：
+当前 HTTP API 未开放 pipeline 列表接口。可用下面任一方式查看：
 
 ```bash
-curl "http://127.0.0.1:3000/pipelines" \
-  -H "X-Api-Key: your-api-key-here"
+videocut pipelines
 ```
 
-返回示例：
+或直接查看：
 
-```json
-[
-  {
-    "name": "trim-mixed-concat",
-    "sourcePath": "/app/pipelines/trim-mixed-concat/config.json",
-    "variables": {
-      "trim_start": { "type": "number", "default": 2, "min": 0, "max": 30 },
-      "transition_duration": { "type": "number", "default": 0.5 }
-    },
-    "overridable": ["trim_start", "transition_duration", "transition_1", "transition_2"]
-  }
-]
+```text
+pipelines/*/config.json
 ```
 
 ### 3. 上传素材 `POST /upload`
@@ -333,10 +319,13 @@ curl -X POST "http://127.0.0.1:3000/upload" \
   "pipeline": "trim-mixed-concat",
   "clips": ["abc123def456", "bbb222ccc333", "ddd444eee555"],
   "overrides": {
-    "trim_start": 2,
-    "transition_1": "flash-black",
-    "transition_2": "dissolve",
-    "transition_duration": 0.5
+    "clip_overrides": [
+      { "index": 0, "trim_start": 2 }
+    ],
+    "transition_overrides": [
+      { "index": 0, "type": "flash-black", "duration": 0.5 },
+      { "index": 1, "type": "dissolve", "duration": 0.5 }
+    ]
   }
 }
 ```
@@ -356,9 +345,13 @@ curl -X POST "http://127.0.0.1:3000/render" \
     "pipeline": "trim-mixed-concat",
     "clips": ["abc123def456", "bbb222ccc333", "ddd444eee555"],
     "overrides": {
-      "trim_start": 2,
-      "transition_1": "flash-black",
-      "transition_2": "dissolve"
+      "clip_overrides": [
+        { "index": 0, "trim_start": 2 }
+      ],
+      "transition_overrides": [
+        { "index": 0, "type": "flash-black", "duration": 0.5 },
+        { "index": 1, "type": "dissolve", "duration": 0.5 }
+      ]
     }
   }'
 ```
@@ -438,7 +431,7 @@ curl -L "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78/download" \
 
 服务端行为：
 
-- 如果任务不存在、未完成、或者没有输出文件，返回 `404 not_found_or_not_ready`
+- 如果任务不存在、未完成、或者没有输出文件，返回 HTTP `404`，响应体 `error_code=3001`
 - 如果启用了 `OSS_LOCAL_ROOT`，直接返回本地文件内容
 - 如果使用真实 OSS，返回 `302` 跳转到预签名 URL
 

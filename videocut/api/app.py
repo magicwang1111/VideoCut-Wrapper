@@ -5,13 +5,17 @@ import re
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import UTC, datetime
+from enum import IntEnum
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from videocut.errors import PipelineNotFoundError, VideoCutError
 from videocut.log import get_logger, setup_logging
@@ -28,10 +32,43 @@ ALLOWED_UPLOAD_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".mp3", ".wav", 
 MAX_UPLOAD_BYTES = 500 * 1024 * 1024
 
 
+class ApiErrorCode(IntEnum):
+    UNAUTHORIZED = 1001
+    UNSUPPORTED_CONTENT_TYPE = 1002
+    VALIDATION_ERROR = 1003
+    INVALID_BODY = 2001
+    INVALID_CLIP_REFERENCE = 2002
+    PIPELINE_NOT_FOUND = 2003
+    TASK_NOT_FOUND = 2004
+    UNSUPPORTED_FORMAT = 2005
+    FILE_NOT_FOUND = 2006
+    TASK_OUTPUT_NOT_READY = 3001
+    QUEUE_FULL = 3002
+    FILE_TOO_LARGE = 3003
+    INTERNAL_ERROR = 9001
+
+
 class RenderBody(BaseModel):
     pipeline: str
     clips: list[str] = Field(default_factory=list)
     overrides: dict[str, Any] = Field(default_factory=dict)
+
+
+def api_error_payload(error_code: ApiErrorCode | int, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
+    return {
+        "error_code": int(error_code),
+        "message": message,
+        "details": details or {},
+    }
+
+
+def api_http_exception(
+    status_code: int,
+    error_code: ApiErrorCode | int,
+    message: str,
+    details: dict[str, Any] | None = None,
+) -> HTTPException:
+    return HTTPException(status_code=status_code, detail=api_error_payload(error_code, message, details))
 
 
 def parse_media_type(content_type: str) -> str:
@@ -42,24 +79,24 @@ def auth_guard(request: Request) -> None:
     api_keys = {key.strip() for key in os.getenv("API_KEYS", "").split(",") if key.strip()}
     key = request.headers.get("x-api-key")
     if not key or key not in api_keys:
-        raise HTTPException(status_code=401, detail={"error": "unauthorized"})
+        raise api_http_exception(401, ApiErrorCode.UNAUTHORIZED, "Unauthorized.")
 
 
 def require_content_type(request: Request, expected: str) -> None:
     raw_content_type = request.headers.get("content-type")
     if not raw_content_type:
-        raise HTTPException(
-            status_code=415,
-            detail={"error": "unsupported_content_type", "expected": expected, "received": None},
+        raise api_http_exception(
+            415,
+            ApiErrorCode.UNSUPPORTED_CONTENT_TYPE,
+            "Unsupported content type.",
+            {"expected": expected, "received": None},
         )
     if raw_content_type != raw_content_type.strip() or parse_media_type(raw_content_type) != expected:
-        raise HTTPException(
-            status_code=415,
-            detail={
-                "error": "unsupported_content_type",
-                "expected": expected,
-                "received": raw_content_type,
-            },
+        raise api_http_exception(
+            415,
+            ApiErrorCode.UNSUPPORTED_CONTENT_TYPE,
+            "Unsupported content type.",
+            {"expected": expected, "received": raw_content_type},
         )
 
 
@@ -97,15 +134,22 @@ def _resolve_clip_refs(store: TaskStore, oss: OssClient, clips: list[str], *, st
         if "/" in item or "\\" in item:
             if strict_pipeline:
                 if _looks_like_external_path(item) or not item.startswith(prefix):
-                    raise HTTPException(
-                        status_code=400,
-                        detail={"error": "invalid_clip_reference", "value": item},
+                    raise api_http_exception(
+                        400,
+                        ApiErrorCode.INVALID_CLIP_REFERENCE,
+                        "Invalid clip reference.",
+                        {"value": item},
                     )
             resolved_keys.append(item)
             continue
         oss_key = store.get_oss_key(item)
         if not oss_key:
-            raise HTTPException(status_code=400, detail={"error": "file_not_found", "fileId": item})
+            raise api_http_exception(
+                400,
+                ApiErrorCode.FILE_NOT_FOUND,
+                "File reference not found.",
+                {"fileId": item},
+            )
         resolved_keys.append(oss_key)
     return resolved_keys
 
@@ -164,15 +208,51 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(lifespan=lifespan)
 
-    @app.exception_handler(HTTPException)
-    async def http_exception_handler(_: Request, exc: HTTPException):
-        if isinstance(exc.detail, dict):
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(_: Request, exc: StarletteHTTPException):
+        if isinstance(exc.detail, dict) and "error_code" in exc.detail:
             return JSONResponse(status_code=exc.status_code, content=exc.detail)
-        return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
+        logger.warning("Unhandled HTTPException detail shape: %s", exc.detail)
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=api_error_payload(ApiErrorCode.INTERNAL_ERROR, "Unexpected API error."),
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(_: Request, exc: RequestValidationError):
+        return JSONResponse(
+            status_code=422,
+            content=api_error_payload(
+                ApiErrorCode.VALIDATION_ERROR,
+                "Request validation failed.",
+                {"validation": jsonable_encoder(exc.errors())},
+            ),
+        )
 
     @app.exception_handler(VideoCutError)
     async def videocut_error_handler(_: Request, exc: VideoCutError):
-        return JSONResponse(status_code=400, content={"code": exc.code, "error": str(exc)})
+        if isinstance(exc, PipelineNotFoundError):
+            return JSONResponse(
+                status_code=400,
+                content=api_error_payload(
+                    ApiErrorCode.PIPELINE_NOT_FOUND,
+                    f'Pipeline "{exc.pipeline_name}" is not registered.',
+                    {"available": exc.available},
+                ),
+            )
+        logger.warning("Unhandled VideoCutError: %s", exc)
+        return JSONResponse(
+            status_code=500,
+            content=api_error_payload(ApiErrorCode.INTERNAL_ERROR, "Internal server error."),
+        )
+
+    @app.exception_handler(Exception)
+    async def internal_exception_handler(_: Request, exc: Exception):
+        logger.exception("Unhandled API exception: %s", exc)
+        return JSONResponse(
+            status_code=500,
+            content=api_error_payload(ApiErrorCode.INTERNAL_ERROR, "Internal server error."),
+        )
 
     @app.get("/health")
     async def health() -> dict[str, Any]:
@@ -189,7 +269,12 @@ def create_app() -> FastAPI:
         require_content_type(request, "multipart/form-data")
         ext = Path(file.filename or "").suffix.lower()
         if ext not in ALLOWED_UPLOAD_EXTS:
-            raise HTTPException(status_code=400, detail={"error": "unsupported_format", "ext": ext})
+            raise api_http_exception(
+                400,
+                ApiErrorCode.UNSUPPORTED_FORMAT,
+                "Unsupported upload format.",
+                {"ext": ext},
+            )
 
         file_id = uuid4().hex[:12]
         oss: OssClient = app.state.oss
@@ -207,7 +292,7 @@ def create_app() -> FastAPI:
                 size += len(chunk)
                 if size > MAX_UPLOAD_BYTES:
                     temp_path.unlink(missing_ok=True)
-                    raise HTTPException(status_code=413, detail={"error": "file_too_large"})
+                    raise api_http_exception(413, ApiErrorCode.FILE_TOO_LARGE, "File is too large.")
                 handle.write(chunk)
 
         try:
@@ -223,7 +308,7 @@ def create_app() -> FastAPI:
     async def render(request: Request, body: RenderBody) -> dict[str, str]:
         require_content_type(request, "application/json")
         if not body.pipeline or not body.clips:
-            raise HTTPException(status_code=400, detail={"error": "invalid_body"})
+            raise api_http_exception(400, ApiErrorCode.INVALID_BODY, "Invalid request body.")
 
         store: TaskStore = app.state.store
         oss: OssClient = app.state.oss
@@ -247,7 +332,12 @@ def create_app() -> FastAPI:
         )
         if not enqueued:
             store.mark_failed(task_id, "Queue is full.")
-            raise HTTPException(status_code=503, detail={"error": "queue_full", "queueSize": queue_obj.queue_size})
+            raise api_http_exception(
+                503,
+                ApiErrorCode.QUEUE_FULL,
+                "Queue is full.",
+                {"queueSize": queue_obj.queue_size},
+            )
         return {"taskId": task_id}
 
     @app.get("/tasks/{task_id}", dependencies=[Depends(auth_guard)])
@@ -255,7 +345,7 @@ def create_app() -> FastAPI:
         store: TaskStore = app.state.store
         task = store.get(task_id)
         if not task:
-            raise HTTPException(status_code=404, detail={"error": "not_found"})
+            raise api_http_exception(404, ApiErrorCode.TASK_NOT_FOUND, "Task not found.")
         failures = store.list_failures(task_id)
         oss: OssClient = app.state.oss
         output_url = oss.presign_url(task.oss_key, 3600) if task.status == "completed" and task.oss_key else None
@@ -288,7 +378,7 @@ def create_app() -> FastAPI:
         store: TaskStore = app.state.store
         task = store.get(task_id)
         if not task or task.status != "completed" or not task.oss_key:
-            raise HTTPException(status_code=404, detail={"error": "not_found_or_not_ready"})
+            raise api_http_exception(404, ApiErrorCode.TASK_OUTPUT_NOT_READY, "Task output is not ready.")
         oss: OssClient = app.state.oss
         if oss.local_root:
             return FileResponse(Path(oss.local_root) / task.oss_key, filename="final.mp4")

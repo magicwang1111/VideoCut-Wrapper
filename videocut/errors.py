@@ -80,6 +80,8 @@ class PipelineNotFoundError(VideoCutError):
     code = 1501
 
     def __init__(self, pipeline_name: str, available: list[str]) -> None:
+        self.pipeline_name = pipeline_name
+        self.available = list(available)
         available_text = ", ".join(available) if available else "(none)"
         super().__init__(
             f'Pipeline "{pipeline_name}" is not registered.\n'

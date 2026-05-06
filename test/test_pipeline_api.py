@@ -43,6 +43,16 @@ class FakeTaskQueue:
         return len(self.tasks)
 
 
+class RejectingTaskQueue(FakeTaskQueue):
+    def enqueue(self, task) -> bool:
+        self.tasks.append(task)
+        return False
+
+    @property
+    def queue_size(self) -> int:
+        return 200
+
+
 def _write_pipeline_config(root, name: str, payload: dict) -> None:
     target = root / name
     target.mkdir(parents=True, exist_ok=True)
@@ -190,6 +200,7 @@ def test_render_endpoint_pipeline_mode(tmp_path, monkeypatch) -> None:
             },
         )
         assert bad_response.status_code == 422
+        assert bad_response.json()["error_code"] == 1003
 
 
 def test_validate_variables_required_missing() -> None:
@@ -269,7 +280,93 @@ def test_pipeline_render_rejects_local_paths(tmp_path, monkeypatch) -> None:
             },
         )
         assert response.status_code == 400
-        assert response.json()["error"] == "invalid_clip_reference"
+        assert response.json() == {
+            "error_code": 2002,
+            "message": "Invalid clip reference.",
+            "details": {"value": "D:/tmp/local.mp4"},
+        }
+
+
+def test_api_error_codes_for_auth_pipeline_task_and_download(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    monkeypatch.setenv("API_KEYS", "test-key")
+    monkeypatch.setenv("OSS_LOCAL_ROOT", str(tmp_path / "oss"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "tasks.db"))
+    monkeypatch.setenv("TEMP_DIR", str(tmp_path / "temp"))
+    monkeypatch.setenv("PIPELINES_DIR", str(pipelines_root))
+    monkeypatch.setattr(api_app_module, "TaskQueue", FakeTaskQueue)
+
+    with TestClient(api_app_module.create_app()) as client:
+        unauthorized = client.get("/tasks/t_missing")
+        assert unauthorized.status_code == 401
+        assert unauthorized.json()["error_code"] == 1001
+
+        headers = {"X-Api-Key": "test-key", "Content-Type": "application/json"}
+        missing_pipeline = client.post(
+            "/render",
+            headers=headers,
+            json={
+                "pipeline": "not-exists",
+                "clips": ["GouMei-Video-Cut/inputs/file1.mp4"],
+            },
+        )
+        assert missing_pipeline.status_code == 400
+        assert missing_pipeline.json() == {
+            "error_code": 2003,
+            "message": 'Pipeline "not-exists" is not registered.',
+            "details": {"available": ["trim-mixed-dissolve-v1"]},
+        }
+
+        missing_task = client.get("/tasks/t_missing", headers={"X-Api-Key": "test-key"})
+        assert missing_task.status_code == 404
+        assert missing_task.json()["error_code"] == 2004
+
+        not_ready_task_id = "t_not_ready"
+        client.app.state.store.create(
+            api_app_module._create_store_record(
+                not_ready_task_id,
+                "pipeline",
+                "trim-mixed-dissolve-v1",
+                {"clips": ["GouMei-Video-Cut/inputs/file1.mp4"]},
+            )
+        )
+        not_ready = client.get(f"/tasks/{not_ready_task_id}/download", headers={"X-Api-Key": "test-key"})
+        assert not_ready.status_code == 404
+        assert not_ready.json() == {
+            "error_code": 3001,
+            "message": "Task output is not ready.",
+            "details": {},
+        }
+
+
+def test_render_queue_full_returns_error_code(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    monkeypatch.setenv("API_KEYS", "test-key")
+    monkeypatch.setenv("OSS_LOCAL_ROOT", str(tmp_path / "oss"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "tasks.db"))
+    monkeypatch.setenv("TEMP_DIR", str(tmp_path / "temp"))
+    monkeypatch.setenv("PIPELINES_DIR", str(pipelines_root))
+    monkeypatch.setattr(api_app_module, "TaskQueue", RejectingTaskQueue)
+
+    with TestClient(api_app_module.create_app()) as client:
+        response = client.post(
+            "/render",
+            headers={"X-Api-Key": "test-key", "Content-Type": "application/json"},
+            json={
+                "pipeline": "trim-mixed-dissolve-v1",
+                "clips": ["GouMei-Video-Cut/inputs/file1.mp4"],
+            },
+        )
+        assert response.status_code == 503
+        assert response.json() == {
+            "error_code": 3002,
+            "message": "Queue is full.",
+            "details": {"queueSize": 200},
+        }
 
 
 def test_get_task_returns_failure_history(tmp_path, monkeypatch) -> None:
