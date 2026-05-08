@@ -18,6 +18,7 @@ __pycache__/
 *.mp3
 *.wav
 *.aac
+*.tar
 input/
 videocut_wrapper.egg-info/
 .worktrees/

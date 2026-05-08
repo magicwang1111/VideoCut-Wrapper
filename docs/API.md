@@ -402,6 +402,7 @@ zoom-dissolve
 BGM 指定规则：
 
 - `overrides.bgm.file` 是 `/app/input/bgm` 下的相对路径，例如 `舒缓/1.mp3`。
+- 当前 BGM 对齐清单见 `docs/BGM_MANIFEST.json`，接口使用清单里的 `path` 字段。
 - 支持按类型放子目录；不传 `file` 时，服务端会递归扫描 `/app/input/bgm` 并随机选择一首。
 - 不允许绝对路径，也不允许 `..` 路径穿越。
 - 指定文件不存在时任务失败，不会回退随机音乐。

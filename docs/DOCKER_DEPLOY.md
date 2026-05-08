@@ -1,6 +1,6 @@
 # Docker 部署命令手册
 
-流程：本地 build `videocut-wrapper:v1`，导出 tar，传到 Linux，`docker load`，然后 `docker run` 启动。
+流程：本地 build `videocut-wrapper:v2`，导出 tar，传到 Linux，`docker load`，然后 `docker run` 启动。
 
 ## 1. 本地 build 镜像
 
@@ -19,14 +19,14 @@ docker build \
   .
 ```
 
-build 业务镜像，tag 直接写 `v1`：
+build 业务镜像，tag 直接写 `v2`：
 
 ```bash
 docker build \
   --build-arg BASE_IMAGE=magicwang/pytorch-base:torch210-cu128-runtime-v1 \
-  --build-arg IMAGE_VERSION=v1 \
-  --build-arg IMAGE_DESCRIPTION="VideoCut Docker image v1" \
-  -t videocut-wrapper:v1 \
+  --build-arg IMAGE_VERSION=v2 \
+  --build-arg IMAGE_DESCRIPTION="VideoCut Docker image v2" \
+  -t videocut-wrapper:v2 \
   .
 ```
 
@@ -37,7 +37,7 @@ docker run --rm \
   --gpus all \
   -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
   --entrypoint python \
-  videocut-wrapper:v1 \
+  videocut-wrapper:v2 \
   -m videocut check
 ```
 
@@ -52,13 +52,19 @@ Video encoder: h264_nvenc
 导出 tar 包：
 
 ```bash
-docker save videocut-wrapper:v1 -o videocut-wrapper_v1.tar
+docker save videocut-wrapper:v2 -o videocut-wrapper_v2.tar
+```
+
+导出后文件在：
+
+```text
+D:\VideoCut-Wrapper\videocut-wrapper_v2.tar
 ```
 
 传到 Linux 服务器。下面用 `root@192.168.1.100` 做例子，实际执行时把 IP 换成你的 Linux 服务器 IP：
 
 ```bash
-scp videocut-wrapper_v1.tar root@192.168.1.100:/tmp/
+scp videocut-wrapper_v2.tar root@192.168.1.100:/tmp/
 ```
 
 说明：`docker save` 会把业务镜像依赖的底层镜像层一起打进去，Linux 服务器不需要单独 build base 镜像。
@@ -68,14 +74,14 @@ scp videocut-wrapper_v1.tar root@192.168.1.100:/tmp/
 登录 Linux 服务器后执行：
 
 ```bash
-sudo docker load -i /tmp/videocut-wrapper_v1.tar
+sudo docker load -i /tmp/videocut-wrapper_v2.tar
 sudo docker images | grep videocut-wrapper
 ```
 
 确认能看到：
 
 ```text
-videocut-wrapper   v1
+videocut-wrapper   v2
 ```
 
 ## 4. 把本地 .env 传到 Linux
@@ -110,7 +116,7 @@ sudo docker run -d \
   --gpus all \
   -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
   --env-file /tmp/videocut.env \
-  videocut-wrapper:v1
+  videocut-wrapper:v2
 ```
 
 ### 5.2 没有 GPU 的服务器，最简单启动
@@ -125,7 +131,7 @@ sudo docker run -d \
   --memory="64g" \
   --cpus="16" \
   --env-file /tmp/videocut.env \
-  videocut-wrapper:v1
+  videocut-wrapper:v2
 ```
 
 CPU-only 命令不要加 `--gpus all`。GPU 命令比 CPU-only 命令只多两行：
@@ -205,6 +211,22 @@ BGM 支持按类型放在子目录里，例如：
 
 程序会递归扫描 `/app/input/bgm` 下的音频文件。
 
+当前 BGM 对齐清单在仓库里：
+
+```text
+docs/BGM_MANIFEST.json
+```
+
+接口指定某一首 BGM 时，使用清单里的 `path` 字段，例如：
+
+```json
+{
+  "category": "舒缓",
+  "filename": "1.mp3",
+  "path": "舒缓/1.mp3"
+}
+```
+
 如果接口里要指定某一首 BGM，就传 `/app/input/bgm` 下的相对路径：
 
 ```bash
@@ -223,41 +245,78 @@ python api-test/render_bgm_file.py
 }
 ```
 
-## 7. 更新到 v2
+## 7. 删除旧镜像或切换到 v2
 
-本地 build `v2`：
+如果删除旧镜像时报错，通常是还有容器正在使用它。先查哪个容器占用了 `v1`：
+
+```bash
+docker ps -a --filter ancestor=videocut-wrapper:v1
+```
+
+你现在本机如果看到 `videocut-wrapper` 还在运行，说明它就是从 `videocut-wrapper:v1` 启动的。要切换到 `v2`，先停掉并删除旧容器，再用 `v2` 启动：
+
+```bash
+docker rm -f videocut-wrapper
+
+docker run -d \
+  --name videocut-wrapper \
+  --restart unless-stopped \
+  -p 3000:3000 \
+  --memory="64g" \
+  --cpus="16" \
+  --gpus all \
+  -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
+  --env-file /tmp/videocut.env \
+  videocut-wrapper:v2
+```
+
+确认 v2 容器启动正常后，再删旧镜像：
+
+```bash
+docker rmi videocut-wrapper:v1
+```
+
+如果只是本地强制清理，而且你已经确认没有容器需要它，也可以：
+
+```bash
+docker rmi -f videocut-wrapper:v1
+```
+
+## 8. 下次更新到 v3
+
+本地 build `v3`：
 
 ```bash
 cd /mnt/d/VideoCut-Wrapper
 
 docker build \
   --build-arg BASE_IMAGE=magicwang/pytorch-base:torch210-cu128-runtime-v1 \
-  --build-arg IMAGE_VERSION=v2 \
-  --build-arg IMAGE_DESCRIPTION="VideoCut Docker image v2" \
-  -t videocut-wrapper:v2 \
+  --build-arg IMAGE_VERSION=v3 \
+  --build-arg IMAGE_DESCRIPTION="VideoCut Docker image v3" \
+  -t videocut-wrapper:v3 \
   .
 ```
 
 导出并传到 Linux：
 
 ```bash
-docker save videocut-wrapper:v2 -o videocut-wrapper_v2.tar
-scp videocut-wrapper_v2.tar root@192.168.1.100:/tmp/
+docker save videocut-wrapper:v3 -o videocut-wrapper_v3.tar
+scp videocut-wrapper_v3.tar root@192.168.1.100:/tmp/
 ```
 
 Linux 导入：
 
 ```bash
-sudo docker load -i /tmp/videocut-wrapper_v2.tar
+sudo docker load -i /tmp/videocut-wrapper_v3.tar
 ```
 
-启动时把最后一行镜像名从 `videocut-wrapper:v1` 改成：
+启动时把最后一行镜像名从 `videocut-wrapper:v2` 改成：
 
 ```bash
-videocut-wrapper:v2
+videocut-wrapper:v3
 ```
 
-## 8. 临时修改镜像时才用 docker commit
+## 9. 临时修改镜像时才用 docker commit
 
 正常情况不要用 `docker commit`，应该改代码后重新 build。只有临时热修时才这样做。
 
@@ -269,7 +328,7 @@ sudo docker run -it \
   --gpus all \
   -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
   --entrypoint /bin/bash \
-  videocut-wrapper:v1
+  videocut-wrapper:v2
 ```
 
 容器里只做最终修复，退出前清理临时文件：

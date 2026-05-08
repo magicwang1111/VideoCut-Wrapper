@@ -1,6 +1,7 @@
 """测试指定某一首 BGM 渲染。
 
 默认测试 group 1，pipeline 使用 bgm-concat，BGM 使用 /app/input/bgm/舒缓/1.mp3。
+BGM 可选路径见 docs/BGM_MANIFEST.json。
 运行:
 python api-test/render_bgm_file.py
 """
