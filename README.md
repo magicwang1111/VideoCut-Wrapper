@@ -589,6 +589,8 @@ python api-test/http_api_test_client.py --group 1
 
 Linux / image 部署建议：
 
+详细操作手册见 [docs/DOCKER_DEPLOY.md](docs/DOCKER_DEPLOY.md)。
+
 1. 先复制环境变量模板：
 
 ```bash
