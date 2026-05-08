@@ -94,7 +94,7 @@ scp /mnt/d/VideoCut-Wrapper/.env root@192.168.1.100:/tmp/videocut.env
 
 你的旧命令里没有目录映射，只有 `-p` 端口映射。下面也先给不挂载目录的简单启动命令。
 
-注意端口：当前服务容器内端口是 `3000`，所以这里是 `-p 8536:3000`。你以前的 `-p 8536:8080` 是把宿主机 `8536` 转发到容器内 `8080`，那是另一个镜像的服务端口。
+注意端口：当前服务容器内端口是 `3000`，这里也直接用宿主机 `3000`，所以是 `-p 3000:3000`。你以前的 `8536` 只是旧项目示例端口，不作为当前项目默认值。
 
 ### 5.1 有 GPU 的服务器，最简单启动
 
@@ -104,7 +104,7 @@ sudo docker rm -f videocut-wrapper 2>/dev/null || true
 sudo docker run -d \
   --name videocut-wrapper \
   --restart unless-stopped \
-  -p 8536:3000 \
+  -p 3000:3000 \
   --memory="64g" \
   --cpus="16" \
   --gpus all \
@@ -121,7 +121,7 @@ sudo docker rm -f videocut-wrapper 2>/dev/null || true
 sudo docker run -d \
   --name videocut-wrapper \
   --restart unless-stopped \
-  -p 8536:3000 \
+  -p 3000:3000 \
   --memory="64g" \
   --cpus="16" \
   --env-file /tmp/videocut.env \
@@ -147,7 +147,7 @@ sudo docker rm -f videocut-wrapper_wx 2>/dev/null || true
 sudo docker run -it \
   --name videocut-wrapper_wx \
   -v /data/wangxi/VideoCut-Wrapper:/app \
-  -p 8536:3000 \
+  -p 3000:3000 \
   --memory="64g" \
   --cpus="16" \
   --gpus all \
@@ -163,7 +163,7 @@ sudo docker rm -f videocut-wrapper_wx 2>/dev/null || true
 
 sudo docker run -it \
   --name videocut-wrapper_wx \
-  -p 8536:3000 \
+  -p 3000:3000 \
   --memory="64g" \
   --cpus="16" \
   --gpus all \
