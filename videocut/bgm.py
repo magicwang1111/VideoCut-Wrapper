@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from pathlib import Path, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from uuid import uuid4
 
 from videocut.errors import RenderError
@@ -40,8 +40,15 @@ def resolve_bgm_file(bgm_dir: Path, configured_file: str) -> Path:
         raise RenderError("BGM file must not be empty.")
 
     relative_file = Path(raw_file)
+    posix_file = PurePosixPath(raw_file)
     windows_file = PureWindowsPath(raw_file)
-    if relative_file.is_absolute() or windows_file.is_absolute() or windows_file.drive or ".." in relative_file.parts:
+    if (
+        relative_file.is_absolute()
+        or posix_file.is_absolute()
+        or windows_file.is_absolute()
+        or windows_file.drive
+        or ".." in relative_file.parts
+    ):
         raise RenderError(f"BGM file must be a relative path under BGM directory: {configured_file}")
     if relative_file.suffix.lower() not in _BGM_EXTENSIONS:
         raise RenderError(f"Unsupported BGM file extension: {configured_file}")
