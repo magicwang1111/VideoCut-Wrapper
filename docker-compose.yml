@@ -5,7 +5,9 @@ services:
       dockerfile: Dockerfile
       args:
         BASE_IMAGE: ${BASE_IMAGE:-magicwang/pytorch-base:torch210-cu128-runtime-v1}
-    image: videocut-wrapper:latest
+        IMAGE_VERSION: ${IMAGE_TAG:-latest}
+        IMAGE_DESCRIPTION: ${IMAGE_DESCRIPTION:-VideoCut Wrapper image}
+    image: videocut-wrapper:${IMAGE_TAG:-latest}
     container_name: videocut-wrapper
     restart: unless-stopped
     env_file:

@@ -1,6 +1,13 @@
 ARG BASE_IMAGE=magicwang/pytorch-base:torch210-cu128-runtime-v1
 FROM ${BASE_IMAGE}
 
+ARG IMAGE_VERSION=latest
+ARG IMAGE_DESCRIPTION="VideoCut Wrapper image"
+
+LABEL org.opencontainers.image.title="videocut-wrapper" \
+      org.opencontainers.image.version="${IMAGE_VERSION}" \
+      org.opencontainers.image.description="${IMAGE_DESCRIPTION}"
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -16,7 +23,6 @@ WORKDIR /app
 
 COPY README.md pyproject.toml requirements.txt ./
 COPY videocut ./videocut
-COPY templates ./templates
 COPY pipelines ./pipelines
 COPY fonts ./fonts
 COPY docker/entrypoint.sh /usr/local/bin/videocut-entrypoint

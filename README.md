@@ -583,6 +583,7 @@ python api-test/http_api_test_client.py --group 1
 
 - `Dockerfile`
 - `docker-compose.yml`
+- `docker-compose.gpu.yml`
 - `.dockerignore`
 - `.env.example`
 
@@ -613,10 +614,24 @@ cp .env.example .env
 docker build -f docker/base/Dockerfile -t magicwang/pytorch-base:torch210-cu128-runtime-v1 .
 ```
 
-4. 启动业务容器：
+4. 构建并启动业务容器。建议每次正式打包都给业务镜像一个递增 tag，例如 `v1`、`v2`、`v3`。
+
+CPU-only Linux 机器：
 
 ```bash
-docker compose up -d --build
+IMAGE_TAG=v1 IMAGE_DESCRIPTION="GPU NVENC Docker packaging fix" docker compose up -d --build
+```
+
+NVIDIA GPU Linux 机器：
+
+```bash
+IMAGE_TAG=v1 IMAGE_DESCRIPTION="GPU NVENC Docker packaging fix" docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+```
+
+构建完成后可以查看这一版镜像记录的说明：
+
+```bash
+docker inspect videocut-wrapper:v1 --format '{{ index .Config.Labels "org.opencontainers.image.description" }}'
 ```
 
 `docker-compose.yml` 会通过 `env_file: .env` 注入配置；如果你用 `docker run` 方式启动，也可以使用 `--env-file .env`，或者把 `.env` 挂载到 `/app/.env`，entrypoint 会在同步 BGM 前读取它。
@@ -648,22 +663,27 @@ docker compose logs -f videocut
 
 容器内已经安装：
 
-- Python 3.11 headers
-- ffmpeg
+- Python 3.12 virtualenv
+- ffmpeg 7.x with `h264_nvenc`
 - ffprobe
 - ossutil
 - tzdata
 - tini
 
-当前这套 Docker 配置适合标准 Linux 主机和通用 CPU 环境。要点如下：
+当前这套 Docker 配置面向 Linux 部署环境；Windows Docker Desktop / WSL 主要用于本地排查和构建验证。要点如下：
 
 - `.env.example` 里的路径已经改成 Linux 容器绝对路径
 - `Dockerfile` 默认通过 `magicwang/pytorch-base:torch210-cu128-runtime-v1` 构建业务镜像，也可以用 `BASE_IMAGE` 覆盖
+- `docker-compose.yml` 可在 CPU-only Linux 机器上直接启动
+- `docker-compose.gpu.yml` 负责 GPU 资源申请，并注入 `NVIDIA_DRIVER_CAPABILITIES=compute,utility,video`
+- GPU Linux 部署机需要先安装 NVIDIA 驱动和 NVIDIA Container Toolkit，确保 `docker run --gpus all ... nvidia-smi` 可用
+- `IMAGE_TAG` 用于业务镜像版本，例如 `videocut-wrapper:v1`
+- `IMAGE_DESCRIPTION` 会写入镜像 label，方便 `docker inspect` 查看这一版做了什么
 - 业务镜像启动前会自动把 `oss://goumee-coze/GouMei-Video-Cut/bgm/` 同步到 `BGM_DIR`
 - `WORKER_COUNT` 默认使用 `0`，表示自动按 CPU 数量推导，避免空值导致启动报错
-- `FFMPEG_ENCODER` 默认改成 `libx264`，更适合通用 CPU 容器
+- `FFMPEG_ENCODER` 默认使用 `auto`，会优先探测 `h264_nvenc`，不可用时回退到 `libx264`
 - `OSS_ENDPOINT` 示例改成公网 endpoint，适合大多数非阿里云内网环境
-- 如果你后面要上 GPU 容器，可以再把 `FFMPEG_ENCODER` 改成 `auto` 或 `h264_nvenc`
+- 如果部署到 CPU-only 机器，可以继续保持 `FFMPEG_ENCODER=auto`，容器内会探测失败后自动使用 `libx264`
 
 需要确认的唯一部署前提是：
 

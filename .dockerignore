@@ -2,6 +2,7 @@
 .gitignore
 .env
 .claude
+.worktrees
 .venv
 venv
 __pycache__
