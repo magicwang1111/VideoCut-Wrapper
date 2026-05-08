@@ -104,7 +104,7 @@ sudo docker rm -f videocut-wrapper 2>/dev/null || true
 sudo docker run -d \
   --name videocut-wrapper \
   --restart unless-stopped \
-  -p 8536:3000 \
+  -p 3000:3000 \
   --memory="64g" \
   --cpus="16" \
   --gpus all \
@@ -121,7 +121,7 @@ sudo docker rm -f videocut-wrapper 2>/dev/null || true
 sudo docker run -d \
   --name videocut-wrapper \
   --restart unless-stopped \
-  -p 8536:3000 \
+  -p 3000:3000 \
   --memory="64g" \
   --cpus="16" \
   --env-file /tmp/videocut.env \
@@ -172,7 +172,7 @@ sudo docker rm -f videocut-wrapper_wx 2>/dev/null || true
 sudo docker run -it \
   --name videocut-wrapper_wx \
   -v /data/wangxi/VideoCut-Wrapper:/app \
-  -p 8536:3000 \
+  -p 3000:3000 \
   --memory="64g" \
   --cpus="16" \
   --gpus all \
@@ -188,7 +188,7 @@ sudo docker rm -f videocut-wrapper_wx 2>/dev/null || true
 
 sudo docker run -it \
   --name videocut-wrapper_wx \
-  -p 8536:3000 \
+  -p 3000:3000 \
   --memory="64g" \
   --cpus="16" \
   --gpus all \
@@ -209,7 +209,7 @@ python -m videocut serve --host 0.0.0.0 --port 3000
 再开一个 Linux 服务器外部窗口跑测试：
 
 ```bash
-export API_BASE_URL=http://127.0.0.1:8536
+export API_BASE_URL=http://127.0.0.1:3000
 export API_KEY=你的API_KEY
 python api-test/http_api_test_client.py --group 1
 ```
@@ -226,7 +226,7 @@ sudo docker logs -f videocut-wrapper
 健康检查：
 
 ```bash
-curl http://127.0.0.1:8536/health
+curl http://127.0.0.1:3000/health
 ```
 
 检查编码器：
