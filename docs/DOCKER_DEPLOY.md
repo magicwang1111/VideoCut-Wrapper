@@ -78,15 +78,68 @@ sudo docker images | grep videocut-wrapper
 videocut-wrapper   v1
 ```
 
-## 4. 准备运行时配置
+## 4. 把本地 .env 传到 Linux
 
-Docker 镜像里已经有 Linux、Python、FFmpeg 和代码。这里准备的不是“补 Linux 环境”，而是运行时配置：
+镜像里已经有 Linux、Python、FFmpeg 和代码。`.env` 只是运行参数和密钥，例如 OSS AK/SK、端口、worker 数量。
 
-- `/opt/videocut/...` 是宿主机目录，用来保存数据库、临时文件、BGM 和输出文件。这样容器删掉重建后，数据还在。
-- `/opt/videocut/.env` 是运行时环境变量，主要放 OSS AK/SK、端口、worker 数量等配置。密钥不要写进镜像里，否则镜像传给别人时密钥也跟着泄露。
-- 你以前“镜像拉下来直接部署”，通常是因为那些镜像不需要外部密钥/持久化目录，或者部署平台已经帮你注入了环境变量和挂载目录。
+可以把 `.env` 打进镜像，但不建议这么做：镜像一旦传给别人或保存成 tar，OSS 密钥也一起被带走；以后换 AK/SK 还要重新 build 镜像。更简单也更安全的做法是启动时用 `--env-file` 传进去。
 
-创建目录：
+你本地已经有 `D:\VideoCut-Wrapper\.env`，直接传到 Linux：
+
+```bash
+scp /mnt/d/VideoCut-Wrapper/.env root@192.168.1.100:/tmp/videocut.env
+```
+
+## 5. Linux 启动容器
+
+你的旧命令里没有目录映射，只有 `-p` 端口映射。下面也先给不挂载目录的简单启动命令。
+
+注意端口：当前服务容器内端口是 `3000`，所以这里是 `-p 8536:3000`。你以前的 `-p 8536:8080` 是把宿主机 `8536` 转发到容器内 `8080`，那是另一个镜像的服务端口。
+
+### 5.1 有 GPU 的服务器，最简单启动
+
+```bash
+sudo docker rm -f videocut-wrapper 2>/dev/null || true
+
+sudo docker run -d \
+  --name videocut-wrapper \
+  --restart unless-stopped \
+  -p 8536:3000 \
+  --memory="64g" \
+  --cpus="16" \
+  --gpus all \
+  -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
+  --env-file /tmp/videocut.env \
+  videocut-wrapper:v1
+```
+
+### 5.2 没有 GPU 的服务器，最简单启动
+
+```bash
+sudo docker rm -f videocut-wrapper 2>/dev/null || true
+
+sudo docker run -d \
+  --name videocut-wrapper \
+  --restart unless-stopped \
+  -p 8536:3000 \
+  --memory="64g" \
+  --cpus="16" \
+  --env-file /tmp/videocut.env \
+  videocut-wrapper:v1
+```
+
+CPU-only 命令不要加 `--gpus all`。GPU 命令比 CPU-only 命令只多两行：
+
+```bash
+  --gpus all \
+  -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
+```
+
+### 5.3 可选：需要保留数据库和输出时再挂目录
+
+上面的简单启动不挂载目录，数据都在容器内部。删除容器后，容器内部数据库、输出文件、临时文件也会一起丢。
+
+如果你希望重建容器后数据还在，再创建宿主机目录：
 
 ```bash
 sudo mkdir -p \
@@ -97,117 +150,68 @@ sudo mkdir -p \
   /opt/videocut/oss-local
 ```
 
-你本地已经有 `D:\VideoCut-Wrapper\.env`，可以直接传到 Linux：
+然后在 `docker run` 里额外加这些挂载：
 
 ```bash
-scp /mnt/d/VideoCut-Wrapper/.env root@192.168.1.100:/tmp/videocut.env
-```
-
-在 Linux 上移动到部署目录：
-
-```bash
-sudo mv /tmp/videocut.env /opt/videocut/.env
-sudo chmod 600 /opt/videocut/.env
-```
-
-如果不想传本地 `.env`，也可以在 Linux 上手动创建：
-
-```bash
-sudo vim /opt/videocut/.env
-```
-
-填入下面内容，OSS 的 AK/SK 按你的真实值修改：
-
-```bash
-PORT=3000
-API_KEYS=change-me
-LOG_LEVEL=INFO
-TZ=Asia/Shanghai
-
-FFMPEG_PATH=
-FFPROBE_PATH=
-FFMPEG_ENCODER=auto
-FFMPEG_HWACCEL=
-
-OSS_ENDPOINT=oss-cn-hangzhou.aliyuncs.com
-OSS_ACCESS_KEY_ID=填真实AK
-OSS_ACCESS_KEY_SECRET=填真实SK
-OSS_STS_TOKEN=
-OSS_BUCKET=goumee-coze
-OSS_PREFIX=GouMei-Video-Cut
-OSS_LOCAL_ROOT=
-
-SYNC_BGM_ON_STARTUP=1
-BGM_DIR=/app/input/bgm
-BGM_OSS_URI=oss://goumee-coze/GouMei-Video-Cut/bgm/
-
-WORKER_COUNT=0
-QUEUE_MAX=200
-TASK_MAX_ATTEMPT=3
-TASK_TTL_DAYS=7
-DB_PATH=/srv/videocut/data/tasks.db
-TEMP_DIR=/srv/videocut/temp
-```
-
-说明：
-
-- `.env` 不要提交到 Git。
-- `FFMPEG_ENCODER=auto` 会自动选择 GPU 编码器；没有 GPU 时回退到 CPU 的 `libx264`。
-- 如果不想启动时同步 BGM，改成 `SYNC_BGM_ON_STARTUP=0`。
-
-## 5. Linux 启动容器
-
-### 5.1 有 GPU 的服务器
-
-GPU 服务器用这条：
-
-```bash
-sudo docker rm -f videocut-wrapper 2>/dev/null || true
-
-sudo docker run -d \
-  --name videocut-wrapper \
-  --restart unless-stopped \
-  -p 8536:3000 \
-  --memory="64g" \
-  --cpus="16" \
-  --gpus all \
-  -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
-  --env-file /opt/videocut/.env \
   -v /opt/videocut/data:/srv/videocut/data \
   -v /opt/videocut/temp:/srv/videocut/temp \
   -v /opt/videocut/input/bgm:/app/input/bgm \
   -v /opt/videocut/output:/app/output \
   -v /opt/videocut/oss-local:/srv/videocut/oss-local \
-  videocut-wrapper:v1
 ```
 
-### 5.2 没有 GPU 的服务器
+### 5.4 按以前开发方式进容器手动启动
 
-CPU-only 服务器用这条，不要加 `--gpus all`：
+当前代码支持这种方式，不需要改业务代码。容器启动时会自动读取 `/app/.env`；如果把宿主机项目目录映射到 `/app`，并且项目目录里有 `.env`，就不需要再写 `--env-file`。
+
+像旧项目一样映射代码目录并进容器：
 
 ```bash
-sudo docker rm -f videocut-wrapper 2>/dev/null || true
+sudo docker rm -f videocut-wrapper_wx 2>/dev/null || true
 
-sudo docker run -d \
-  --name videocut-wrapper \
-  --restart unless-stopped \
+sudo docker run -it \
+  --name videocut-wrapper_wx \
+  -v /data/wangxi/VideoCut-Wrapper:/app \
   -p 8536:3000 \
   --memory="64g" \
   --cpus="16" \
-  --env-file /opt/videocut/.env \
-  -v /opt/videocut/data:/srv/videocut/data \
-  -v /opt/videocut/temp:/srv/videocut/temp \
-  -v /opt/videocut/input/bgm:/app/input/bgm \
-  -v /opt/videocut/output:/app/output \
-  -v /opt/videocut/oss-local:/srv/videocut/oss-local \
-  videocut-wrapper:v1
-```
-
-GPU 命令比 CPU 命令多两行：
-
-```bash
   --gpus all \
   -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
+  videocut-wrapper:v1 \
+  /bin/bash
+```
+
+如果不映射代码目录，就用前面传上去的 `/tmp/videocut.env`：
+
+```bash
+sudo docker rm -f videocut-wrapper_wx 2>/dev/null || true
+
+sudo docker run -it \
+  --name videocut-wrapper_wx \
+  -p 8536:3000 \
+  --memory="64g" \
+  --cpus="16" \
+  --gpus all \
+  -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
+  --env-file /tmp/videocut.env \
+  videocut-wrapper:v1 \
+  /bin/bash
+```
+
+进容器后手动启动服务。映射代码目录时，先安装当前 `/app`：
+
+```bash
+python -m pip install -e /app
+rm -rf /srv/videocut/temp/*
+python -m videocut serve --host 0.0.0.0 --port 3000
+```
+
+再开一个 Linux 服务器外部窗口跑测试：
+
+```bash
+export API_BASE_URL=http://127.0.0.1:8536
+export API_KEY=你的API_KEY
+python api-test/http_api_test_client.py --group 1
 ```
 
 ## 6. 验证
