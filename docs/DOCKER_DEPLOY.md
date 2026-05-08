@@ -104,7 +104,7 @@ sudo docker rm -f videocut-wrapper 2>/dev/null || true
 sudo docker run -d \
   --name videocut-wrapper \
   --restart unless-stopped \
-  -p 3000:3000 \
+  -p 8536:3000 \
   --memory="64g" \
   --cpus="16" \
   --gpus all \
@@ -121,7 +121,7 @@ sudo docker rm -f videocut-wrapper 2>/dev/null || true
 sudo docker run -d \
   --name videocut-wrapper \
   --restart unless-stopped \
-  -p 3000:3000 \
+  -p 8536:3000 \
   --memory="64g" \
   --cpus="16" \
   --env-file /tmp/videocut.env \
@@ -135,32 +135,7 @@ CPU-only 命令不要加 `--gpus all`。GPU 命令比 CPU-only 命令只多两�
   -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
 ```
 
-### 5.3 可选：需要保留数据库和输出时再挂目录
-
-上面的简单启动不挂载目录，数据都在容器内部。删除容器后，容器内部数据库、输出文件、临时文件也会一起丢。
-
-如果你希望重建容器后数据还在，再创建宿主机目录：
-
-```bash
-sudo mkdir -p \
-  /opt/videocut/data \
-  /opt/videocut/temp \
-  /opt/videocut/input/bgm \
-  /opt/videocut/output \
-  /opt/videocut/oss-local
-```
-
-然后在 `docker run` 里额外加这些挂载：
-
-```bash
-  -v /opt/videocut/data:/srv/videocut/data \
-  -v /opt/videocut/temp:/srv/videocut/temp \
-  -v /opt/videocut/input/bgm:/app/input/bgm \
-  -v /opt/videocut/output:/app/output \
-  -v /opt/videocut/oss-local:/srv/videocut/oss-local \
-```
-
-### 5.4 按以前开发方式进容器手动启动
+### 5.3 按以前开发方式进容器手动启动
 
 当前代码支持这种方式，不需要改业务代码。容器启动时会自动读取 `/app/.env`；如果把宿主机项目目录映射到 `/app`，并且项目目录里有 `.env`，就不需要再写 `--env-file`。
 
@@ -172,7 +147,7 @@ sudo docker rm -f videocut-wrapper_wx 2>/dev/null || true
 sudo docker run -it \
   --name videocut-wrapper_wx \
   -v /data/wangxi/VideoCut-Wrapper:/app \
-  -p 3000:3000 \
+  -p 8536:3000 \
   --memory="64g" \
   --cpus="16" \
   --gpus all \
@@ -188,7 +163,7 @@ sudo docker rm -f videocut-wrapper_wx 2>/dev/null || true
 
 sudo docker run -it \
   --name videocut-wrapper_wx \
-  -p 3000:3000 \
+  -p 8536:3000 \
   --memory="64g" \
   --cpus="16" \
   --gpus all \
