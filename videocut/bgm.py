@@ -25,9 +25,12 @@ def resolve_bgm_dir(root_dir: str | Path, configured_dir: str | None = None) -> 
 def scan_bgm_files(bgm_dir: Path) -> list[Path]:
     if not bgm_dir.is_dir():
         raise RenderError(f"BGM directory does not exist: {bgm_dir}")
-    files = [p for p in bgm_dir.iterdir() if p.suffix.lower() in _BGM_EXTENSIONS]
+    files = sorted(
+        p for p in bgm_dir.rglob("*")
+        if p.is_file() and p.suffix.lower() in _BGM_EXTENSIONS
+    )
     if not files:
-        raise RenderError(f"No audio files found in BGM directory: {bgm_dir}")
+        raise RenderError(f"No audio files found in BGM directory or subdirectories: {bgm_dir}")
     return files
 
 

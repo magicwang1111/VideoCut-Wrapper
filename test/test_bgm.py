@@ -8,6 +8,7 @@ import pytest
 import videocut.bgm as bgm_module
 from videocut.bgm import apply_bgm
 from videocut.bgm import resolve_bgm_dir
+from videocut.bgm import scan_bgm_files
 
 
 def test_resolve_bgm_dir_defaults_to_repo_input_bgm(tmp_path, monkeypatch) -> None:
@@ -26,6 +27,20 @@ def test_resolve_bgm_dir_uses_configured_relative_path_without_env(tmp_path, mon
     monkeypatch.delenv("BGM_DIR", raising=False)
     result = resolve_bgm_dir(tmp_path, "custom/bgm")
     assert result == tmp_path / "custom" / "bgm"
+
+
+def test_scan_bgm_files_recurses_category_directories(tmp_path) -> None:
+    bgm_dir = tmp_path / "input" / "bgm"
+    category_dir = bgm_dir / "20260416音乐"
+    category_dir.mkdir(parents=True)
+    root_audio = bgm_dir / "root.mp3"
+    nested_audio = category_dir / "1.mp3"
+    ignored = category_dir / "note.txt"
+    root_audio.write_text("root", encoding="utf-8")
+    nested_audio.write_text("nested", encoding="utf-8")
+    ignored.write_text("ignored", encoding="utf-8")
+
+    assert scan_bgm_files(bgm_dir) == sorted([root_audio, nested_audio])
 
 
 def test_apply_bgm_uses_task_unique_tmp_and_replaces_video(tmp_path, monkeypatch) -> None:

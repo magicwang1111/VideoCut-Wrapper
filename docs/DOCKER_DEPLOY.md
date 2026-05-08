@@ -196,6 +196,15 @@ sudo docker exec videocut-wrapper python -m videocut check
 无 GPU: Video encoder: libx264
 ```
 
+BGM 支持按类型放在子目录里，例如：
+
+```text
+/app/input/bgm/舒缓/1.mp3
+/app/input/bgm/动感/1.mp3
+```
+
+程序会递归扫描 `/app/input/bgm` 下的音频文件。
+
 ## 7. 更新到 v2
 
 本地 build `v2`：
