@@ -135,55 +135,34 @@ CPU-only 命令不要加 `--gpus all`。GPU 命令比 CPU-only 命令只多两�
   -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
 ```
 
-### 5.3 按以前开发方式进容器手动启动
+### 5.3 进入已启动容器排查
 
-当前代码支持这种方式，不需要改业务代码。容器启动时会自动读取 `/app/.env`；如果把宿主机项目目录映射到 `/app`，并且项目目录里有 `.env`，就不需要再写 `--env-file`。
+第 5.1 / 5.2 节用的是 `docker run -d`，容器会在后台自动启动服务，不需要再进容器手动执行 `python -m videocut serve`。
 
-像旧项目一样映射代码目录并进容器：
+如果只是想进去看文件、数据库或执行检查，用 `docker exec` 进入这个已经在跑的容器：
 
 ```bash
-sudo docker rm -f videocut-wrapper_wx 2>/dev/null || true
-
-sudo docker run -it \
-  --name videocut-wrapper_wx \
-  -v /data/wangxi/VideoCut-Wrapper:/app \
-  -p 3000:3000 \
-  --memory="64g" \
-  --cpus="16" \
-  --gpus all \
-  -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
-  videocut-wrapper:v1 \
-  /bin/bash
+sudo docker exec -it videocut-wrapper /bin/bash
 ```
 
-如果不映射代码目录，就用前面传上去的 `/tmp/videocut.env`：
+进入后常用命令：
 
 ```bash
-sudo docker rm -f videocut-wrapper_wx 2>/dev/null || true
-
-sudo docker run -it \
-  --name videocut-wrapper_wx \
-  -p 3000:3000 \
-  --memory="64g" \
-  --cpus="16" \
-  --gpus all \
-  -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
-  --env-file /tmp/videocut.env \
-  videocut-wrapper:v1 \
-  /bin/bash
+python -m videocut check
+ls -lh /srv/videocut/data
+python - <<'PY'
+import sqlite3
+db = "/srv/videocut/data/tasks.db"
+conn = sqlite3.connect(db)
+for row in conn.execute("select id, status, progress, created_at, completed_at, error from tasks order by created_at desc limit 20"):
+    print(row)
+PY
 ```
 
-进容器后手动启动服务。映射代码目录时，先安装当前 `/app`：
+另开一个 Linux 服务器窗口跑测试：
 
 ```bash
-python -m pip install -e /app
-rm -rf /srv/videocut/temp/*
-python -m videocut serve --host 0.0.0.0 --port 3000
-```
-
-再开一个 Linux 服务器外部窗口跑测试：
-
-```bash
+cd /mnt/VideoCut-Wrapper
 export API_BASE_URL=http://127.0.0.1:3000
 export API_KEY=你的API_KEY
 python api-test/http_api_test_client.py --group 1
