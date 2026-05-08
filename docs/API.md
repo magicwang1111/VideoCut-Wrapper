@@ -757,7 +757,10 @@ with target.open("wb") as handle:
 python api-test/check_health.py
 python api-test/render_bgm_file.py
 python api-test/render_bgm_random.py
-python api-test/render_batch.py
+python api-test/render_groups_1_5.py
+python api-test/render_groups_1_16.py
+python api-test/render_trim_mixed.py
+python api-test/render_zoom_dissolve.py
 ```
 
 需要先设置：
@@ -767,7 +770,7 @@ $env:API_BASE_URL = "http://127.0.0.1:3000"
 $env:API_KEY = "demo-key"
 ```
 
-测试客户端默认使用真实 OSS 测试素材组。素材组定义在 `api-test/http_test_data.py` 的 `REAL_OSS_TEST_CLIP_GROUPS` 中，常用参数写在 `api-test/http_api_settings.py`。
+测试客户端默认使用真实 OSS 测试素材组。素材组定义在 `api-test/http_test_data.py` 的 `REAL_OSS_TEST_CLIP_GROUPS` 中；每个测试脚本顶部都有自己的测试说明和参数。
 
 ## 14. 对接注意事项
 

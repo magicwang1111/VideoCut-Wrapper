@@ -1,13 +1,12 @@
+"""兼容旧名字：等同于 render_groups_1_16.py。
+
+运行:
+python api-test/render_batch.py
+"""
+
 from __future__ import annotations
 
-from test_runner import make_tester
-
-GROUP_IDS = list(range(1, 17))
-
-
-def main() -> int:
-    make_tester(group_ids=GROUP_IDS, bgm_file=None, download=False).run()
-    return 0
+from render_groups_1_16 import main
 
 
 if __name__ == "__main__":

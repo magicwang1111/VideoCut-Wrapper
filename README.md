@@ -534,7 +534,7 @@ videocut serve --port 3000
 
 ## 本地 API 测试
 
-测试功能已经拆成多个小脚本，常用配置写在 `api-test/http_api_settings.py` 和各脚本顶部。
+测试功能已经拆成多个小脚本，每个脚本最上面都写明了测试目的和本脚本自己的配置。
 
 ```bash
 # 健康检查
@@ -546,8 +546,15 @@ python api-test/render_bgm_file.py
 # 随机 BGM
 python api-test/render_bgm_random.py
 
-# 批量并发，默认 1-16 组，不下载结果
-python api-test/render_batch.py
+# 批量测试 1-5 组，下载结果
+python api-test/render_groups_1_5.py
+
+# 批量测试 1-16 组，不下载结果
+python api-test/render_groups_1_16.py
+
+# 换 pipeline 测试
+python api-test/render_trim_mixed.py
+python api-test/render_zoom_dissolve.py
 ```
 
 需要先设置环境变量：

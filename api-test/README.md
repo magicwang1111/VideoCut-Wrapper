@@ -11,11 +11,10 @@
 - [check_health.py](D:/VideoCut-Wrapper/api-test/check_health.py)
 - [render_bgm_file.py](D:/VideoCut-Wrapper/api-test/render_bgm_file.py)
 - [render_bgm_random.py](D:/VideoCut-Wrapper/api-test/render_bgm_random.py)
-- [render_batch.py](D:/VideoCut-Wrapper/api-test/render_batch.py)
-
-公共配置：
-
-- [http_api_settings.py](D:/VideoCut-Wrapper/api-test/http_api_settings.py)
+- [render_groups_1_5.py](D:/VideoCut-Wrapper/api-test/render_groups_1_5.py)
+- [render_groups_1_16.py](D:/VideoCut-Wrapper/api-test/render_groups_1_16.py)
+- [render_trim_mixed.py](D:/VideoCut-Wrapper/api-test/render_trim_mixed.py)
+- [render_zoom_dissolve.py](D:/VideoCut-Wrapper/api-test/render_zoom_dissolve.py)
 
 当前已注册的 pipeline 清单可在这里查看：
 
@@ -479,13 +478,7 @@ oss://goumee-coze/GouMei-Video-Cut/test-input/
 - `test-input/4/`：5 个视频
 - `test-input/5/`：5 个视频
 
-默认参考脚本使用 `group 1`。常用配置写在：
-
-```text
-api-test/http_api_settings.py
-```
-
-每个测试功能拆成了单独的小脚本，脚本里已经写好默认参数，不需要在命令行传一堆选项。
+每个测试功能拆成了单独的小脚本，脚本最上面已经写明测试目的和默认参数，不需要在命令行传一堆选项。
 
 直接运行：
 
@@ -499,12 +492,20 @@ python api-test/render_bgm_file.py
 # 随机 BGM
 python api-test/render_bgm_random.py
 
-# 并发提交多组，默认 1-16 组，不下载结果
-python api-test/render_batch.py
+# 批量测试 1-5 组，下载结果
+python api-test/render_groups_1_5.py
+
+# 批量测试 1-16 组，不下载结果
+python api-test/render_groups_1_16.py
+
+# 换 pipeline 测试
+python api-test/render_trim_mixed.py
+python api-test/render_zoom_dissolve.py
 ```
 
 说明：
 
 - `render_bgm_file.py` 顶部的 `BGM_FILE = "舒缓/1.mp3"` 可以直接改成 `激烈/2.mp3` 等路径。
-- `render_batch.py` 顶部的 `GROUP_IDS` 控制并发组。
-- `http_api_settings.py` 里可以改默认 `API_BASE_URL`、`PIPELINE`、`GROUPS`、`BGM_FILE`、`DOWNLOAD`。
+- `render_groups_1_5.py` / `render_groups_1_16.py` 顶部的 `GROUP_IDS` 控制并发组。
+- `render_trim_mixed.py` / `render_zoom_dissolve.py` 顶部的 `PIPELINE` 控制要测的 pipeline。
+- 每个脚本顶部都有自己的 `API_BASE_URL`、`PIPELINE`、`GROUP_IDS`、`BGM_FILE`、`DOWNLOAD`。

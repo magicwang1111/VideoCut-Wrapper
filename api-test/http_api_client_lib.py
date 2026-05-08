@@ -14,9 +14,9 @@ except ModuleNotFoundError as exc:  # pragma: no cover - import guard for local 
         "Missing dependency: requests. Install it with `pip install requests` before running this script."
     ) from exc
 
-from http_api_settings import REPO_ROOT
 from http_test_data import REAL_OSS_TEST_CLIP_GROUPS, validate_group_ids
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
