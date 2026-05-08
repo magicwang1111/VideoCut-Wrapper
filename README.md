@@ -174,10 +174,15 @@ videocut serve --host 0.0.0.0 --port 3000
     "transition_overrides": [
       { "index": 0, "type": "dissolve", "duration": 0.8 },
       { "index": 1, "type": "cut", "duration": 0 }
-    ]
+    ],
+    "bgm": {
+      "file": "20260416音乐/1.mp3"
+    }
   }
 }
 ```
+
+`overrides.bgm.file` 用来指定某一首 BGM，路径是 `/app/input/bgm` 下的相对路径。不传时保持随机选择。
 
 ## API
 
@@ -326,7 +331,10 @@ curl -X POST "http://127.0.0.1:3000/upload" \
     "transition_overrides": [
       { "index": 0, "type": "flash-black", "duration": 0.5 },
       { "index": 1, "type": "dissolve", "duration": 0.5 }
-    ]
+    ],
+    "bgm": {
+      "file": "20260416音乐/1.mp3"
+    }
   }
 }
 ```
@@ -352,7 +360,10 @@ curl -X POST "http://127.0.0.1:3000/render" \
       "transition_overrides": [
         { "index": 0, "type": "flash-black", "duration": 0.5 },
         { "index": 1, "type": "dissolve", "duration": 0.5 }
-      ]
+      ],
+      "bgm": {
+        "file": "20260416音乐/1.mp3"
+      }
     }
   }'
 ```
@@ -526,8 +537,11 @@ videocut serve --port 3000
 使用 `api-test/http_api_test_client.py`：
 
 ```bash
-# 单组素材，默认使用 trim-mixed-concat pipeline
+# 单组素材，默认使用 bgm-concat pipeline
 python api-test/http_api_test_client.py --group 1
+
+# 指定某一首 BGM，路径是 /app/input/bgm 下的相对路径
+python api-test/http_api_test_client.py --group 1 --bgm-file "20260416音乐/1.mp3"
 
 # 指定 pipeline
 python api-test/http_api_test_client.py --pipeline zoom-dissolve-concat --group 2

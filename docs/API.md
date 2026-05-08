@@ -362,7 +362,7 @@ other-prefix/input/a.mp4
     {"index": 0, "type": "dissolve", "duration": 0.5, "scale": 1.18}
   ],
   "default_transition": {"type": "cut", "duration": 0},
-  "bgm": {"enabled": false, "dir": "input/bgm", "volume": 0.3, "fade_out": 0},
+  "bgm": {"enabled": true, "dir": "input/bgm", "file": "20260416音乐/1.mp3", "volume": 0.3, "fade_out": 0},
   "output": {"filename": "final.mp4"}
 }
 ```
@@ -381,7 +381,7 @@ other-prefix/input/a.mp4
 | `clip_overrides` | 覆盖单个素材的 `trim_start`、`trim_end`，单位秒 |
 | `transition_overrides` | 覆盖单个转场的类型、时长和缩放参数 |
 | `default_transition` | 覆盖默认转场 |
-| `bgm` | 覆盖 BGM 设置，常用 `{"enabled": false}` 禁用 BGM |
+| `bgm` | 覆盖 BGM 设置，常用 `{"enabled": false}` 禁用 BGM，或 `{"file": "20260416音乐/1.mp3"}` 指定某一首 |
 | `output` | 覆盖渲染临时输出文件名，API 最终 OSS key 仍固定为 `outputs/<taskId>/final.mp4` |
 
 转场类型：
@@ -398,6 +398,14 @@ zoom-dissolve
 - `pipelines/*/config.json` 中的 `variables`、`overridable` 字段目前主要是配置元数据。当前 API 运行时不会把 `transition_duration`、`trim_start`、`transition_1`、`zoom_scale` 这类顶层变量自动映射到渲染参数。
 - 对接方需要使用上面列出的结构化覆盖项，例如 `clip_overrides`、`transition_overrides`、`default_transition`。
 - 未识别的 `overrides` 字段会被忽略。
+
+BGM 指定规则：
+
+- `overrides.bgm.file` 是 `/app/input/bgm` 下的相对路径，例如 `20260416音乐/1.mp3`。
+- 支持按类型放子目录；不传 `file` 时，服务端会递归扫描 `/app/input/bgm` 并随机选择一首。
+- 不允许绝对路径，也不允许 `..` 路径穿越。
+- 指定文件不存在时任务失败，不会回退随机音乐。
+- BGM 文件仍由容器启动同步逻辑从 `BGM_OSS_URI` 同步到 `/app/input/bgm`，`/render` 不按 OSS key 单独下载音乐。
 
 ### 6.3 `/render` 常见错误
 
@@ -696,7 +704,7 @@ payload = {
         "GouMei-Video-Cut/test-input/1/clip_003.mp4",
     ],
     "overrides": {
-        "bgm": {"enabled": False},
+        "bgm": {"file": "20260416音乐/1.mp3"},
         "quality": "medium",
     },
 }
@@ -747,6 +755,7 @@ with target.open("wb") as handle:
 
 ```bash
 python api-test/http_api_test_client.py --group 1
+python api-test/http_api_test_client.py --group 1 --bgm-file "20260416音乐/1.mp3"
 python api-test/http_api_test_client.py --pipeline zoom-dissolve-concat --group 1
 python api-test/http_api_test_client.py --groups 1,2,3,4,5 --skip-download
 ```

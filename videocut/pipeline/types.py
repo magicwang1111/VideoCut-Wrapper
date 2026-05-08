@@ -29,6 +29,7 @@ class PipelineOutputConfig:
 class PipelineBgmConfig:
     enabled: bool = True
     dir: str | None = None
+    file: str | None = None
     volume: float = 0.3
     fade_out: float = 0.0
 

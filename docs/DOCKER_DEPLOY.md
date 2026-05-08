@@ -205,6 +205,24 @@ BGM 支持按类型放在子目录里，例如：
 
 程序会递归扫描 `/app/input/bgm` 下的音频文件。
 
+如果接口里要指定某一首 BGM，就传 `/app/input/bgm` 下的相对路径：
+
+```bash
+python api-test/http_api_test_client.py --group 1 --bgm-file "舒缓/1.mp3"
+```
+
+对应 `/render` 请求体里就是：
+
+```json
+{
+  "overrides": {
+    "bgm": {
+      "file": "舒缓/1.mp3"
+    }
+  }
+}
+```
+
 ## 7. 更新到 v2
 
 本地 build `v2`：

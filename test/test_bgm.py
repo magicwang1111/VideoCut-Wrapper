@@ -7,8 +7,10 @@ import pytest
 
 import videocut.bgm as bgm_module
 from videocut.bgm import apply_bgm
+from videocut.bgm import resolve_bgm_file
 from videocut.bgm import resolve_bgm_dir
 from videocut.bgm import scan_bgm_files
+from videocut.errors import RenderError
 
 
 def test_resolve_bgm_dir_defaults_to_repo_input_bgm(tmp_path, monkeypatch) -> None:
@@ -41,6 +43,42 @@ def test_scan_bgm_files_recurses_category_directories(tmp_path) -> None:
     ignored.write_text("ignored", encoding="utf-8")
 
     assert scan_bgm_files(bgm_dir) == sorted([root_audio, nested_audio])
+
+
+def test_resolve_bgm_file_accepts_relative_file_in_category(tmp_path) -> None:
+    bgm_dir = tmp_path / "input" / "bgm"
+    target = bgm_dir / "20260416音乐" / "1.mp3"
+    target.parent.mkdir(parents=True)
+    target.write_text("music", encoding="utf-8")
+
+    assert resolve_bgm_file(bgm_dir, "20260416音乐/1.mp3") == target
+
+
+def test_resolve_bgm_file_rejects_missing_file(tmp_path) -> None:
+    bgm_dir = tmp_path / "input" / "bgm"
+    bgm_dir.mkdir(parents=True)
+
+    with pytest.raises(RenderError, match="BGM file not found"):
+        resolve_bgm_file(bgm_dir, "20260416音乐/missing.mp3")
+
+
+def test_resolve_bgm_file_rejects_absolute_path(tmp_path) -> None:
+    bgm_dir = tmp_path / "input" / "bgm"
+    bgm_dir.mkdir(parents=True)
+
+    with pytest.raises(RenderError, match="relative path"):
+        resolve_bgm_file(bgm_dir, "/tmp/1.mp3")
+
+    with pytest.raises(RenderError, match="relative path"):
+        resolve_bgm_file(bgm_dir, "D:\\tmp\\1.mp3")
+
+
+def test_resolve_bgm_file_rejects_parent_traversal(tmp_path) -> None:
+    bgm_dir = tmp_path / "input" / "bgm"
+    bgm_dir.mkdir(parents=True)
+
+    with pytest.raises(RenderError, match="relative path"):
+        resolve_bgm_file(bgm_dir, "../1.mp3")
 
 
 def test_apply_bgm_uses_task_unique_tmp_and_replaces_video(tmp_path, monkeypatch) -> None:

@@ -277,6 +277,30 @@ def test_bgm_concat_pipeline_config_parses() -> None:
     assert config.bgm.dir == "input/bgm"
 
 
+def test_bgm_file_override_preserves_existing_bgm_options(tmp_path) -> None:
+    payload = _make_pipeline_payload()
+    payload["bgm"] = {
+        "enabled": True,
+        "dir": "input/bgm",
+        "volume": 0.45,
+        "fade_out": 1.5,
+    }
+    config = parse_pipeline_config(payload, tmp_path / "config.json", require_name=True)
+    ctx = build_pipeline_context(
+        config,
+        ["/tmp/a.mp4", "/tmp/b.mp4", "/tmp/c.mp4"],
+        tmp_path / "config.json",
+        {"bgm": {"file": "20260416音乐/1.mp3"}},
+    )
+
+    assert ctx.config.bgm is not None
+    assert ctx.config.bgm.file == "20260416音乐/1.mp3"
+    assert ctx.config.bgm.enabled is True
+    assert ctx.config.bgm.dir == "input/bgm"
+    assert ctx.config.bgm.volume == pytest.approx(0.45)
+    assert ctx.config.bgm.fade_out == pytest.approx(1.5)
+
+
 def test_pipeline_render_rejects_local_paths(tmp_path, monkeypatch) -> None:
     FakeTaskQueue.instances.clear()
     pipelines_root = tmp_path / "pipelines"

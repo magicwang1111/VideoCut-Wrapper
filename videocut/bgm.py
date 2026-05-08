@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from uuid import uuid4
 
 from videocut.errors import RenderError
@@ -32,6 +32,29 @@ def scan_bgm_files(bgm_dir: Path) -> list[Path]:
     if not files:
         raise RenderError(f"No audio files found in BGM directory or subdirectories: {bgm_dir}")
     return files
+
+
+def resolve_bgm_file(bgm_dir: Path, configured_file: str) -> Path:
+    raw_file = configured_file.strip().replace("\\", "/")
+    if not raw_file:
+        raise RenderError("BGM file must not be empty.")
+
+    relative_file = Path(raw_file)
+    windows_file = PureWindowsPath(raw_file)
+    if relative_file.is_absolute() or windows_file.is_absolute() or windows_file.drive or ".." in relative_file.parts:
+        raise RenderError(f"BGM file must be a relative path under BGM directory: {configured_file}")
+    if relative_file.suffix.lower() not in _BGM_EXTENSIONS:
+        raise RenderError(f"Unsupported BGM file extension: {configured_file}")
+
+    base_dir = bgm_dir.resolve()
+    candidate = (base_dir / relative_file).resolve()
+    try:
+        candidate.relative_to(base_dir)
+    except ValueError as exc:
+        raise RenderError(f"BGM file must stay under BGM directory: {configured_file}") from exc
+    if not candidate.is_file():
+        raise RenderError(f"BGM file not found: {candidate}")
+    return candidate
 
 
 def apply_bgm(

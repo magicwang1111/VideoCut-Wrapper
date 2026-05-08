@@ -63,14 +63,19 @@ def parse_output_config(raw: object) -> PipelineOutputConfig | None:
     return PipelineOutputConfig(filename=str(filename) if isinstance(filename, str) and filename.strip() else None)
 
 
-def parse_bgm_config(raw: object) -> PipelineBgmConfig | None:
+def _optional_str(value: object) -> str | None:
+    return str(value).strip() if isinstance(value, str) and str(value).strip() else None
+
+
+def parse_bgm_config(raw: object, base: PipelineBgmConfig | None = None) -> PipelineBgmConfig | None:
     if not isinstance(raw, dict):
-        return None
+        return base
     return PipelineBgmConfig(
-        enabled=bool(raw.get("enabled", True)),
-        dir=str(raw["dir"]) if isinstance(raw.get("dir"), str) and str(raw["dir"]).strip() else None,
-        volume=float(raw["volume"]) if isinstance(raw.get("volume"), (int, float)) else 0.3,
-        fade_out=float(raw["fade_out"]) if isinstance(raw.get("fade_out"), (int, float)) else 0.0,
+        enabled=bool(raw["enabled"]) if "enabled" in raw else (base.enabled if base else True),
+        dir=_optional_str(raw.get("dir")) if "dir" in raw else (base.dir if base else None),
+        file=_optional_str(raw.get("file")) if "file" in raw else (base.file if base else None),
+        volume=float(raw["volume"]) if isinstance(raw.get("volume"), (int, float)) else (base.volume if base else 0.3),
+        fade_out=float(raw["fade_out"]) if isinstance(raw.get("fade_out"), (int, float)) else (base.fade_out if base else 0.0),
     )
 
 
@@ -296,6 +301,7 @@ def _clone_bgm(config: PipelineBgmConfig | None) -> PipelineBgmConfig | None:
     return PipelineBgmConfig(
         enabled=config.enabled,
         dir=config.dir,
+        file=config.file,
         volume=config.volume,
         fade_out=config.fade_out,
     )
@@ -391,7 +397,7 @@ def bind_pipeline_config(
 
     bgm = _clone_bgm(config.bgm)
     if overrides.get("bgm") is not None:
-        bgm = parse_bgm_config(overrides.get("bgm"))
+        bgm = parse_bgm_config(overrides.get("bgm"), base=bgm)
 
     bound_clips: list[PipelineClipConfig] = []
     for index in range(clip_count):

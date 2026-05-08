@@ -344,6 +344,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--pipeline", default=DEFAULT_PIPELINE, help="Pipeline name to render (default: %(default)s)")
     parser.add_argument("--group", type=int, choices=sorted(REAL_OSS_TEST_CLIP_GROUPS), default=1)
     parser.add_argument(
+        "--bgm-file",
+        help='Use a specific BGM file under /app/input/bgm, for example "20260416音乐/1.mp3".',
+    )
+    parser.add_argument(
         "--groups",
         help="Comma-separated group ids or ranges, e.g. 1,2,3 or 1-16. When set, requests are submitted concurrently.",
     )
@@ -357,12 +361,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
-    global DEFAULT_PIPELINE
+    global DEFAULT_PIPELINE, DEFAULT_PIPELINE_OVERRIDES
     DEFAULT_PIPELINE = args.pipeline
+    DEFAULT_PIPELINE_OVERRIDES = {"bgm": {"file": args.bgm_file}} if args.bgm_file else {}
     group_ids = parse_group_ids(args.group, args.groups)
     print(f"[config] API_BASE_URL={API_BASE_URL}")
     print(f"[config] API_KEY_SET={bool(API_KEY and API_KEY != 'change-me')}")
     print(f"[config] pipeline={DEFAULT_PIPELINE}, groups={group_ids}, download={not args.skip_download}")
+    print(f"[config] bgm_file={args.bgm_file or '<random>'}")
     print(f"[config] download_dir={DOWNLOAD_DIR}")
     run(group_ids, download=not args.skip_download)
     return 0

@@ -56,7 +56,8 @@ X-Api-Key: your-api-key
   "clips": [
     "GouMei-Video-Cut/test-input/1/clip_001.mp4",
     "GouMei-Video-Cut/test-input/1/clip_002.mp4"
-  ]
+  ],
+  "overrides": {}
 }
 ```
 
@@ -66,8 +67,34 @@ X-Api-Key: your-api-key
 |---|---|---|---|
 | `pipeline` | `string` | 是 | Pipeline ID |
 | `clips` | `string[]` | 是 | 素材 OSS key 列表 |
+| `overrides` | `object` | 否 | 运行时覆盖参数，不传时使用 pipeline 默认配置 |
 
-调用方只需要传 `pipeline` 和 `clips`。裁剪、转场、画质、BGM 等渲染参数由服务端按选定 pipeline 的固定配置处理，外部无需传入。
+调用方通常只需要传 `pipeline` 和 `clips`。裁剪、转场、画质、BGM 等渲染参数由服务端按选定 pipeline 的固定配置处理。
+
+如果要指定某一首 BGM，在 `overrides.bgm.file` 里传 `/app/input/bgm` 下的相对路径：
+
+```json
+{
+  "pipeline": "bgm-concat",
+  "clips": [
+    "GouMei-Video-Cut/test-input/1/clip_001.mp4",
+    "GouMei-Video-Cut/test-input/1/clip_002.mp4"
+  ],
+  "overrides": {
+    "bgm": {
+      "file": "20260416音乐/1.mp3"
+    }
+  }
+}
+```
+
+BGM 路径规则：
+
+- `file` 只能是 `/app/input/bgm` 下的相对路径，支持子目录。
+- 不允许绝对路径，也不允许 `..`。
+- 指定文件不存在时任务失败，不会回退随机音乐。
+- 不传 `bgm.file` 时，服务端会在 `/app/input/bgm` 下递归随机选择一首。
+- BGM 文件由容器启动同步逻辑从 `BGM_OSS_URI` 同步到 `/app/input/bgm`，`/render` 不按 OSS key 单独下载音乐。
 
 `clips` 约定：
 
