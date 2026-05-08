@@ -296,8 +296,46 @@ curl -X POST "http://127.0.0.1:3000/render" \
       "GouMei-Video-Cut/test-input/1/clip_001.mp4",
       "GouMei-Video-Cut/test-input/1/clip_002.mp4",
       "GouMei-Video-Cut/test-input/1/clip_003.mp4"
-    ]
+    ],
+    "overrides": {
+      "bgm": {
+        "file": "舒缓/1.mp3"
+      }
+    }
   }'
+```
+
+Python `requests` 版本：
+
+```python
+import requests
+
+base_url = "http://127.0.0.1:3000"
+api_key = "your-api-key"
+
+payload = {
+    "pipeline": "bgm-concat",
+    "clips": [
+        "GouMei-Video-Cut/test-input/1/clip_001.mp4",
+        "GouMei-Video-Cut/test-input/1/clip_002.mp4",
+        "GouMei-Video-Cut/test-input/1/clip_003.mp4",
+    ],
+    "overrides": {
+        "bgm": {
+            "file": "舒缓/1.mp3",
+        },
+    },
+}
+
+resp = requests.post(
+    f"{base_url}/render",
+    headers={"X-Api-Key": api_key, "Content-Type": "application/json"},
+    json=payload,
+    timeout=60,
+)
+resp.raise_for_status()
+task_id = resp.json()["taskId"]
+print(task_id)
 ```
 
 查询任务：

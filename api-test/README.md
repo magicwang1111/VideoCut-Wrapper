@@ -400,7 +400,7 @@ headers = {
 }
 
 payload = {
-    "pipeline": "trim-mixed-concat",
+    "pipeline": "bgm-concat",
     "clips": [
         "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4390_0.mp4",
         "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4504_0.mp4",
@@ -408,7 +408,11 @@ payload = {
         "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4662_0.mp4",
         "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4663_0.mp4",
     ],
-    "overrides": {}
+    "overrides": {
+        "bgm": {
+            "file": "舒缓/1.mp3",
+        },
+    },
 }
 
 render_resp = requests.post(f"{base_url}/render", headers=headers, json=payload, timeout=60)
@@ -446,7 +450,7 @@ curl -X POST "http://127.0.0.1:3000/render" \
   -H "X-Api-Key: your-api-key" \
   -H "Content-Type: application/json" \
   -d '{
-    "pipeline": "trim-mixed-concat",
+    "pipeline": "bgm-concat",
     "clips": [
       "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4390_0.mp4",
       "GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿_4504_0.mp4",
@@ -456,7 +460,7 @@ curl -X POST "http://127.0.0.1:3000/render" \
     ],
     "overrides": {
       "bgm": {
-        "enabled": false
+        "file": "舒缓/1.mp3"
       }
     }
   }'
