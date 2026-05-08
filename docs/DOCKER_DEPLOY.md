@@ -82,6 +82,58 @@ sudo docker run --rm --gpus all nvidia/cuda:12.8.0-base-ubuntu24.04 nvidia-smi
 
 如果服务器没有 GPU，不要加 `--gpus all`，也不要叠加 `docker-compose.gpu.yml`。应用层的 `FFMPEG_ENCODER=auto` 会在容器内探测 GPU 编码器；探测不到时自动回退到 `libx264` CPU 编码。
 
+### 3.1 CPU 和 GPU 命令差异速查
+
+核心区别只有这几处：
+
+```text
+CPU-only 服务器:
+  不加 --gpus all
+  不加 NVIDIA_DRIVER_CAPABILITIES
+  Compose 只用 docker-compose.yml
+  预期编码器是 libx264
+
+GPU 服务器:
+  加 --gpus all
+  加 -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
+  Compose 叠加 docker-compose.gpu.yml
+  预期编码器是 h264_nvenc
+```
+
+自检命令对照：
+
+```bash
+# CPU-only 服务器
+sudo docker run --rm \
+  --entrypoint python \
+  --env-file "${APP_HOME}/.env" \
+  "${IMAGE}" \
+  -m videocut check
+```
+
+```bash
+# GPU 服务器，比 CPU-only 多 --gpus all 和 NVIDIA_DRIVER_CAPABILITIES
+sudo docker run --rm \
+  --gpus all \
+  -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
+  --entrypoint python \
+  --env-file "${APP_HOME}/.env" \
+  "${IMAGE}" \
+  -m videocut check
+```
+
+Compose 启动命令对照：
+
+```bash
+# CPU-only 服务器
+sudo docker compose up -d --build
+```
+
+```bash
+# GPU 服务器，叠加 docker-compose.gpu.yml
+sudo docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+```
+
 ## 4. 准备 .env
 
 在 Linux 服务器创建 `.env`：
@@ -242,6 +294,13 @@ sudo docker run --rm --gpus all -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,vi
 
 ## 8. 使用 docker run 部署
 
+这一节直接复制对应服务器类型的整段命令即可。CPU-only 命令不包含 GPU 参数；GPU 命令只比 CPU-only 多两行：
+
+```bash
+  --gpus all \
+  -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
+```
+
 ### 8.1 CPU-only 服务器
 
 ```bash
@@ -321,6 +380,8 @@ export IMAGE_TAG="v1"
 export IMAGE_DESCRIPTION="Docker GPU deployment"
 sudo docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 ```
+
+两条 Compose 命令的区别是：CPU-only 只加载 `docker-compose.yml`；GPU 多加载 `docker-compose.gpu.yml`，这个 override 文件会增加 `gpus: all` 和 `NVIDIA_DRIVER_CAPABILITIES=compute,utility,video`。
 
 说明：
 
