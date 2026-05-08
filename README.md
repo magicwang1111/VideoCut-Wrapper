@@ -176,7 +176,7 @@ videocut serve --host 0.0.0.0 --port 3000
       { "index": 1, "type": "cut", "duration": 0 }
     ],
     "bgm": {
-      "file": "20260416音乐/1.mp3"
+      "file": "舒缓/1.mp3"
     }
   }
 }
@@ -333,7 +333,7 @@ curl -X POST "http://127.0.0.1:3000/upload" \
       { "index": 1, "type": "dissolve", "duration": 0.5 }
     ],
     "bgm": {
-      "file": "20260416音乐/1.mp3"
+      "file": "舒缓/1.mp3"
     }
   }
 }
@@ -362,7 +362,7 @@ curl -X POST "http://127.0.0.1:3000/render" \
         { "index": 1, "type": "dissolve", "duration": 0.5 }
       ],
       "bgm": {
-        "file": "20260416音乐/1.mp3"
+        "file": "舒缓/1.mp3"
       }
     }
   }'
@@ -534,21 +534,20 @@ videocut serve --port 3000
 
 ## 本地 API 测试
 
-使用 `api-test/http_api_test_client.py`：
+测试功能已经拆成多个小脚本，常用配置写在 `api-test/http_api_settings.py` 和各脚本顶部。
 
 ```bash
-# 单组素材，默认使用 bgm-concat pipeline
-python api-test/http_api_test_client.py --group 1
+# 健康检查
+python api-test/check_health.py
 
-# 指定某一首 BGM，路径是 /app/input/bgm 下的相对路径
-python api-test/http_api_test_client.py --group 1 --bgm-file "20260416音乐/1.mp3"
+# 指定某一首 BGM，默认使用 舒缓/1.mp3
+python api-test/render_bgm_file.py
 
-# 指定 pipeline
-python api-test/http_api_test_client.py --pipeline zoom-dissolve-concat --group 2
+# 随机 BGM
+python api-test/render_bgm_random.py
 
-# 批量并发，5 组
-python api-test/http_api_test_client.py --groups 1,2,3,4,5
-python api-test/http_api_test_client.py --groups 1-16 --skip-download
+# 批量并发，默认 1-16 组，不下载结果
+python api-test/render_batch.py
 ```
 
 需要先设置环境变量：
@@ -588,7 +587,7 @@ videocut render trim-xfade-concat D:/a.mp4 D:/b.mp4 D:/c.mp4 --preview
 ```bash
 videocut serve --port 3000
 # 另一个终端
-python api-test/http_api_test_client.py --group 1
+python api-test/render_bgm_file.py
 ```
 
 ## Docker

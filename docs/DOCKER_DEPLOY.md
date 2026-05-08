@@ -165,7 +165,7 @@ PY
 cd /mnt/VideoCut-Wrapper
 export API_BASE_URL=http://127.0.0.1:3000
 export API_KEY=你的API_KEY
-python api-test/http_api_test_client.py --group 1
+python api-test/render_bgm_file.py
 ```
 
 ## 6. 验证
@@ -208,7 +208,7 @@ BGM 支持按类型放在子目录里，例如：
 如果接口里要指定某一首 BGM，就传 `/app/input/bgm` 下的相对路径：
 
 ```bash
-python api-test/http_api_test_client.py --group 1 --bgm-file "舒缓/1.mp3"
+python api-test/render_bgm_file.py
 ```
 
 对应 `/render` 请求体里就是：

@@ -362,7 +362,7 @@ other-prefix/input/a.mp4
     {"index": 0, "type": "dissolve", "duration": 0.5, "scale": 1.18}
   ],
   "default_transition": {"type": "cut", "duration": 0},
-  "bgm": {"enabled": true, "dir": "input/bgm", "file": "20260416音乐/1.mp3", "volume": 0.3, "fade_out": 0},
+  "bgm": {"enabled": true, "dir": "input/bgm", "file": "舒缓/1.mp3", "volume": 0.3, "fade_out": 0},
   "output": {"filename": "final.mp4"}
 }
 ```
@@ -381,7 +381,7 @@ other-prefix/input/a.mp4
 | `clip_overrides` | 覆盖单个素材的 `trim_start`、`trim_end`，单位秒 |
 | `transition_overrides` | 覆盖单个转场的类型、时长和缩放参数 |
 | `default_transition` | 覆盖默认转场 |
-| `bgm` | 覆盖 BGM 设置，常用 `{"enabled": false}` 禁用 BGM，或 `{"file": "20260416音乐/1.mp3"}` 指定某一首 |
+| `bgm` | 覆盖 BGM 设置，常用 `{"enabled": false}` 禁用 BGM，或 `{"file": "舒缓/1.mp3"}` 指定某一首 |
 | `output` | 覆盖渲染临时输出文件名，API 最终 OSS key 仍固定为 `outputs/<taskId>/final.mp4` |
 
 转场类型：
@@ -401,7 +401,7 @@ zoom-dissolve
 
 BGM 指定规则：
 
-- `overrides.bgm.file` 是 `/app/input/bgm` 下的相对路径，例如 `20260416音乐/1.mp3`。
+- `overrides.bgm.file` 是 `/app/input/bgm` 下的相对路径，例如 `舒缓/1.mp3`。
 - 支持按类型放子目录；不传 `file` 时，服务端会递归扫描 `/app/input/bgm` 并随机选择一首。
 - 不允许绝对路径，也不允许 `..` 路径穿越。
 - 指定文件不存在时任务失败，不会回退随机音乐。
@@ -704,7 +704,7 @@ payload = {
         "GouMei-Video-Cut/test-input/1/clip_003.mp4",
     ],
     "overrides": {
-        "bgm": {"file": "20260416音乐/1.mp3"},
+        "bgm": {"file": "舒缓/1.mp3"},
         "quality": "medium",
     },
 }
@@ -754,10 +754,10 @@ with target.open("wb") as handle:
 仓库内置了 HTTP API 测试客户端：
 
 ```bash
-python api-test/http_api_test_client.py --group 1
-python api-test/http_api_test_client.py --group 1 --bgm-file "20260416音乐/1.mp3"
-python api-test/http_api_test_client.py --pipeline zoom-dissolve-concat --group 1
-python api-test/http_api_test_client.py --groups 1,2,3,4,5 --skip-download
+python api-test/check_health.py
+python api-test/render_bgm_file.py
+python api-test/render_bgm_random.py
+python api-test/render_batch.py
 ```
 
 需要先设置：
@@ -767,7 +767,7 @@ $env:API_BASE_URL = "http://127.0.0.1:3000"
 $env:API_KEY = "demo-key"
 ```
 
-测试客户端默认使用真实 OSS 测试素材组。素材组定义在 `api-test/http_api_test_client.py` 的 `REAL_OSS_TEST_CLIP_GROUPS` 中。
+测试客户端默认使用真实 OSS 测试素材组。素材组定义在 `api-test/http_test_data.py` 的 `REAL_OSS_TEST_CLIP_GROUPS` 中，常用参数写在 `api-test/http_api_settings.py`。
 
 ## 14. 对接注意事项
 

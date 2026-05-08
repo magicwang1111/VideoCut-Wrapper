@@ -4,7 +4,9 @@ from test_runner import make_tester
 
 
 def main() -> int:
-    make_tester().run()
+    tester = make_tester(download=False)
+    tester.print_config()
+    tester.test_health()
     return 0
 
 

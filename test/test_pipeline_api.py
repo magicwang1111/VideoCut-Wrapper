@@ -290,11 +290,11 @@ def test_bgm_file_override_preserves_existing_bgm_options(tmp_path) -> None:
         config,
         ["/tmp/a.mp4", "/tmp/b.mp4", "/tmp/c.mp4"],
         tmp_path / "config.json",
-        {"bgm": {"file": "20260416音乐/1.mp3"}},
+        {"bgm": {"file": "舒缓/1.mp3"}},
     )
 
     assert ctx.config.bgm is not None
-    assert ctx.config.bgm.file == "20260416音乐/1.mp3"
+    assert ctx.config.bgm.file == "舒缓/1.mp3"
     assert ctx.config.bgm.enabled is True
     assert ctx.config.bgm.dir == "input/bgm"
     assert ctx.config.bgm.volume == pytest.approx(0.45)

@@ -6,9 +6,16 @@
 
 算法内部参数不在这里暴露。
 
-当前仓库提供的完整参考脚本：
+当前仓库提供的测试脚本：
 
-- [http_api_test_client.py](D:/VideoCut-Wrapper/api-test/http_api_test_client.py)
+- [check_health.py](D:/VideoCut-Wrapper/api-test/check_health.py)
+- [render_bgm_file.py](D:/VideoCut-Wrapper/api-test/render_bgm_file.py)
+- [render_bgm_random.py](D:/VideoCut-Wrapper/api-test/render_bgm_random.py)
+- [render_batch.py](D:/VideoCut-Wrapper/api-test/render_batch.py)
+
+公共配置：
+
+- [http_api_settings.py](D:/VideoCut-Wrapper/api-test/http_api_settings.py)
 
 当前已注册的 pipeline 清单可在这里查看：
 
@@ -472,23 +479,32 @@ oss://goumee-coze/GouMei-Video-Cut/test-input/
 - `test-input/4/`：5 个视频
 - `test-input/5/`：5 个视频
 
-默认参考脚本使用 `group 1`。
+默认参考脚本使用 `group 1`。常用配置写在：
+
+```text
+api-test/http_api_settings.py
+```
+
+每个测试功能拆成了单独的小脚本，脚本里已经写好默认参数，不需要在命令行传一堆选项。
 
 直接运行：
 
 ```bash
-# 单任务联调（默认使用 bgm-concat pipeline）
-python api-test/http_api_test_client.py --group 1
+# 健康检查
+python api-test/check_health.py
 
-# 指定 pipeline
-python api-test/http_api_test_client.py --pipeline zoom-dissolve-concat --group 1
+# 指定某一首 BGM，默认使用 舒缓/1.mp3
+python api-test/render_bgm_file.py
 
-# 并发提交多组，更接近真实 worker 排队 / 并发场景
-python api-test/http_api_test_client.py --groups 1-16 --skip-download
+# 随机 BGM
+python api-test/render_bgm_random.py
+
+# 并发提交多组，默认 1-16 组，不下载结果
+python api-test/render_batch.py
 ```
 
 说明：
 
-- `--group 1` 是单任务联调
-- `--pipeline <name>` 指定要测试的 pipeline，默认 `bgm-concat`
-- `--groups 1-16` 会并发提交 16 个 `/render` 请求，也支持 `1,2,3` 这种逗号写法
+- `render_bgm_file.py` 顶部的 `BGM_FILE = "舒缓/1.mp3"` 可以直接改成 `激烈/2.mp3` 等路径。
+- `render_batch.py` 顶部的 `GROUP_IDS` 控制并发组。
+- `http_api_settings.py` 里可以改默认 `API_BASE_URL`、`PIPELINE`、`GROUPS`、`BGM_FILE`、`DOWNLOAD`。

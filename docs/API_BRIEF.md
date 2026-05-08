@@ -82,7 +82,7 @@ X-Api-Key: your-api-key
   ],
   "overrides": {
     "bgm": {
-      "file": "20260416音乐/1.mp3"
+      "file": "舒缓/1.mp3"
     }
   }
 }

@@ -33,7 +33,7 @@ def test_resolve_bgm_dir_uses_configured_relative_path_without_env(tmp_path, mon
 
 def test_scan_bgm_files_recurses_category_directories(tmp_path) -> None:
     bgm_dir = tmp_path / "input" / "bgm"
-    category_dir = bgm_dir / "20260416音乐"
+    category_dir = bgm_dir / "舒缓"
     category_dir.mkdir(parents=True)
     root_audio = bgm_dir / "root.mp3"
     nested_audio = category_dir / "1.mp3"
@@ -47,11 +47,11 @@ def test_scan_bgm_files_recurses_category_directories(tmp_path) -> None:
 
 def test_resolve_bgm_file_accepts_relative_file_in_category(tmp_path) -> None:
     bgm_dir = tmp_path / "input" / "bgm"
-    target = bgm_dir / "20260416音乐" / "1.mp3"
+    target = bgm_dir / "舒缓" / "1.mp3"
     target.parent.mkdir(parents=True)
     target.write_text("music", encoding="utf-8")
 
-    assert resolve_bgm_file(bgm_dir, "20260416音乐/1.mp3") == target
+    assert resolve_bgm_file(bgm_dir, "舒缓/1.mp3") == target
 
 
 def test_resolve_bgm_file_rejects_missing_file(tmp_path) -> None:
@@ -59,7 +59,7 @@ def test_resolve_bgm_file_rejects_missing_file(tmp_path) -> None:
     bgm_dir.mkdir(parents=True)
 
     with pytest.raises(RenderError, match="BGM file not found"):
-        resolve_bgm_file(bgm_dir, "20260416音乐/missing.mp3")
+        resolve_bgm_file(bgm_dir, "舒缓/missing.mp3")
 
 
 def test_resolve_bgm_file_rejects_absolute_path(tmp_path) -> None:
