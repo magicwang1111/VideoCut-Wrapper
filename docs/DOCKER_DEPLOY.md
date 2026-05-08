@@ -1,22 +1,16 @@
 # Docker 部署命令手册
 
-目标流程只有一条：在本地 `D:\VideoCut-Wrapper` build 镜像，导出成 tar，传到 Linux，`docker load` 后启动。
-
-当前镜像名约定：
-
-```bash
-videocut-wrapper:v1
-```
+流程：本地 build `videocut-wrapper:v1`，导出 tar，传到 Linux，`docker load`，然后 `docker run` 启动。
 
 ## 1. 本地 build 镜像
 
-在本机 WSL 里进入项目：
+在本机 WSL 进入项目：
 
 ```bash
 cd /mnt/d/VideoCut-Wrapper
 ```
 
-先 build base 镜像：
+build base 镜像：
 
 ```bash
 docker build \
@@ -25,16 +19,14 @@ docker build \
   .
 ```
 
-再 build 业务镜像。以后每次打包把 `IMAGE_TAG` 改成 `v2`、`v3` 这种递增 tag：
+build 业务镜像，tag 直接写 `v1`：
 
 ```bash
-export IMAGE_TAG=v1
-
 docker build \
   --build-arg BASE_IMAGE=magicwang/pytorch-base:torch210-cu128-runtime-v1 \
-  --build-arg IMAGE_VERSION="${IMAGE_TAG}" \
-  --build-arg IMAGE_DESCRIPTION="VideoCut Docker image ${IMAGE_TAG}" \
-  -t "videocut-wrapper:${IMAGE_TAG}" \
+  --build-arg IMAGE_VERSION=v1 \
+  --build-arg IMAGE_DESCRIPTION="VideoCut Docker image v1" \
+  -t videocut-wrapper:v1 \
   .
 ```
 
@@ -45,7 +37,7 @@ docker run --rm \
   --gpus all \
   -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
   --entrypoint python \
-  "videocut-wrapper:${IMAGE_TAG}" \
+  videocut-wrapper:v1 \
   -m videocut check
 ```
 
@@ -60,49 +52,52 @@ Video encoder: h264_nvenc
 导出 tar 包：
 
 ```bash
-docker save "videocut-wrapper:${IMAGE_TAG}" -o "videocut-wrapper_${IMAGE_TAG}.tar"
+docker save videocut-wrapper:v1 -o videocut-wrapper_v1.tar
 ```
 
-传到 Linux 服务器：
+传到 Linux 服务器。下面用 `root@192.168.1.100` 做例子，实际执行时把 IP 换成你的 Linux 服务器 IP：
 
 ```bash
-scp "videocut-wrapper_${IMAGE_TAG}.tar" user@你的服务器IP:/tmp/
+scp videocut-wrapper_v1.tar root@192.168.1.100:/tmp/
 ```
 
-`docker save` 会把业务镜像依赖的底层镜像层一起打进去，Linux 服务器通常不需要单独再 build base 镜像。
+说明：`docker save` 会把业务镜像依赖的底层镜像层一起打进去，Linux 服务器不需要单独 build base 镜像。
 
-## 3. Linux 服务器导入镜像
+## 3. Linux 导入镜像
 
-登录 Linux 服务器后导入：
+登录 Linux 服务器后执行：
 
 ```bash
-export IMAGE_TAG=v1
-export IMAGE="videocut-wrapper:${IMAGE_TAG}"
-
-sudo docker load -i "/tmp/videocut-wrapper_${IMAGE_TAG}.tar"
+sudo docker load -i /tmp/videocut-wrapper_v1.tar
 sudo docker images | grep videocut-wrapper
+```
+
+确认能看到：
+
+```text
+videocut-wrapper   v1
 ```
 
 ## 4. 准备部署目录和 .env
 
-```bash
-export APP_HOME=/opt/videocut
+创建目录：
 
+```bash
 sudo mkdir -p \
-  "${APP_HOME}/data" \
-  "${APP_HOME}/temp" \
-  "${APP_HOME}/input/bgm" \
-  "${APP_HOME}/output" \
-  "${APP_HOME}/oss-local"
+  /opt/videocut/data \
+  /opt/videocut/temp \
+  /opt/videocut/input/bgm \
+  /opt/videocut/output \
+  /opt/videocut/oss-local
 ```
 
-创建环境变量文件：
+创建 `.env`：
 
 ```bash
-sudo vim "${APP_HOME}/.env"
+sudo vim /opt/videocut/.env
 ```
 
-最小模板如下，OSS 配置按你的真实值填写：
+填入下面内容，OSS 的 AK/SK 按你的真实值修改：
 
 ```bash
 PORT=3000
@@ -143,68 +138,57 @@ TEMP_DIR=/srv/videocut/temp
 
 ## 5. Linux 启动容器
 
-先准备通用变量：
-
-```bash
-export IMAGE_TAG=v1
-export IMAGE="videocut-wrapper:${IMAGE_TAG}"
-export CONTAINER_NAME=videocut-wrapper
-export APP_HOME=/opt/videocut
-export HOST_PORT=8536
-export CONTAINER_PORT=3000
-```
-
 ### 5.1 有 GPU 的服务器
 
-GPU 服务器使用这条：
+GPU 服务器用这条：
 
 ```bash
-sudo docker rm -f "${CONTAINER_NAME}" 2>/dev/null || true
+sudo docker rm -f videocut-wrapper 2>/dev/null || true
 
 sudo docker run -d \
-  --name "${CONTAINER_NAME}" \
+  --name videocut-wrapper \
   --restart unless-stopped \
-  -p "${HOST_PORT}:${CONTAINER_PORT}" \
+  -p 8536:3000 \
   --memory="64g" \
   --cpus="16" \
   --gpus all \
   -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
-  --env-file "${APP_HOME}/.env" \
-  -v "${APP_HOME}/data:/srv/videocut/data" \
-  -v "${APP_HOME}/temp:/srv/videocut/temp" \
-  -v "${APP_HOME}/input/bgm:/app/input/bgm" \
-  -v "${APP_HOME}/output:/app/output" \
-  -v "${APP_HOME}/oss-local:/srv/videocut/oss-local" \
-  "${IMAGE}"
-```
-
-GPU 版本比 CPU 版本只多这两行：
-
-```bash
-  --gpus all \
-  -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
+  --env-file /opt/videocut/.env \
+  -v /opt/videocut/data:/srv/videocut/data \
+  -v /opt/videocut/temp:/srv/videocut/temp \
+  -v /opt/videocut/input/bgm:/app/input/bgm \
+  -v /opt/videocut/output:/app/output \
+  -v /opt/videocut/oss-local:/srv/videocut/oss-local \
+  videocut-wrapper:v1
 ```
 
 ### 5.2 没有 GPU 的服务器
 
-CPU-only 服务器使用这条，不要加 `--gpus all`：
+CPU-only 服务器用这条，不要加 `--gpus all`：
 
 ```bash
-sudo docker rm -f "${CONTAINER_NAME}" 2>/dev/null || true
+sudo docker rm -f videocut-wrapper 2>/dev/null || true
 
 sudo docker run -d \
-  --name "${CONTAINER_NAME}" \
+  --name videocut-wrapper \
   --restart unless-stopped \
-  -p "${HOST_PORT}:${CONTAINER_PORT}" \
+  -p 8536:3000 \
   --memory="64g" \
   --cpus="16" \
-  --env-file "${APP_HOME}/.env" \
-  -v "${APP_HOME}/data:/srv/videocut/data" \
-  -v "${APP_HOME}/temp:/srv/videocut/temp" \
-  -v "${APP_HOME}/input/bgm:/app/input/bgm" \
-  -v "${APP_HOME}/output:/app/output" \
-  -v "${APP_HOME}/oss-local:/srv/videocut/oss-local" \
-  "${IMAGE}"
+  --env-file /opt/videocut/.env \
+  -v /opt/videocut/data:/srv/videocut/data \
+  -v /opt/videocut/temp:/srv/videocut/temp \
+  -v /opt/videocut/input/bgm:/app/input/bgm \
+  -v /opt/videocut/output:/app/output \
+  -v /opt/videocut/oss-local:/srv/videocut/oss-local \
+  videocut-wrapper:v1
+```
+
+GPU 命令比 CPU 命令多两行：
+
+```bash
+  --gpus all \
+  -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
 ```
 
 ## 6. 验证
@@ -212,20 +196,20 @@ sudo docker run -d \
 查看容器：
 
 ```bash
-sudo docker ps --filter "name=${CONTAINER_NAME}"
-sudo docker logs -f "${CONTAINER_NAME}"
+sudo docker ps --filter "name=videocut-wrapper"
+sudo docker logs -f videocut-wrapper
 ```
 
-检查服务健康：
+健康检查：
 
 ```bash
-curl "http://127.0.0.1:${HOST_PORT}/health"
+curl http://127.0.0.1:8536/health
 ```
 
-检查容器内编码器：
+检查编码器：
 
 ```bash
-sudo docker exec "${CONTAINER_NAME}" python -m videocut check
+sudo docker exec videocut-wrapper python -m videocut check
 ```
 
 预期：
@@ -235,54 +219,53 @@ sudo docker exec "${CONTAINER_NAME}" python -m videocut check
 无 GPU: Video encoder: libx264
 ```
 
-## 7. 更新到下一版
+## 7. 更新到 v2
 
-本地重新 build 时只需要递增 tag：
-
-```bash
-export IMAGE_TAG=v2
-```
-
-然后重复：
+本地 build `v2`：
 
 ```bash
+cd /mnt/d/VideoCut-Wrapper
+
 docker build \
   --build-arg BASE_IMAGE=magicwang/pytorch-base:torch210-cu128-runtime-v1 \
-  --build-arg IMAGE_VERSION="${IMAGE_TAG}" \
-  --build-arg IMAGE_DESCRIPTION="VideoCut Docker image ${IMAGE_TAG}" \
-  -t "videocut-wrapper:${IMAGE_TAG}" \
+  --build-arg IMAGE_VERSION=v2 \
+  --build-arg IMAGE_DESCRIPTION="VideoCut Docker image v2" \
+  -t videocut-wrapper:v2 \
   .
-
-docker save "videocut-wrapper:${IMAGE_TAG}" -o "videocut-wrapper_${IMAGE_TAG}.tar"
-scp "videocut-wrapper_${IMAGE_TAG}.tar" user@你的服务器IP:/tmp/
 ```
 
-Linux 上重新导入并启动：
+导出并传到 Linux：
 
 ```bash
-export IMAGE_TAG=v2
-export IMAGE="videocut-wrapper:${IMAGE_TAG}"
-
-sudo docker load -i "/tmp/videocut-wrapper_${IMAGE_TAG}.tar"
-sudo docker rm -f videocut-wrapper
+docker save videocut-wrapper:v2 -o videocut-wrapper_v2.tar
+scp videocut-wrapper_v2.tar root@192.168.1.100:/tmp/
 ```
 
-然后按第 5 节选择 GPU 或 CPU 启动命令。
+Linux 导入：
+
+```bash
+sudo docker load -i /tmp/videocut-wrapper_v2.tar
+```
+
+启动时把最后一行镜像名从 `videocut-wrapper:v1` 改成：
+
+```bash
+videocut-wrapper:v2
+```
 
 ## 8. 临时修改镜像时才用 docker commit
 
-正常情况不要用 `docker commit`，应该改代码后重新 build。只有临时热修时才这样做：
+正常情况不要用 `docker commit`，应该改代码后重新 build。只有临时热修时才这样做。
+
+启动一个干净容器进去修改：
 
 ```bash
-export IMAGE=videocut-wrapper:v1
-export FIXED_IMAGE=videocut-wrapper:v2
-
 sudo docker run -it \
   --name commit-videocut-fix \
   --gpus all \
   -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
   --entrypoint /bin/bash \
-  "${IMAGE}"
+  videocut-wrapper:v1
 ```
 
 容器里只做最终修复，退出前清理临时文件：
@@ -298,11 +281,11 @@ exit
 sudo docker commit \
   -m "修复视频渲染问题" \
   commit-videocut-fix \
-  "${FIXED_IMAGE}"
+  videocut-wrapper:v2
 ```
 
-如果要把这个热修镜像也传到别的 Linux 机器：
+导出热修镜像：
 
 ```bash
-sudo docker save "${FIXED_IMAGE}" -o videocut-wrapper_v2.tar
+sudo docker save videocut-wrapper:v2 -o videocut-wrapper_v2.tar
 ```
