@@ -78,7 +78,13 @@ sudo docker images | grep videocut-wrapper
 videocut-wrapper   v1
 ```
 
-## 4. 准备部署目录和 .env
+## 4. 准备运行时配置
+
+Docker 镜像里已经有 Linux、Python、FFmpeg 和代码。这里准备的不是“补 Linux 环境”，而是运行时配置：
+
+- `/opt/videocut/...` 是宿主机目录，用来保存数据库、临时文件、BGM 和输出文件。这样容器删掉重建后，数据还在。
+- `/opt/videocut/.env` 是运行时环境变量，主要放 OSS AK/SK、端口、worker 数量等配置。密钥不要写进镜像里，否则镜像传给别人时密钥也跟着泄露。
+- 你以前“镜像拉下来直接部署”，通常是因为那些镜像不需要外部密钥/持久化目录，或者部署平台已经帮你注入了环境变量和挂载目录。
 
 创建目录：
 
@@ -91,7 +97,20 @@ sudo mkdir -p \
   /opt/videocut/oss-local
 ```
 
-创建 `.env`：
+你本地已经有 `D:\VideoCut-Wrapper\.env`，可以直接传到 Linux：
+
+```bash
+scp /mnt/d/VideoCut-Wrapper/.env root@192.168.1.100:/tmp/videocut.env
+```
+
+在 Linux 上移动到部署目录：
+
+```bash
+sudo mv /tmp/videocut.env /opt/videocut/.env
+sudo chmod 600 /opt/videocut/.env
+```
+
+如果不想传本地 `.env`，也可以在 Linux 上手动创建：
 
 ```bash
 sudo vim /opt/videocut/.env
