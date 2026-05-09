@@ -18,7 +18,7 @@ DOWNLOAD_DIR = Path(__file__).resolve().parent / "downloads"
 
 PIPELINE = "bgm-concat"
 GROUP_IDS = [1]
-BGM_CATEGORY: str | None = None
+BGM_CATEGORY = "舒缓"
 BGM_FILENAME: str | None = None
 DOWNLOAD = True
 
