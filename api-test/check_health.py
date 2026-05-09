@@ -22,7 +22,8 @@ def main() -> int:
         api_key=API_KEY,
         pipeline="bgm-concat",
         group_ids=[1],
-        bgm_file=None,
+        bgm_category=None,
+        bgm_filename=None,
         download=False,
         download_dir=DOWNLOAD_DIR,
     )

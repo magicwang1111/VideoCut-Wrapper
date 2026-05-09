@@ -7,8 +7,9 @@ import pytest
 
 import videocut.bgm as bgm_module
 from videocut.bgm import apply_bgm
-from videocut.bgm import resolve_bgm_file
+from videocut.bgm import resolve_bgm_category_file
 from videocut.bgm import resolve_bgm_dir
+from videocut.bgm import scan_bgm_category_files
 from videocut.bgm import scan_bgm_files
 from videocut.errors import RenderError
 
@@ -45,40 +46,69 @@ def test_scan_bgm_files_recurses_category_directories(tmp_path) -> None:
     assert scan_bgm_files(bgm_dir) == sorted([root_audio, nested_audio])
 
 
-def test_resolve_bgm_file_accepts_relative_file_in_category(tmp_path) -> None:
+def test_scan_bgm_category_files_limits_random_pool_to_category(tmp_path) -> None:
+    bgm_dir = tmp_path / "input" / "bgm"
+    calm_dir = bgm_dir / "舒缓"
+    intense_dir = bgm_dir / "激烈"
+    calm_nested = calm_dir / "nested"
+    calm_nested.mkdir(parents=True)
+    intense_dir.mkdir(parents=True)
+    calm_audio = calm_dir / "1.mp3"
+    calm_nested_audio = calm_nested / "2.wav"
+    intense_audio = intense_dir / "3.mp3"
+    ignored = calm_dir / "note.txt"
+    calm_audio.write_text("calm", encoding="utf-8")
+    calm_nested_audio.write_text("nested", encoding="utf-8")
+    intense_audio.write_text("intense", encoding="utf-8")
+    ignored.write_text("ignored", encoding="utf-8")
+
+    assert scan_bgm_category_files(bgm_dir, "舒缓") == sorted([calm_audio, calm_nested_audio])
+
+
+def test_scan_bgm_category_files_rejects_missing_category(tmp_path) -> None:
+    bgm_dir = tmp_path / "input" / "bgm"
+    bgm_dir.mkdir(parents=True)
+
+    with pytest.raises(RenderError, match="BGM category directory not found"):
+        scan_bgm_category_files(bgm_dir, "舒缓")
+
+
+def test_scan_bgm_category_files_rejects_category_without_audio(tmp_path) -> None:
+    bgm_dir = tmp_path / "input" / "bgm"
+    category_dir = bgm_dir / "舒缓"
+    category_dir.mkdir(parents=True)
+    (category_dir / "note.txt").write_text("ignored", encoding="utf-8")
+
+    with pytest.raises(RenderError, match="No audio files found"):
+        scan_bgm_category_files(bgm_dir, "舒缓")
+
+
+@pytest.mark.parametrize("category", ["/tmp", "D:\\tmp", "../舒缓", "./舒缓", ".", "舒缓/../激烈", "舒缓/."])
+def test_scan_bgm_category_files_rejects_unsafe_category_paths(tmp_path, category: str) -> None:
+    bgm_dir = tmp_path / "input" / "bgm"
+    bgm_dir.mkdir(parents=True)
+
+    with pytest.raises(RenderError, match="relative directory"):
+        scan_bgm_category_files(bgm_dir, category)
+
+
+def test_resolve_bgm_category_file_accepts_category_and_filename(tmp_path) -> None:
     bgm_dir = tmp_path / "input" / "bgm"
     target = bgm_dir / "舒缓" / "1.mp3"
     target.parent.mkdir(parents=True)
     target.write_text("music", encoding="utf-8")
 
-    assert resolve_bgm_file(bgm_dir, "舒缓/1.mp3") == target
+    assert resolve_bgm_category_file(bgm_dir, "舒缓", "1.mp3") == target
 
 
-def test_resolve_bgm_file_rejects_missing_file(tmp_path) -> None:
+@pytest.mark.parametrize("filename", ["/tmp/1.mp3", "D:\\tmp\\1.mp3", "../1.mp3", "./1.mp3", ".", "nested/1.mp3"])
+def test_resolve_bgm_category_file_rejects_unsafe_filenames(tmp_path, filename: str) -> None:
     bgm_dir = tmp_path / "input" / "bgm"
-    bgm_dir.mkdir(parents=True)
+    category_dir = bgm_dir / "舒缓"
+    category_dir.mkdir(parents=True)
 
-    with pytest.raises(RenderError, match="BGM file not found"):
-        resolve_bgm_file(bgm_dir, "舒缓/missing.mp3")
-
-
-def test_resolve_bgm_file_rejects_absolute_path(tmp_path) -> None:
-    bgm_dir = tmp_path / "input" / "bgm"
-    bgm_dir.mkdir(parents=True)
-
-    with pytest.raises(RenderError, match="relative path"):
-        resolve_bgm_file(bgm_dir, "/tmp/1.mp3")
-
-    with pytest.raises(RenderError, match="relative path"):
-        resolve_bgm_file(bgm_dir, "D:\\tmp\\1.mp3")
-
-
-def test_resolve_bgm_file_rejects_parent_traversal(tmp_path) -> None:
-    bgm_dir = tmp_path / "input" / "bgm"
-    bgm_dir.mkdir(parents=True)
-
-    with pytest.raises(RenderError, match="relative path"):
-        resolve_bgm_file(bgm_dir, "../1.mp3")
+    with pytest.raises(RenderError, match="plain file name"):
+        resolve_bgm_category_file(bgm_dir, "舒缓", filename)
 
 
 def test_apply_bgm_uses_task_unique_tmp_and_replaces_video(tmp_path, monkeypatch) -> None:

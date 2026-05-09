@@ -362,7 +362,7 @@ other-prefix/input/a.mp4
     {"index": 0, "type": "dissolve", "duration": 0.5, "scale": 1.18}
   ],
   "default_transition": {"type": "cut", "duration": 0},
-  "bgm": {"enabled": true, "dir": "input/bgm", "file": "舒缓/1.mp3", "volume": 0.3, "fade_out": 0},
+  "bgm": {"enabled": true, "dir": "input/bgm", "category": "舒缓", "filename": "1.mp3", "volume": 0.3, "fade_out": 0},
   "output": {"filename": "final.mp4"}
 }
 ```
@@ -381,7 +381,7 @@ other-prefix/input/a.mp4
 | `clip_overrides` | 覆盖单个素材的 `trim_start`、`trim_end`，单位秒 |
 | `transition_overrides` | 覆盖单个转场的类型、时长和缩放参数 |
 | `default_transition` | 覆盖默认转场 |
-| `bgm` | 覆盖 BGM 设置，常用 `{"enabled": false}` 禁用 BGM，或 `{"file": "舒缓/1.mp3"}` 指定某一首 |
+| `bgm` | 覆盖 BGM 设置，常用 `{"enabled": false}` 禁用 BGM，`{"category": "舒缓"}` 按分类随机，或 `{"category": "舒缓", "filename": "1.mp3"}` 指定某一首 |
 | `output` | 覆盖渲染临时输出文件名，API 最终 OSS key 仍固定为 `outputs/<taskId>/final.mp4` |
 
 转场类型：
@@ -401,12 +401,39 @@ zoom-dissolve
 
 BGM 指定规则：
 
-- `overrides.bgm.file` 是 `/app/input/bgm` 下的相对路径，例如 `舒缓/1.mp3`。
-- 当前 BGM 对齐清单见 `docs/BGM_MANIFEST.json`，接口使用清单里的 `path` 字段。
-- 支持按类型放子目录；不传 `file` 时，服务端会递归扫描 `/app/input/bgm` 并随机选择一首。
+- `overrides.bgm.category` 是 `/app/input/bgm` 下的相对目录名，例如 `舒缓`。
+- `overrides.bgm.filename` 是分类目录下的文件名，例如 `1.mp3`。
+- 传 `category + filename` 时，服务端精确选择该分类下的文件；只传 `category` 时，服务端只在该分类目录下随机选择一首。
+- 当前 BGM 对齐清单见 `docs/BGM_MANIFEST.json`：精确指定歌曲使用清单里的 `category + filename`，按分类随机使用清单里的 `category` 字段。
+- 支持按类型放子目录；不传 `category` 时，服务端会递归扫描 `/app/input/bgm` 并随机选择一首。
 - 不允许绝对路径，也不允许 `..` 路径穿越。
-- 指定文件不存在时任务失败，不会回退随机音乐。
+- 指定文件或分类目录不存在时任务失败，不会回退随机音乐。
 - BGM 文件仍由容器启动同步逻辑从 `BGM_OSS_URI` 同步到 `/app/input/bgm`，`/render` 不按 OSS key 单独下载音乐。
+
+按分类随机选择 BGM：
+
+```json
+{
+  "overrides": {
+    "bgm": {
+      "category": "舒缓"
+    }
+  }
+}
+```
+
+按分类和文件名指定 BGM：
+
+```json
+{
+  "overrides": {
+    "bgm": {
+      "category": "舒缓",
+      "filename": "1.mp3"
+    }
+  }
+}
+```
 
 ### 6.3 `/render` 常见错误
 
@@ -705,7 +732,7 @@ payload = {
         "GouMei-Video-Cut/test-input/1/clip_003.mp4",
     ],
     "overrides": {
-        "bgm": {"file": "舒缓/1.mp3"},
+        "bgm": {"category": "舒缓", "filename": "1.mp3"},
         "quality": "medium",
     },
 }

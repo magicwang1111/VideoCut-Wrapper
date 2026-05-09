@@ -70,10 +70,17 @@ def _optional_str(value: object) -> str | None:
 def parse_bgm_config(raw: object, base: PipelineBgmConfig | None = None) -> PipelineBgmConfig | None:
     if not isinstance(raw, dict):
         return base
+    if "file" in raw:
+        raise VideoCutError("bgm.file is not supported; use bgm.category and optional bgm.filename.")
+    category = _optional_str(raw.get("category")) if "category" in raw else (base.category if base else None)
+    filename = _optional_str(raw.get("filename")) if "filename" in raw else (base.filename if base else None)
+    if "category" in raw and "filename" not in raw:
+        filename = None
     return PipelineBgmConfig(
         enabled=bool(raw["enabled"]) if "enabled" in raw else (base.enabled if base else True),
         dir=_optional_str(raw.get("dir")) if "dir" in raw else (base.dir if base else None),
-        file=_optional_str(raw.get("file")) if "file" in raw else (base.file if base else None),
+        category=category,
+        filename=filename,
         volume=float(raw["volume"]) if isinstance(raw.get("volume"), (int, float)) else (base.volume if base else 0.3),
         fade_out=float(raw["fade_out"]) if isinstance(raw.get("fade_out"), (int, float)) else (base.fade_out if base else 0.0),
     )
@@ -301,7 +308,8 @@ def _clone_bgm(config: PipelineBgmConfig | None) -> PipelineBgmConfig | None:
     return PipelineBgmConfig(
         enabled=config.enabled,
         dir=config.dir,
-        file=config.file,
+        category=config.category,
+        filename=config.filename,
         volume=config.volume,
         fade_out=config.fade_out,
     )

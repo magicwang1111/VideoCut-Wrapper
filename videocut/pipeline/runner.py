@@ -8,7 +8,13 @@ from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
-from videocut.bgm import apply_bgm, resolve_bgm_dir, resolve_bgm_file, scan_bgm_files
+from videocut.bgm import (
+    apply_bgm,
+    resolve_bgm_dir,
+    resolve_bgm_category_file,
+    scan_bgm_category_files,
+    scan_bgm_files,
+)
 from videocut.errors import RenderError
 from videocut.ffmpeg_config import FFmpegVideoSettings, resolve_runtime_video_settings, resolve_video_settings
 from videocut.log import get_logger
@@ -356,8 +362,11 @@ class PipelineRunner:
             bgm_file_used = None
             if config.bgm and config.bgm.enabled:
                 bgm_dir_path = resolve_bgm_dir(self.root_dir, config.bgm.dir)
-                if config.bgm.file:
-                    chosen = resolve_bgm_file(bgm_dir_path, config.bgm.file)
+                if config.bgm.category and config.bgm.filename:
+                    chosen = resolve_bgm_category_file(bgm_dir_path, config.bgm.category, config.bgm.filename)
+                elif config.bgm.category:
+                    bgm_files = scan_bgm_category_files(bgm_dir_path, config.bgm.category)
+                    chosen = random.choice(bgm_files)
                 else:
                     bgm_files = scan_bgm_files(bgm_dir_path)
                     chosen = random.choice(bgm_files)

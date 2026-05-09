@@ -217,17 +217,16 @@ BGM 支持按类型放在子目录里，例如：
 docs/BGM_MANIFEST.json
 ```
 
-接口指定某一首 BGM 时，使用清单里的 `path` 字段，例如：
+接口指定某一首 BGM 时，使用清单里的 `category + filename`，例如：
 
 ```json
 {
   "category": "舒缓",
-  "filename": "1.mp3",
-  "path": "舒缓/1.mp3"
+  "filename": "1.mp3"
 }
 ```
 
-如果接口里要指定某一首 BGM，就传 `/app/input/bgm` 下的相对路径：
+如果接口里要指定某一首 BGM，就传清单里的 `category + filename`：
 
 ```bash
 python api-test/render_bgm_file.py
@@ -239,7 +238,8 @@ python api-test/render_bgm_file.py
 {
   "overrides": {
     "bgm": {
-      "file": "舒缓/1.mp3"
+      "category": "舒缓",
+      "filename": "1.mp3"
     }
   }
 }

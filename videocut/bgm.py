@@ -34,31 +34,66 @@ def scan_bgm_files(bgm_dir: Path) -> list[Path]:
     return files
 
 
-def resolve_bgm_file(bgm_dir: Path, configured_file: str) -> Path:
-    raw_file = configured_file.strip().replace("\\", "/")
-    if not raw_file:
-        raise RenderError("BGM file must not be empty.")
+def resolve_bgm_category_dir(bgm_dir: Path, configured_category: str) -> Path:
+    raw_category = configured_category.strip().replace("\\", "/")
+    if not raw_category:
+        raise RenderError("BGM category must not be empty.")
 
-    relative_file = Path(raw_file)
-    posix_file = PurePosixPath(raw_file)
-    windows_file = PureWindowsPath(raw_file)
+    relative_category = Path(raw_category)
+    posix_category = PurePosixPath(raw_category)
+    windows_category = PureWindowsPath(raw_category)
+    category_parts = [part for part in raw_category.split("/") if part]
     if (
-        relative_file.is_absolute()
-        or posix_file.is_absolute()
-        or windows_file.is_absolute()
-        or windows_file.drive
-        or ".." in relative_file.parts
+        relative_category.is_absolute()
+        or posix_category.is_absolute()
+        or windows_category.is_absolute()
+        or windows_category.drive
+        or any(part in {".", ".."} for part in category_parts)
     ):
-        raise RenderError(f"BGM file must be a relative path under BGM directory: {configured_file}")
-    if relative_file.suffix.lower() not in _BGM_EXTENSIONS:
-        raise RenderError(f"Unsupported BGM file extension: {configured_file}")
+        raise RenderError(f"BGM category must be a relative directory under BGM directory: {configured_category}")
 
     base_dir = bgm_dir.resolve()
-    candidate = (base_dir / relative_file).resolve()
+    category_dir = (base_dir / relative_category).resolve()
     try:
-        candidate.relative_to(base_dir)
+        category_dir.relative_to(base_dir)
     except ValueError as exc:
-        raise RenderError(f"BGM file must stay under BGM directory: {configured_file}") from exc
+        raise RenderError(f"BGM category must stay under BGM directory: {configured_category}") from exc
+    if not category_dir.is_dir():
+        raise RenderError(f"BGM category directory not found: {category_dir}")
+    return category_dir
+
+
+def scan_bgm_category_files(bgm_dir: Path, configured_category: str) -> list[Path]:
+    return scan_bgm_files(resolve_bgm_category_dir(bgm_dir, configured_category))
+
+
+def resolve_bgm_category_file(bgm_dir: Path, configured_category: str, configured_filename: str) -> Path:
+    category_dir = resolve_bgm_category_dir(bgm_dir, configured_category)
+    raw_filename = configured_filename.strip().replace("\\", "/")
+    if not raw_filename:
+        raise RenderError("BGM filename must not be empty.")
+
+    relative_filename = Path(raw_filename)
+    posix_filename = PurePosixPath(raw_filename)
+    windows_filename = PureWindowsPath(raw_filename)
+    filename_parts = [part for part in raw_filename.split("/") if part]
+    if (
+        len(filename_parts) != 1
+        or relative_filename.is_absolute()
+        or posix_filename.is_absolute()
+        or windows_filename.is_absolute()
+        or windows_filename.drive
+        or any(part in {".", ".."} for part in filename_parts)
+    ):
+        raise RenderError(f"BGM filename must be a plain file name under BGM category: {configured_filename}")
+    if relative_filename.suffix.lower() not in _BGM_EXTENSIONS:
+        raise RenderError(f"Unsupported BGM file extension: {configured_filename}")
+
+    candidate = (category_dir / relative_filename).resolve()
+    try:
+        candidate.relative_to(category_dir)
+    except ValueError as exc:
+        raise RenderError(f"BGM filename must stay under BGM category: {configured_filename}") from exc
     if not candidate.is_file():
         raise RenderError(f"BGM file not found: {candidate}")
     return candidate

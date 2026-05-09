@@ -1,6 +1,6 @@
 """测试随机 BGM 渲染。
 
-默认测试 group 1，pipeline 使用 bgm-concat，不指定 BGM_FILE，让服务递归随机选择音乐。
+默认测试 group 1，pipeline 使用 bgm-concat，不指定 BGM 分类，让服务递归随机选择音乐。
 运行:
 python api-test/render_bgm_random.py
 """
@@ -18,7 +18,8 @@ DOWNLOAD_DIR = Path(__file__).resolve().parent / "downloads"
 
 PIPELINE = "bgm-concat"
 GROUP_IDS = [1]
-BGM_FILE: str | None = None
+BGM_CATEGORY: str | None = None
+BGM_FILENAME: str | None = None
 DOWNLOAD = True
 
 
@@ -28,7 +29,8 @@ def main() -> int:
         api_key=API_KEY,
         pipeline=PIPELINE,
         group_ids=GROUP_IDS,
-        bgm_file=BGM_FILE,
+        bgm_category=BGM_CATEGORY,
+        bgm_filename=BGM_FILENAME,
         download=DOWNLOAD,
         download_dir=DOWNLOAD_DIR,
     ).run()

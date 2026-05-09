@@ -18,7 +18,8 @@ DOWNLOAD_DIR = Path(__file__).resolve().parent / "downloads"
 
 PIPELINE = "trim-mixed-concat"
 GROUP_IDS = [1]
-BGM_FILE: str | None = None
+BGM_CATEGORY: str | None = None
+BGM_FILENAME: str | None = None
 DOWNLOAD = True
 
 
@@ -28,7 +29,8 @@ def main() -> int:
         api_key=API_KEY,
         pipeline=PIPELINE,
         group_ids=GROUP_IDS,
-        bgm_file=BGM_FILE,
+        bgm_category=BGM_CATEGORY,
+        bgm_filename=BGM_FILENAME,
         download=DOWNLOAD,
         download_dir=DOWNLOAD_DIR,
     ).run()

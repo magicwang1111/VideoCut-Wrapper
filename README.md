@@ -176,13 +176,14 @@ videocut serve --host 0.0.0.0 --port 3000
       { "index": 1, "type": "cut", "duration": 0 }
     ],
     "bgm": {
-      "file": "舒缓/1.mp3"
+      "category": "舒缓",
+      "filename": "1.mp3"
     }
   }
 }
 ```
 
-`overrides.bgm.file` 用来指定某一首 BGM，路径是 `/app/input/bgm` 下的相对路径。不传时保持随机选择。
+`overrides.bgm.category + filename` 用来指定某一首 BGM。只指定 `category` 时，会在该分类目录下随机选择一首；都不传时保持全目录随机选择。
 
 ## API
 
@@ -333,7 +334,8 @@ curl -X POST "http://127.0.0.1:3000/upload" \
       { "index": 1, "type": "dissolve", "duration": 0.5 }
     ],
     "bgm": {
-      "file": "舒缓/1.mp3"
+      "category": "舒缓",
+      "filename": "1.mp3"
     }
   }
 }
@@ -362,7 +364,8 @@ curl -X POST "http://127.0.0.1:3000/render" \
         { "index": 1, "type": "dissolve", "duration": 0.5 }
       ],
       "bgm": {
-        "file": "舒缓/1.mp3"
+        "category": "舒缓",
+        "filename": "1.mp3"
       }
     }
   }'

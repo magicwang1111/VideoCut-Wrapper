@@ -1,57 +1,47 @@
 {
   "bgmRoot": "/app/input/bgm",
-  "pathRule": "API overrides.bgm.file uses the path field below, relative to /app/input/bgm.",
+  "pathRule": "API overrides.bgm.category + overrides.bgm.filename uses the category and filename fields below, relative to /app/input/bgm.",
   "generatedFrom": "D:\\VideoCut-Wrapper\\input\\bgm",
   "files": [
     {
       "category": "激烈",
-      "filename": "2.mp3",
-      "path": "激烈/2.mp3"
+      "filename": "2.mp3"
     },
     {
       "category": "激烈",
-      "filename": "4.mp3",
-      "path": "激烈/4.mp3"
+      "filename": "4.mp3"
     },
     {
       "category": "激烈",
-      "filename": "5.mp3",
-      "path": "激烈/5.mp3"
+      "filename": "5.mp3"
     },
     {
       "category": "激烈",
-      "filename": "7.mp3",
-      "path": "激烈/7.mp3"
+      "filename": "7.mp3"
     },
     {
       "category": "激烈",
-      "filename": "9.mp3",
-      "path": "激烈/9.mp3"
+      "filename": "9.mp3"
     },
     {
       "category": "舒缓",
-      "filename": "1.mp3",
-      "path": "舒缓/1.mp3"
+      "filename": "1.mp3"
     },
     {
       "category": "舒缓",
-      "filename": "10.mp3",
-      "path": "舒缓/10.mp3"
+      "filename": "10.mp3"
     },
     {
       "category": "舒缓",
-      "filename": "3.mp3",
-      "path": "舒缓/3.mp3"
+      "filename": "3.mp3"
     },
     {
       "category": "舒缓",
-      "filename": "6.mp3",
-      "path": "舒缓/6.mp3"
+      "filename": "6.mp3"
     },
     {
       "category": "舒缓",
-      "filename": "8.mp3",
-      "path": "舒缓/8.mp3"
+      "filename": "8.mp3"
     }
   ]
 }

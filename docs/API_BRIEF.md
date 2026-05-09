@@ -71,7 +71,7 @@ X-Api-Key: your-api-key
 
 调用方通常只需要传 `pipeline` 和 `clips`。裁剪、转场、画质、BGM 等渲染参数由服务端按选定 pipeline 的固定配置处理。
 
-如果要指定某一首 BGM，在 `overrides.bgm.file` 里传 `/app/input/bgm` 下的相对路径：
+如果要指定某一首 BGM，在 `overrides.bgm` 里传清单里的 `category + filename`：
 
 ```json
 {
@@ -82,7 +82,8 @@ X-Api-Key: your-api-key
   ],
   "overrides": {
     "bgm": {
-      "file": "舒缓/1.mp3"
+      "category": "舒缓",
+      "filename": "1.mp3"
     }
   }
 }
@@ -90,11 +91,48 @@ X-Api-Key: your-api-key
 
 BGM 路径规则：
 
-- `file` 只能是 `/app/input/bgm` 下的相对路径，支持子目录。
-- 不允许绝对路径，也不允许 `..`。
-- 指定文件不存在时任务失败，不会回退随机音乐。
-- 不传 `bgm.file` 时，服务端会在 `/app/input/bgm` 下递归随机选择一首。
+- `category` 只能是 `/app/input/bgm` 下的相对目录名，例如 `舒缓`。
+- `category + filename` 可精确指定该分类下的文件，例如 `{"category": "舒缓", "filename": "1.mp3"}`。
+- 只传 `bgm.category` 且不传 `bgm.filename` 时，服务端只在该分类目录下随机选择一首。
+- 不允许绝对路径，也不允许 `.` 或 `..`。
+- 指定文件或分类目录不存在时任务失败，不会回退随机音乐。
+- 不传 `bgm.category` 时，服务端会在 `/app/input/bgm` 下递归随机选择一首。
 - BGM 文件由容器启动同步逻辑从 `BGM_OSS_URI` 同步到 `/app/input/bgm`，`/render` 不按 OSS key 单独下载音乐。
+
+按分类随机选择 BGM：
+
+```json
+{
+  "pipeline": "bgm-concat",
+  "clips": [
+    "GouMei-Video-Cut/test-input/1/clip_001.mp4",
+    "GouMei-Video-Cut/test-input/1/clip_002.mp4"
+  ],
+  "overrides": {
+    "bgm": {
+      "category": "舒缓"
+    }
+  }
+}
+```
+
+按分类和文件名指定 BGM：
+
+```json
+{
+  "pipeline": "bgm-concat",
+  "clips": [
+    "GouMei-Video-Cut/test-input/1/clip_001.mp4",
+    "GouMei-Video-Cut/test-input/1/clip_002.mp4"
+  ],
+  "overrides": {
+    "bgm": {
+      "category": "舒缓",
+      "filename": "1.mp3"
+    }
+  }
+}
+```
 
 `clips` 约定：
 
@@ -299,7 +337,8 @@ curl -X POST "http://127.0.0.1:3000/render" \
     ],
     "overrides": {
       "bgm": {
-        "file": "舒缓/1.mp3"
+        "category": "舒缓",
+        "filename": "1.mp3"
       }
     }
   }'
@@ -322,7 +361,8 @@ payload = {
     ],
     "overrides": {
         "bgm": {
-            "file": "舒缓/1.mp3",
+            "category": "舒缓",
+            "filename": "1.mp3",
         },
     },
 }

@@ -14,14 +14,16 @@ def make_tester(
     api_key: str,
     pipeline: str,
     group_ids: list[int],
-    bgm_file: object = _UNSET,
+    bgm_category: object = _UNSET,
+    bgm_filename: object = _UNSET,
     download: bool,
     download_dir: Path,
     request_timeout: int = 60,
     poll_interval_seconds: float = 5.0,
     poll_timeout_seconds: int = 1800,
 ) -> VideoCutHttpTester:
-    selected_bgm_file = None if bgm_file is _UNSET else cast(str | None, bgm_file)
+    selected_bgm_category = None if bgm_category is _UNSET else cast(str | None, bgm_category)
+    selected_bgm_filename = None if bgm_filename is _UNSET else cast(str | None, bgm_filename)
     return VideoCutHttpTester(
         api_base_url=api_base_url,
         api_key=api_key,
@@ -31,6 +33,7 @@ def make_tester(
         poll_timeout_seconds=poll_timeout_seconds,
         pipeline=pipeline,
         group_ids=list(group_ids),
-        bgm_file=selected_bgm_file,
+        bgm_category=selected_bgm_category,
+        bgm_filename=selected_bgm_filename,
         download=download,
     )

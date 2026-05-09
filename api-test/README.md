@@ -410,7 +410,8 @@ payload = {
     ],
     "overrides": {
         "bgm": {
-            "file": "舒缓/1.mp3",
+            "category": "舒缓",
+            "filename": "1.mp3",
         },
     },
 }
@@ -460,7 +461,8 @@ curl -X POST "http://127.0.0.1:3000/render" \
     ],
     "overrides": {
       "bgm": {
-        "file": "舒缓/1.mp3"
+        "category": "舒缓",
+        "filename": "1.mp3"
       }
     }
   }'
@@ -509,8 +511,8 @@ python api-test/render_zoom_dissolve.py
 
 说明：
 
-- `render_bgm_file.py` 顶部的 `BGM_FILE = "舒缓/1.mp3"` 可以直接改成 `激烈/2.mp3` 等路径。
-- 可选 BGM 路径清单见 [../docs/BGM_MANIFEST.json](../docs/BGM_MANIFEST.json)。
+- `render_bgm_file.py` 顶部的 `BGM_CATEGORY = "舒缓"`、`BGM_FILENAME = "1.mp3"` 可以直接改成清单里的其他值。
+- 可选 BGM 清单见 [../docs/BGM_MANIFEST.json](../docs/BGM_MANIFEST.json)。
 - `render_groups_1_5.py` / `render_groups_1_16.py` 顶部的 `GROUP_IDS` 控制并发组。
 - `render_trim_mixed.py` / `render_zoom_dissolve.py` 顶部的 `PIPELINE` 控制要测的 pipeline。
-- 每个脚本顶部都有自己的 `API_BASE_URL`、`PIPELINE`、`GROUP_IDS`、`BGM_FILE`、`DOWNLOAD`。
+- 每个脚本顶部都有自己的 `API_BASE_URL`、`PIPELINE`、`GROUP_IDS`、`BGM_CATEGORY`、`BGM_FILENAME`、`DOWNLOAD`。

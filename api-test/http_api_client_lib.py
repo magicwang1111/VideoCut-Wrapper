@@ -43,7 +43,8 @@ class VideoCutHttpTester:
         poll_timeout_seconds: int,
         pipeline: str,
         group_ids: list[int],
-        bgm_file: str | None,
+        bgm_category: str | None,
+        bgm_filename: str | None,
         download: bool,
     ) -> None:
         self.api_base_url = api_base_url.rstrip("/")
@@ -54,7 +55,8 @@ class VideoCutHttpTester:
         self.poll_timeout_seconds = poll_timeout_seconds
         self.pipeline = pipeline
         self.group_ids = group_ids
-        self.bgm_file = bgm_file.strip() if isinstance(bgm_file, str) and bgm_file.strip() else None
+        self.bgm_category = bgm_category.strip() if isinstance(bgm_category, str) and bgm_category.strip() else None
+        self.bgm_filename = bgm_filename.strip() if isinstance(bgm_filename, str) and bgm_filename.strip() else None
         self.download = download
 
     def headers(self, *, json_body: bool = False) -> dict[str, str]:
@@ -115,8 +117,10 @@ class VideoCutHttpTester:
 
     def build_pipeline_payload(self, group_id: int) -> dict[str, Any]:
         overrides: dict[str, Any] = {}
-        if self.bgm_file:
-            overrides["bgm"] = {"file": self.bgm_file}
+        if self.bgm_category:
+            overrides["bgm"] = {"category": self.bgm_category}
+            if self.bgm_filename:
+                overrides["bgm"]["filename"] = self.bgm_filename
         return {
             "pipeline": self.pipeline,
             "clips": REAL_OSS_TEST_CLIP_GROUPS[group_id],
@@ -250,5 +254,10 @@ class VideoCutHttpTester:
         print(f"[config] API_BASE_URL={self.api_base_url}")
         print(f"[config] API_KEY_SET={bool(self.api_key and self.api_key != 'change-me')}")
         print(f"[config] pipeline={self.pipeline}, groups={self.group_ids}, download={self.download}")
-        print(f"[config] bgm_file={self.bgm_file or '<random>'}")
+        bgm_label = (
+            f"{self.bgm_category}/{self.bgm_filename}"
+            if self.bgm_category and self.bgm_filename
+            else (self.bgm_category or "<random>")
+        )
+        print(f"[config] bgm={bgm_label}")
         print(f"[config] download_dir={self.download_dir}")
