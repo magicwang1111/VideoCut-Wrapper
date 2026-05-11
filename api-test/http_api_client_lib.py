@@ -204,21 +204,175 @@ class VideoCutHttpTester:
         print(f"{prefix(label)}[download] saved_to={target}")
         return target
 
+    def build_summary(
+        self,
+        *,
+        group_id: int,
+        task_id: str,
+        task: dict[str, Any] | None,
+        status: str | None = None,
+        error: str | None = None,
+        output_path: str | None = None,
+        download_error: str | None = None,
+    ) -> dict[str, Any]:
+        summary: dict[str, Any] = {
+            "label": f"group{group_id}",
+            "group": group_id,
+            "taskId": task_id,
+            "status": status or (task.get("status") if task else None),
+            "outputUrl": task.get("outputUrl") if task else None,
+            "outputPath": output_path,
+        }
+        if error:
+            summary["error"] = error
+        if download_error:
+            summary["downloadError"] = download_error
+        return summary
+
+    def complete_summary(self, group_id: int, task_id: str, task: dict[str, Any]) -> dict[str, Any]:
+        label = f"group{group_id}"
+        output_path = None
+        download_error = None
+        if task.get("status") == "completed" and self.download:
+            try:
+                output_path = str(self.download_task(task_id, group_id, label=label))
+            except Exception as exc:
+                download_error = str(exc)
+        return self.build_summary(
+            group_id=group_id,
+            task_id=task_id,
+            task=task,
+            output_path=output_path,
+            download_error=download_error,
+        )
+
     def run_one(self, group_id: int) -> dict[str, Any]:
         label = f"group{group_id}"
         task_id = self.create_render_task(group_id, label=label)
-        task = self.poll_task(task_id, label=label)
-        output_path = None
-        if self.download:
-            output_path = str(self.download_task(task_id, group_id, label=label))
-        return {
-            "label": label,
-            "group": group_id,
-            "taskId": task_id,
-            "status": task.get("status"),
-            "outputUrl": task.get("outputUrl"),
-            "outputPath": output_path,
-        }
+        try:
+            task = self.poll_task(task_id, label=label)
+        except TimeoutError as exc:
+            task = None
+            try:
+                task = self.get_task(task_id)
+            except Exception:
+                pass
+            return self.build_summary(
+                group_id=group_id,
+                task_id=task_id,
+                task=task,
+                status="timeout",
+                error=str(exc),
+            )
+        return self.complete_summary(group_id, task_id, task)
+
+    def run_many(self) -> list[dict[str, Any]]:
+        print(f"[batch] submitting {len(self.group_ids)} requests concurrently: groups={self.group_ids}")
+        submitted: list[dict[str, Any]] = []
+        results: list[dict[str, Any]] = []
+        with ThreadPoolExecutor(max_workers=len(self.group_ids)) as executor:
+            future_map = {
+                executor.submit(self.create_render_task, group_id, label=f"group{group_id}"): group_id
+                for group_id in self.group_ids
+            }
+            for future in as_completed(future_map):
+                group_id = future_map[future]
+                label = f"group{group_id}"
+                try:
+                    task_id = future.result()
+                except Exception as exc:
+                    results.append(
+                        {
+                            "label": label,
+                            "group": group_id,
+                            "status": "failed",
+                            "error": str(exc),
+                        }
+                    )
+                    continue
+                submitted.append({"label": label, "group": group_id, "taskId": task_id})
+
+        if submitted:
+            results.extend(self.poll_submitted_tasks(submitted))
+        return sorted(results, key=lambda item: int(item["group"]))
+
+    def poll_submitted_tasks(self, submitted: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        deadline = time.time() + self.poll_timeout_seconds
+        remaining = {str(item["taskId"]): item for item in submitted}
+        results: list[dict[str, Any]] = []
+        print(
+            f"[batch][poll] tasks={len(remaining)}, timeout={self.poll_timeout_seconds}s, "
+            f"interval={self.poll_interval_seconds}s"
+        )
+
+        while remaining:
+            for task_id, item in list(remaining.items()):
+                group_id = int(item["group"])
+                label = str(item["label"])
+                try:
+                    task = self.get_task(task_id)
+                except Exception as exc:
+                    results.append(
+                        self.build_summary(
+                            group_id=group_id,
+                            task_id=task_id,
+                            task=None,
+                            status="failed",
+                            error=str(exc),
+                        )
+                    )
+                    remaining.pop(task_id, None)
+                    continue
+
+                status = task.get("status")
+                progress = task.get("progress")
+                attempt = task.get("attempt")
+                output_url = task.get("outputUrl")
+                error = task.get("error")
+                print(
+                    f"{prefix(label)}[poll] status={status}, progress={progress}, attempt={attempt}, "
+                    f"outputUrl={output_url}, error={error}"
+                )
+
+                if status == "completed":
+                    print(f"{prefix(label)}[poll] final task response:")
+                    print(pretty(task))
+                    results.append(self.complete_summary(group_id, task_id, task))
+                    remaining.pop(task_id, None)
+                elif status == "failed":
+                    results.append(
+                        self.build_summary(
+                            group_id=group_id,
+                            task_id=task_id,
+                            task=task,
+                            error=f"task failed:\n{pretty(task)}",
+                        )
+                    )
+                    remaining.pop(task_id, None)
+
+            if not remaining:
+                break
+            if time.time() >= deadline:
+                for task_id, item in sorted(remaining.items(), key=lambda entry: int(entry[1]["group"])):
+                    group_id = int(item["group"])
+                    task = None
+                    try:
+                        task = self.get_task(task_id)
+                    except Exception:
+                        pass
+                    results.append(
+                        self.build_summary(
+                            group_id=group_id,
+                            task_id=task_id,
+                            task=task,
+                            status="timeout",
+                            error=f"poll timed out after {self.poll_timeout_seconds}s for task {task_id}",
+                        )
+                    )
+                break
+            time.sleep(self.poll_interval_seconds)
+
+        return results
 
     def run(self) -> None:
         self.validate()
@@ -230,25 +384,9 @@ class VideoCutHttpTester:
             print(pretty(summary))
             return
 
-        print(f"[batch] submitting {len(self.group_ids)} requests concurrently: groups={self.group_ids}")
-        results: list[dict[str, Any]] = []
-        with ThreadPoolExecutor(max_workers=len(self.group_ids)) as executor:
-            future_map = {executor.submit(self.run_one, group_id): group_id for group_id in self.group_ids}
-            for future in as_completed(future_map):
-                group_id = future_map[future]
-                try:
-                    results.append(future.result())
-                except Exception as exc:
-                    results.append(
-                        {
-                            "label": f"group{group_id}",
-                            "group": group_id,
-                            "status": "failed",
-                            "error": str(exc),
-                        }
-                    )
+        results = self.run_many()
         print("[summary]")
-        print(pretty(sorted(results, key=lambda item: int(item["group"]))))
+        print(pretty(results))
 
     def print_config(self) -> None:
         print(f"[config] API_BASE_URL={self.api_base_url}")

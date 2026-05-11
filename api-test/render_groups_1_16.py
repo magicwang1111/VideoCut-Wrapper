@@ -1,6 +1,8 @@
 """批量测试 1-16 组素材。
 
-默认 pipeline 使用 bgm-concat，BGM 随机，不下载结果文件，主要用于压测队列和 worker。
+默认 pipeline 使用 bgm-concat，BGM 随机，下载 16 个结果文件。
+长批量会排队执行，默认轮询 2 小时；可通过环境变量覆盖：
+DOWNLOAD=0 POLL_TIMEOUT_SECONDS=7200 python api-test/render_groups_1_16.py
 运行:
 python api-test/render_groups_1_16.py
 """
@@ -20,7 +22,8 @@ PIPELINE = "bgm-concat"
 GROUP_IDS = list(range(1, 17))
 BGM_CATEGORY: str | None = None
 BGM_FILENAME: str | None = None
-DOWNLOAD = False
+DOWNLOAD = os.getenv("DOWNLOAD", "1").strip().lower() not in {"0", "false", "no", "off"}
+POLL_TIMEOUT_SECONDS = int(os.getenv("POLL_TIMEOUT_SECONDS", "7200"))
 
 
 def main() -> int:
@@ -33,6 +36,7 @@ def main() -> int:
         bgm_filename=BGM_FILENAME,
         download=DOWNLOAD,
         download_dir=DOWNLOAD_DIR,
+        poll_timeout_seconds=POLL_TIMEOUT_SECONDS,
     ).run()
     return 0
 
