@@ -40,6 +40,7 @@ class ApiErrorCode(IntEnum):
     UNAUTHORIZED = 1001
     UNSUPPORTED_CONTENT_TYPE = 1002
     VALIDATION_ERROR = 1003
+    NOT_FOUND = 1004
     INVALID_BODY = 2001
     INVALID_CLIP_REFERENCE = 2002
     PIPELINE_NOT_FOUND = 2003
@@ -213,13 +214,18 @@ def create_app() -> FastAPI:
     app = FastAPI(lifespan=lifespan)
 
     @app.exception_handler(StarletteHTTPException)
-    async def http_exception_handler(_: Request, exc: StarletteHTTPException):
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         if isinstance(exc.detail, dict) and "error_code" in exc.detail:
             return JSONResponse(status_code=exc.status_code, content=exc.detail)
+        if exc.status_code == 404:
+            return JSONResponse(
+                status_code=404,
+                content=api_error_payload(ApiErrorCode.NOT_FOUND, "Not Found.", {"path": request.url.path}),
+            )
         logger.warning("Unhandled HTTPException detail shape: %s", exc.detail)
         return JSONResponse(
             status_code=exc.status_code,
-            content=api_error_payload(ApiErrorCode.INTERNAL_ERROR, "Unexpected API error."),
+            content=api_error_payload(ApiErrorCode.VALIDATION_ERROR, str(exc.detail)),
         )
 
     @app.exception_handler(RequestValidationError)

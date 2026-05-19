@@ -471,6 +471,14 @@ def test_api_error_codes_for_auth_pipeline_task_and_download(tmp_path, monkeypat
     monkeypatch.setattr(api_app_module, "TaskQueue", FakeTaskQueue)
 
     with TestClient(api_app_module.create_app()) as client:
+        missing_route = client.get("/not-a-route", headers={"X-Api-Key": "test-key"})
+        assert missing_route.status_code == 404
+        assert missing_route.json() == {
+            "error_code": 1004,
+            "message": "Not Found.",
+            "details": {"path": "/not-a-route"},
+        }
+
         unauthorized = client.get("/tasks/t_missing")
         assert unauthorized.status_code == 401
         assert unauthorized.json()["error_code"] == 1001
