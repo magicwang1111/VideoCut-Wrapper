@@ -21,6 +21,7 @@ videocut serve --host 0.0.0.0 --port 3000
 | 方法 | 路径 | 鉴权 | 用途 |
 |---|---|---|---|
 | `GET` | `/health` | 否 | 服务和队列健康检查 |
+| `GET` | `/bgm` | 是 | 查询当前可用 BGM 分类和文件清单 |
 | `POST` | `/upload` | 是 | 上传本地素材，返回 `fileId` 和 `ossKey` |
 | `POST` | `/render` | 是 | 创建异步渲染任务，返回 `taskId` |
 | `GET` | `/tasks/{taskId}` | 是 | 查询任务状态、结果地址和失败历史 |
@@ -37,13 +38,13 @@ videocut serve --host 0.0.0.0 --port 3000
 除 `/health` 外，业务接口都需要请求头：
 
 ```http
-X-Api-Key: your-api-key
+X-Api-Key: goumee-music
 ```
 
 服务端从环境变量 `API_KEYS` 读取允许的 key，多个 key 用英文逗号分隔：
 
 ```bash
-API_KEYS=key-a,key-b
+API_KEYS=goumee-music
 ```
 
 鉴权失败返回：
@@ -95,7 +96,7 @@ HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读
 | `400` | `2003` | pipeline 不存在 | 使用已注册 pipeline |
 | `404` | `2004` | 查询的 `taskId` 不存在 | 检查 `taskId` |
 | `400` | `2005` | 上传格式不支持 | 更换文件格式 |
-| `400` | `2006` | 上传引用的 `fileId` 不存在 | 重新上传或修正 `fileId` |
+| `400/404` | `2006` | 上传引用的 `fileId` 不存在，或 BGM 目录不存在 | 重新上传、修正 `fileId` 或检查 `BGM_DIR` |
 | `404` | `3001` | 下载时任务不存在、未完成或无输出 | 先轮询到 `completed` |
 | `503` | `3002` | 渲染队列已满 | 稍后重试 |
 | `413` | `3003` | 上传文件过大 | 压缩或拆分文件 |
@@ -109,6 +110,7 @@ HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读
 
 ```text
 GET /health
+GET /bgm 可选，获取可指定的 BGM 分类和文件
 POST /render
 GET /tasks/{taskId} 轮询到 completed 或 failed
 GET /tasks/{taskId}/download
@@ -140,6 +142,7 @@ GouMei-Video-Cut/
 
 ```text
 GET /health
+GET /bgm 可选，获取可指定的 BGM 分类和文件
 POST /upload 多次上传素材
 POST /render，clips 传 fileId 数组
 GET /tasks/{taskId} 轮询到 completed 或 failed
@@ -176,7 +179,54 @@ curl "http://127.0.0.1:3000/health"
 | `queueSize` | `number` | 等待 worker 处理的队列长度，不含正在渲染的任务 |
 | `pipelines` | `number` | 服务启动时扫描到的 pipeline 数量 |
 
-## 5. `POST /upload`
+## 5. `GET /bgm`
+
+查询当前运行环境下可用的 BGM 分类和文件清单。接口每次请求都会动态扫描 `BGM_DIR`，返回值里的 `category + filename` 可以直接用于 `/render` 的 `overrides.bgm`。
+
+请求：
+
+```bash
+curl "http://127.0.0.1:3000/bgm" \
+  -H "X-Api-Key: goumee-music"
+```
+
+成功响应：
+
+```json
+{
+  "bgmRoot": "/app/input/bgm",
+  "categories": [
+    {"name": "激烈", "count": 5},
+    {"name": "舒缓", "count": 5}
+  ],
+  "files": [
+    {"category": "激烈", "filename": "2.mp3"},
+    {"category": "舒缓", "filename": "1.mp3"}
+  ]
+}
+```
+
+字段说明：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `bgmRoot` | `string` | 服务端实际扫描的 BGM 根目录，`BGM_DIR` 优先，否则默认 `input/bgm` |
+| `categories` | `array` | 分类汇总，`name` 是分类目录，`count` 是该分类下音频数量 |
+| `files` | `array` | 音乐文件清单，每项的 `category` 和 `filename` 可传给 `/render` |
+
+目录存在但没有音频文件时，`categories` 和 `files` 返回空数组。目录不存在时返回：
+
+```json
+{
+  "error_code": 2006,
+  "message": "BGM directory not found.",
+  "details": {
+    "bgmRoot": "/app/input/bgm"
+  }
+}
+```
+
+## 6. `POST /upload`
 
 上传单个素材文件。服务端会写入临时目录，再上传到真实 OSS 或本地 OSS 模式目录，并保存 `fileId -> ossKey` 映射。
 
@@ -193,7 +243,7 @@ curl "http://127.0.0.1:3000/health"
 
 ```bash
 curl -X POST "http://127.0.0.1:3000/upload" \
-  -H "X-Api-Key: your-api-key" \
+  -H "X-Api-Key: goumee-music" \
   -F "file=@D:/input/demo.mp4"
 ```
 
@@ -244,14 +294,14 @@ curl -X POST "http://127.0.0.1:3000/upload" \
 }
 ```
 
-## 6. `POST /render`
+## 7. `POST /render`
 
 创建异步渲染任务。接口只负责校验请求、解析素材引用、写入任务和入队，不会同步等待渲染完成。
 
 请求头：
 
 ```http
-X-Api-Key: your-api-key
+X-Api-Key: goumee-music
 Content-Type: application/json
 ```
 
@@ -297,7 +347,7 @@ Content-Type: application/json
 
 `taskId` 规则：`t_` 前缀加 16 位十六进制字符串，总长度 18。
 
-### 6.1 素材引用规则
+### 7.1 素材引用规则
 
 `clips` 中每个元素按以下规则解析：
 
@@ -347,7 +397,7 @@ other-prefix/input/a.mp4
 }
 ```
 
-### 6.2 当前支持的 `overrides`
+### 7.2 当前支持的 `overrides`
 
 当前运行时代码实际识别这些覆盖项：
 
@@ -401,10 +451,11 @@ zoom-dissolve
 
 BGM 指定规则：
 
+- 对接方应先调用 `GET /bgm` 获取当前实时清单；`docs/BGM_MANIFEST.json` 仅作为静态示例/历史清单参考。
 - `overrides.bgm.category` 是 `/app/input/bgm` 下的相对目录名，例如 `舒缓`。
 - `overrides.bgm.filename` 是分类目录下的文件名，例如 `1.mp3`。
 - 传 `category + filename` 时，服务端精确选择该分类下的文件；只传 `category` 时，服务端只在该分类目录下随机选择一首。
-- 当前 BGM 对齐清单见 `docs/BGM_MANIFEST.json`：精确指定歌曲使用清单里的 `category + filename`，按分类随机使用清单里的 `category` 字段。
+- 精确指定歌曲时使用 `GET /bgm` 响应里的 `files[].category + files[].filename`，按分类随机时使用 `categories[].name`。
 - 支持按类型放子目录；不传 `category` 时，服务端会递归扫描 `/app/input/bgm` 并随机选择一首。
 - 不允许绝对路径，也不允许 `..` 路径穿越。
 - 指定文件或分类目录不存在时任务失败，不会回退随机音乐。
@@ -435,7 +486,7 @@ BGM 指定规则：
 }
 ```
 
-### 6.3 `/render` 常见错误
+### 7.3 `/render` 常见错误
 
 空 `pipeline` 或空 `clips`：
 
@@ -490,7 +541,7 @@ JSON 结构类型错误返回 `422`：
 }
 ```
 
-## 7. `GET /tasks/{taskId}`
+## 8. `GET /tasks/{taskId}`
 
 查询任务状态。建议调用方每 `3-5` 秒轮询一次，直到 `status` 为 `completed` 或 `failed`。
 
@@ -498,7 +549,7 @@ JSON 结构类型错误返回 `422`：
 
 ```bash
 curl "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78" \
-  -H "X-Api-Key: your-api-key"
+  -H "X-Api-Key: goumee-music"
 ```
 
 成功响应示例：
@@ -553,7 +604,7 @@ curl "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78" \
 
 HTTP 状态码为 `404`。
 
-### 7.1 状态流转
+### 8.1 状态流转
 
 典型状态流转：
 
@@ -580,7 +631,7 @@ rendering
 - 服务重启时，会把遗留的 `pending` 和 `rendering` 任务重新放回队列。遗留的 `rendering` 任务会记录一次失败历史。
 - 任务完成或最终失败后，会在服务启动清理中按 `TASK_TTL_DAYS` 删除历史记录，默认保留 `7` 天。
 
-## 8. `GET /tasks/{taskId}/download`
+## 9. `GET /tasks/{taskId}/download`
 
 下载渲染结果。调用前建议先确认 `/tasks/{taskId}` 返回 `status=completed`。
 
@@ -588,7 +639,7 @@ rendering
 
 ```bash
 curl -L "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78/download" \
-  -H "X-Api-Key: your-api-key" \
+  -H "X-Api-Key: goumee-music" \
   -o final.mp4
 ```
 
@@ -616,7 +667,7 @@ curl -L "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78/download" \
 
 HTTP 状态码为 `404`。
 
-## 9. 当前 pipeline 列表
+## 10. 当前 pipeline 列表
 
 服务启动时从 `PIPELINES_DIR` 扫描 pipeline。默认目录是仓库下的 `pipelines/`。
 
@@ -638,7 +689,7 @@ HTTP 状态码为 `404`。
 - 如果传入素材数量超过默认槽位，后续素材会使用默认空裁剪和默认转场。
 - 如果传入素材数量少于默认槽位，只会渲染实际传入的素材。
 
-## 10. 环境变量
+## 11. 环境变量
 
 常用服务配置：
 
@@ -646,7 +697,7 @@ HTTP 状态码为 `404`。
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `API_KEYS` | 空 | 逗号分隔的 API key 白名单。为空时业务接口都会鉴权失败 |
+| `API_KEYS` | 空 | API key 白名单；当前对接文档固定使用 `goumee-music` |
 | `DB_PATH` | `data/tasks.db` | SQLite 任务库 |
 | `TEMP_DIR` | `temp` | 上传临时文件和 worker 临时目录 |
 | `PIPELINES_DIR` | `pipelines` | pipeline 配置目录 |
@@ -683,12 +734,12 @@ BGM 配置：
 | `SYNC_BGM_ON_STARTUP` | `1` | Docker entrypoint 是否启动时同步 BGM |
 | `BGM_OSS_URI` | `oss://goumee-coze/GouMei-Video-Cut/bgm/` | BGM 同步源 |
 
-## 11. 本地联调配置
+## 12. 本地联调配置
 
 不访问真实 OSS 时，建议启用本地 OSS 模式：
 
 ```powershell
-$env:API_KEYS = "demo-key"
+$env:API_KEYS = "goumee-music"
 $env:OSS_LOCAL_ROOT = "D:\VideoCut-Wrapper\temp\oss-local"
 $env:DB_PATH = "D:\VideoCut-Wrapper\temp\tasks.db"
 $env:TEMP_DIR = "D:\VideoCut-Wrapper\temp"
@@ -702,7 +753,7 @@ videocut serve --host 127.0.0.1 --port 3000
 - 渲染结果会写到 `OSS_LOCAL_ROOT/GouMei-Video-Cut/outputs/<taskId>/final.mp4`。
 - `/tasks/{taskId}/download` 直接返回本地文件。
 
-## 12. Python 对接示例
+## 13. Python 对接示例
 
 ```python
 from __future__ import annotations
@@ -714,7 +765,7 @@ import requests
 
 
 BASE_URL = "http://127.0.0.1:3000"
-API_KEY = "your-api-key"
+API_KEY = "goumee-music"
 
 
 def headers(json_body: bool = False) -> dict[str, str]:
@@ -777,7 +828,7 @@ with target.open("wb") as handle:
             handle.write(chunk)
 ```
 
-## 13. 测试客户端
+## 14. 测试客户端
 
 仓库内置了 HTTP API 测试客户端：
 
@@ -795,12 +846,12 @@ python api-test/render_zoom_dissolve.py
 
 ```powershell
 $env:API_BASE_URL = "http://127.0.0.1:3000"
-$env:API_KEY = "demo-key"
+$env:API_KEY = "goumee-music"
 ```
 
 测试客户端默认使用真实 OSS 测试素材组。素材组定义在 `api-test/http_test_data.py` 的 `REAL_OSS_TEST_CLIP_GROUPS` 中；每个测试脚本顶部都有自己的测试说明和参数。
 
-## 14. 对接注意事项
+## 15. 对接注意事项
 
 - 线上建议在服务前面放 HTTPS 网关或反向代理，API 服务本身只做 `X-Api-Key` 校验。
 - 渲染是 CPU/GPU 和 IO 密集任务，调用方应设置较长轮询超时，例如 30 分钟。

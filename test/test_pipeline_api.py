@@ -79,6 +79,19 @@ def _make_pipeline_payload(name: str = "trim-mixed-dissolve-v1") -> dict:
     }
 
 
+def _configure_api_env(tmp_path, monkeypatch, pipelines_root: Path, *, bgm_dir: Path | None = None) -> None:
+    monkeypatch.setenv("API_KEYS", "test-key")
+    monkeypatch.setenv("OSS_LOCAL_ROOT", str(tmp_path / "oss"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "tasks.db"))
+    monkeypatch.setenv("TEMP_DIR", str(tmp_path / "temp"))
+    monkeypatch.setenv("PIPELINES_DIR", str(pipelines_root))
+    if bgm_dir is None:
+        monkeypatch.delenv("BGM_DIR", raising=False)
+    else:
+        monkeypatch.setenv("BGM_DIR", str(bgm_dir))
+    monkeypatch.setattr(api_app_module, "TaskQueue", FakeTaskQueue)
+
+
 def test_pipeline_registry_scans_and_syncs_to_store(tmp_path) -> None:
     pipelines_root = tmp_path / "pipelines"
     _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
@@ -202,6 +215,83 @@ def test_render_endpoint_pipeline_mode(tmp_path, monkeypatch) -> None:
         )
         assert bad_response.status_code == 422
         assert bad_response.json()["error_code"] == 1003
+
+
+def test_bgm_endpoint_requires_auth(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    bgm_dir = tmp_path / "input" / "bgm"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    bgm_dir.mkdir(parents=True)
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root, bgm_dir=bgm_dir)
+
+    with TestClient(api_app_module.create_app()) as client:
+        response = client.get("/bgm")
+        assert response.status_code == 401
+        assert response.json()["error_code"] == 1001
+
+
+def test_bgm_endpoint_returns_catalog_from_runtime_bgm_dir(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    bgm_dir = tmp_path / "runtime" / "bgm"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    (bgm_dir / "激烈").mkdir(parents=True)
+    (bgm_dir / "舒缓").mkdir(parents=True)
+    (bgm_dir / "激烈" / "2.mp3").write_text("intense", encoding="utf-8")
+    (bgm_dir / "舒缓" / "1.mp3").write_text("calm", encoding="utf-8")
+    (bgm_dir / "舒缓" / "note.txt").write_text("ignored", encoding="utf-8")
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root, bgm_dir=bgm_dir)
+
+    with TestClient(api_app_module.create_app()) as client:
+        response = client.get("/bgm", headers={"X-Api-Key": "test-key"})
+        assert response.status_code == 200
+        assert response.json() == {
+            "bgmRoot": str(bgm_dir.resolve()),
+            "categories": [
+                {"name": "激烈", "count": 1},
+                {"name": "舒缓", "count": 1},
+            ],
+            "files": [
+                {"category": "激烈", "filename": "2.mp3"},
+                {"category": "舒缓", "filename": "1.mp3"},
+            ],
+        }
+
+
+def test_bgm_endpoint_returns_empty_catalog_for_empty_bgm_dir(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    bgm_dir = tmp_path / "runtime" / "bgm"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    bgm_dir.mkdir(parents=True)
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root, bgm_dir=bgm_dir)
+
+    with TestClient(api_app_module.create_app()) as client:
+        response = client.get("/bgm", headers={"X-Api-Key": "test-key"})
+        assert response.status_code == 200
+        assert response.json() == {
+            "bgmRoot": str(bgm_dir.resolve()),
+            "categories": [],
+            "files": [],
+        }
+
+
+def test_bgm_endpoint_returns_file_not_found_for_missing_bgm_dir(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    bgm_dir = tmp_path / "missing" / "bgm"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root, bgm_dir=bgm_dir)
+
+    with TestClient(api_app_module.create_app()) as client:
+        response = client.get("/bgm", headers={"X-Api-Key": "test-key"})
+        assert response.status_code == 404
+        assert response.json() == {
+            "error_code": 2006,
+            "message": "BGM directory not found.",
+            "details": {"bgmRoot": str(bgm_dir.resolve())},
+        }
 
 
 def test_validate_variables_required_missing() -> None:

@@ -7,6 +7,7 @@ import pytest
 
 import videocut.bgm as bgm_module
 from videocut.bgm import apply_bgm
+from videocut.bgm import list_bgm_catalog
 from videocut.bgm import resolve_bgm_category_file
 from videocut.bgm import resolve_bgm_dir
 from videocut.bgm import scan_bgm_category_files
@@ -63,6 +64,33 @@ def test_scan_bgm_category_files_limits_random_pool_to_category(tmp_path) -> Non
     ignored.write_text("ignored", encoding="utf-8")
 
     assert scan_bgm_category_files(bgm_dir, "舒缓") == sorted([calm_audio, calm_nested_audio])
+
+
+def test_list_bgm_catalog_uses_relative_category_paths_and_plain_filenames(tmp_path) -> None:
+    bgm_dir = tmp_path / "input" / "bgm"
+    calm_dir = bgm_dir / "舒缓"
+    nested_dir = calm_dir / "nested"
+    intense_dir = bgm_dir / "激烈"
+    nested_dir.mkdir(parents=True)
+    intense_dir.mkdir(parents=True)
+    (calm_dir / "1.mp3").write_text("calm", encoding="utf-8")
+    (nested_dir / "2.wav").write_text("nested", encoding="utf-8")
+    (intense_dir / "3.flac").write_text("intense", encoding="utf-8")
+    (intense_dir / "note.txt").write_text("ignored", encoding="utf-8")
+
+    assert list_bgm_catalog(bgm_dir) == {
+        "bgmRoot": str(bgm_dir.resolve()),
+        "categories": [
+            {"name": "激烈", "count": 1},
+            {"name": "舒缓", "count": 1},
+            {"name": "舒缓/nested", "count": 1},
+        ],
+        "files": [
+            {"category": "激烈", "filename": "3.flac"},
+            {"category": "舒缓", "filename": "1.mp3"},
+            {"category": "舒缓/nested", "filename": "2.wav"},
+        ],
+    }
 
 
 def test_scan_bgm_category_files_rejects_missing_category(tmp_path) -> None:

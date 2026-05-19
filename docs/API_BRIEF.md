@@ -9,7 +9,13 @@ http://127.0.0.1:3000
 除 `/health` 外，所有接口都需要请求头：
 
 ```http
-X-Api-Key: your-api-key
+X-Api-Key: goumee-music
+```
+
+服务端环境变量固定为：
+
+```bash
+API_KEYS=goumee-music
 ```
 
 本文默认调用方已经把素材放在 OSS 中，并在 `/render` 的 `clips` 中传 OSS key。本文不约定上传接口。
@@ -40,12 +46,51 @@ GET /health
 | `queueSize` | `number` | 等待队列长度 |
 | `pipelines` | `number` | 已注册 pipeline 数量 |
 
-## 2. 创建渲染任务
+## 2. 查询音乐列表
+
+```http
+GET /bgm
+X-Api-Key: goumee-music
+```
+
+响应：
+
+```json
+{
+  "bgmRoot": "/app/input/bgm",
+  "categories": [
+    {"name": "激烈", "count": 5},
+    {"name": "舒缓", "count": 5}
+  ],
+  "files": [
+    {"category": "激烈", "filename": "2.mp3"},
+    {"category": "舒缓", "filename": "1.mp3"}
+  ]
+}
+```
+
+字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `bgmRoot` | `string` | 服务端实际扫描的 BGM 根目录 |
+| `categories` | `array` | 分类汇总，`name` 是分类目录，`count` 是该分类下音频数量 |
+| `files` | `array` | 音乐文件清单，`category + filename` 可直接用于 `/render` |
+
+说明：
+
+- 调用方需要指定某首 BGM 时，先调用 `GET /bgm` 查询实时清单。
+- 精确指定歌曲使用 `files[].category + files[].filename`。
+- 按分类随机使用 `categories[].name` 作为 `overrides.bgm.category`。
+- 目录存在但没有音频时，`categories` 和 `files` 返回空数组。
+- `docs/BGM_MANIFEST.json` 仅作为静态示例/历史清单参考。
+
+## 3. 创建渲染任务
 
 ```http
 POST /render
 Content-Type: application/json
-X-Api-Key: your-api-key
+X-Api-Key: goumee-music
 ```
 
 请求体：
@@ -71,7 +116,7 @@ X-Api-Key: your-api-key
 
 调用方通常只需要传 `pipeline` 和 `clips`。裁剪、转场、画质、BGM 等渲染参数由服务端按选定 pipeline 的固定配置处理。
 
-如果要指定某一首 BGM，在 `overrides.bgm` 里传清单里的 `category + filename`：
+如果要指定某一首 BGM，先调用 `GET /bgm` 查询清单，再在 `overrides.bgm` 里传返回的 `category + filename`：
 
 ```json
 {
@@ -91,6 +136,7 @@ X-Api-Key: your-api-key
 
 BGM 路径规则：
 
+- `GET /bgm` 返回实时清单；`docs/BGM_MANIFEST.json` 仅作为静态示例/历史清单参考。
 - `category` 只能是 `/app/input/bgm` 下的相对目录名，例如 `舒缓`。
 - `category + filename` 可精确指定该分类下的文件，例如 `{"category": "舒缓", "filename": "1.mp3"}`。
 - 只传 `bgm.category` 且不传 `bgm.filename` 时，服务端只在该分类目录下随机选择一首。
@@ -160,11 +206,11 @@ GouMei-Video-Cut/test-input/1/clip_001.mp4
 |---|---|---|
 | `taskId` | `string` | 异步任务 ID，后续用于查询状态和下载结果 |
 
-## 3. 查询任务
+## 4. 查询任务
 
 ```http
 GET /tasks/{taskId}
-X-Api-Key: your-api-key
+X-Api-Key: goumee-music
 ```
 
 响应：
@@ -213,11 +259,11 @@ X-Api-Key: your-api-key
 - `completed` 表示成功，可以下载。
 - `failed` 表示最终失败，读取 `error`。
 
-## 4. 下载结果
+## 5. 下载结果
 
 ```http
 GET /tasks/{taskId}/download
-X-Api-Key: your-api-key
+X-Api-Key: goumee-music
 ```
 
 成功时返回视频文件。
@@ -228,11 +274,11 @@ curl 示例：
 
 ```bash
 curl -L "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78/download" \
-  -H "X-Api-Key: your-api-key" \
+  -H "X-Api-Key: goumee-music" \
   -o final.mp4
 ```
 
-## 5. 错误码
+## 6. 错误码
 
 HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读取响应体里的 `error_code`。
 
@@ -268,6 +314,7 @@ HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读
 | `400` | `2002` | `clips` 中存在本地路径、URL 或非法 OSS key | 改传合法 OSS key |
 | `400` | `2003` | pipeline 不存在 | 使用已注册 pipeline |
 | `404` | `2004` | 查询的 `taskId` 不存在 | 检查 `taskId` |
+| `400/404` | `2006` | 上传引用的 `fileId` 不存在，或 BGM 目录不存在 | 重新上传、修正 `fileId` 或检查 `BGM_DIR` |
 | `404` | `3001` | 下载时任务不存在、未完成或无输出 | 先轮询到 `completed` |
 | `503` | `3002` | 渲染队列已满 | 稍后重试 |
 | `500` | `9001` | 未预期服务端异常 | 记录日志并联系服务方 |
@@ -304,6 +351,16 @@ HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读
 
 ```json
 {
+  "error_code": 2006,
+  "message": "BGM directory not found.",
+  "details": {
+    "bgmRoot": "/app/input/bgm"
+  }
+}
+```
+
+```json
+{
   "error_code": 3001,
   "message": "Task output is not ready.",
   "details": {}
@@ -320,13 +377,20 @@ HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读
 }
 ```
 
-## 6. 完整调用示例
+## 7. 完整调用示例
+
+查询音乐列表：
+
+```bash
+curl "http://127.0.0.1:3000/bgm" \
+  -H "X-Api-Key: goumee-music"
+```
 
 直接使用 OSS key：
 
 ```bash
 curl -X POST "http://127.0.0.1:3000/render" \
-  -H "X-Api-Key: your-api-key" \
+  -H "X-Api-Key: goumee-music" \
   -H "Content-Type: application/json" \
   -d '{
     "pipeline": "bgm-concat",
@@ -350,7 +414,7 @@ Python `requests` 版本：
 import requests
 
 base_url = "http://127.0.0.1:3000"
-api_key = "your-api-key"
+api_key = "goumee-music"
 
 payload = {
     "pipeline": "bgm-concat",
@@ -382,18 +446,18 @@ print(task_id)
 
 ```bash
 curl "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78" \
-  -H "X-Api-Key: your-api-key"
+  -H "X-Api-Key: goumee-music"
 ```
 
 下载结果：
 
 ```bash
 curl -L "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78/download" \
-  -H "X-Api-Key: your-api-key" \
+  -H "X-Api-Key: goumee-music" \
   -o final.mp4
 ```
 
-## 7. 可用 pipeline
+## 8. 可用 pipeline
 
 | Pipeline ID | 含义 |
 |---|---|

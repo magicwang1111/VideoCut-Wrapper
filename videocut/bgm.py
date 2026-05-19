@@ -34,6 +34,38 @@ def scan_bgm_files(bgm_dir: Path) -> list[Path]:
     return files
 
 
+def list_bgm_catalog(bgm_dir: Path) -> dict[str, object]:
+    base_dir = bgm_dir.resolve()
+    if not base_dir.is_dir():
+        raise RenderError(f"BGM directory does not exist: {base_dir}")
+
+    files: list[dict[str, str]] = []
+    category_counts: dict[str, int] = {}
+    audio_files = sorted(
+        (
+            p
+            for p in base_dir.rglob("*")
+            if p.is_file() and p.suffix.lower() in _BGM_EXTENSIONS
+        ),
+        key=lambda p: p.relative_to(base_dir).as_posix(),
+    )
+    for audio_file in audio_files:
+        relative_parent = audio_file.parent.relative_to(base_dir).as_posix()
+        category = "" if relative_parent == "." else relative_parent
+        files.append({"category": category, "filename": audio_file.name})
+        category_counts[category] = category_counts.get(category, 0) + 1
+
+    categories = [
+        {"name": category, "count": category_counts[category]}
+        for category in sorted(category_counts)
+    ]
+    return {
+        "bgmRoot": str(base_dir),
+        "categories": categories,
+        "files": files,
+    }
+
+
 def resolve_bgm_category_dir(bgm_dir: Path, configured_category: str) -> Path:
     raw_category = configured_category.strip().replace("\\", "/")
     if not raw_category:

@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from videocut.bgm import list_bgm_catalog, resolve_bgm_dir
 from videocut.env import load_project_env
 from videocut.errors import PipelineNotFoundError, VideoCutError
 from videocut.log import get_logger, setup_logging
@@ -266,6 +267,18 @@ def create_app() -> FastAPI:
             "queueSize": queue_obj.queue_size,
             "pipelines": app.state.pipeline_count,
         }
+
+    @app.get("/bgm", dependencies=[Depends(auth_guard)])
+    async def list_bgm() -> dict[str, object]:
+        bgm_dir = resolve_bgm_dir(app.state.root_dir)
+        if not bgm_dir.is_dir():
+            raise api_http_exception(
+                404,
+                ApiErrorCode.FILE_NOT_FOUND,
+                "BGM directory not found.",
+                {"bgmRoot": str(bgm_dir)},
+            )
+        return list_bgm_catalog(bgm_dir)
 
     @app.post("/upload", dependencies=[Depends(auth_guard)])
     async def upload(request: Request, file: UploadFile = File(...)) -> dict[str, str]:

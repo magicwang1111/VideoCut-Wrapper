@@ -183,7 +183,7 @@ videocut serve --host 0.0.0.0 --port 3000
 }
 ```
 
-`overrides.bgm.category + filename` 用来指定某一首 BGM。只指定 `category` 时，会在该分类目录下随机选择一首；都不传时保持全目录随机选择。
+`GET /bgm` 用来查询实时音乐清单；`overrides.bgm.category + filename` 用来指定某一首 BGM。只指定 `category` 时，会在该分类目录下随机选择一首；都不传时保持全目录随机选择。
 
 ## API
 
@@ -210,6 +210,7 @@ videocut serve --host 0.0.0.0 --port 3000
 ### 接口列表
 
 - `GET /health`
+- `GET /bgm`
 - `POST /upload`
 - `POST /render`
 - `GET /tasks/{id}`
@@ -222,10 +223,10 @@ videocut serve --host 0.0.0.0 --port 3000
 所有业务接口都要求请求头里带 `X-Api-Key`：
 
 ```http
-X-Api-Key: your-api-key-here
+X-Api-Key: goumee-music
 ```
 
-服务端会把环境变量 `API_KEYS` 按逗号拆分，只有命中的 key 才能访问。
+服务端会把环境变量 `API_KEYS=goumee-music` 作为允许访问的 key。
 
 ### 整体调用流程
 
@@ -234,15 +235,16 @@ X-Api-Key: your-api-key-here
 1. 客户端先调用 `/upload` 上传原始素材。
 2. 服务端把上传文件写到临时目录，再上传到 OSS 或本地 OSS。
 3. 服务端把 `fileId -> ossKey` 的映射写入 SQLite 的 `files` 表。
-4. 客户端调用 `/render`，提交 pipeline 名称、素材列表、overrides。
-5. `/render` 会把传入的 `fileId` 解析成真实 `ossKey`，生成 `taskId`，并把任务写入 SQLite 的 `tasks` 表，初始状态是 `pending`。
-6. `TaskQueue` 把任务投递给空闲 worker。
-7. worker 从 OSS 或本地 OSS 下载素材到 `temp/<taskId>/`。
-8. worker 调用 `PipelineRunner` 执行渲染（含 trim、转场、BGM 混合）。
-9. 渲染完成后，worker 把结果上传到 OSS 或本地 OSS 的 `outputs/<taskId>/final.mp4`。
-10. `TaskQueue` 把任务状态更新为 `completed`，并记录输出 `ossKey`。
-11. 客户端轮询 `/tasks/{id}` 获取状态。
-12. 客户端在任务完成后调用 `/tasks/{id}/download` 下载结果，或者直接使用 `/tasks/{id}` 返回的 `outputUrl`。
+4. 如果需要指定某首 BGM，客户端先调用 `/bgm` 查询当前音乐清单。
+5. 客户端调用 `/render`，提交 pipeline 名称、素材列表、overrides。
+6. `/render` 会把传入的 `fileId` 解析成真实 `ossKey`，生成 `taskId`，并把任务写入 SQLite 的 `tasks` 表，初始状态是 `pending`。
+7. `TaskQueue` 把任务投递给空闲 worker。
+8. worker 从 OSS 或本地 OSS 下载素材到 `temp/<taskId>/`。
+9. worker 调用 `PipelineRunner` 执行渲染（含 trim、转场、BGM 混合）。
+10. 渲染完成后，worker 把结果上传到 OSS 或本地 OSS 的 `outputs/<taskId>/final.mp4`。
+11. `TaskQueue` 把任务状态更新为 `completed`，并记录输出 `ossKey`。
+12. 客户端轮询 `/tasks/{id}` 获取状态。
+13. 客户端在任务完成后调用 `/tasks/{id}/download` 下载结果，或者直接使用 `/tasks/{id}` 返回的 `outputUrl`。
 
 ### 1. 健康检查
 
@@ -270,7 +272,34 @@ curl "http://127.0.0.1:3000/health"
 - `queueSize`: 当前等待中的任务数，不含正在渲染的任务。
 - `pipelines`: 已注册的 pipeline 数量。
 
-### 2. 查看已注册 Pipeline
+### 2. 查询音乐列表 `GET /bgm`
+
+示例：
+
+```bash
+curl "http://127.0.0.1:3000/bgm" \
+  -H "X-Api-Key: goumee-music"
+```
+
+返回示例：
+
+```json
+{
+  "bgmRoot": "/app/input/bgm",
+  "categories": [
+    {"name": "激烈", "count": 5},
+    {"name": "舒缓", "count": 5}
+  ],
+  "files": [
+    {"category": "激烈", "filename": "2.mp3"},
+    {"category": "舒缓", "filename": "1.mp3"}
+  ]
+}
+```
+
+`files[].category + files[].filename` 可直接用于 `/render` 的 `overrides.bgm`。
+
+### 3. 查看已注册 Pipeline
 
 当前 HTTP API 未开放 pipeline 列表接口。可用下面任一方式查看：
 
@@ -284,7 +313,7 @@ videocut pipelines
 pipelines/*/config.json
 ```
 
-### 3. 上传素材 `POST /upload`
+### 4. 上传素材 `POST /upload`
 
 请求要求：
 
@@ -297,7 +326,7 @@ pipelines/*/config.json
 
 ```bash
 curl -X POST "http://127.0.0.1:3000/upload" \
-  -H "X-Api-Key: your-api-key-here" \
+  -H "X-Api-Key: goumee-music" \
   -F "file=@input/1.mp4"
 ```
 
@@ -310,7 +339,7 @@ curl -X POST "http://127.0.0.1:3000/upload" \
 }
 ```
 
-### 4. 提交渲染 `POST /render`
+### 5. 提交渲染 `POST /render`
 
 请求要求：
 
@@ -350,7 +379,7 @@ curl -X POST "http://127.0.0.1:3000/upload" \
 
 ```bash
 curl -X POST "http://127.0.0.1:3000/render" \
-  -H "X-Api-Key: your-api-key-here" \
+  -H "X-Api-Key: goumee-music" \
   -H "Content-Type: application/json" \
   -d '{
     "pipeline": "trim-mixed-concat",
@@ -384,7 +413,7 @@ curl -X POST "http://127.0.0.1:3000/render" \
 - `/render` 只是"创建任务并入队"，不会同步等待渲染结束。
 - 任务真正执行发生在 worker 进程里。
 
-### 5. worker 实际做了什么
+### 6. worker 实际做了什么
 
 worker 的逻辑在 [worker_process.py](videocut/queue/worker_process.py)。
 
@@ -402,13 +431,13 @@ worker 的逻辑在 [worker_process.py](videocut/queue/worker_process.py)。
 - `TaskQueue` 会根据 `TASK_MAX_ATTEMPT` 自动重试
 - 超过最大重试次数后，任务会被标记为 `failed`
 
-### 6. 查询任务状态 `GET /tasks/{id}`
+### 7. 查询任务状态 `GET /tasks/{id}`
 
 示例：
 
 ```bash
 curl "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78" \
-  -H "X-Api-Key: your-api-key-here"
+  -H "X-Api-Key: goumee-music"
 ```
 
 返回示例：
@@ -434,13 +463,13 @@ curl "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78" \
 - `completed`: 渲染完成，结果已上传
 - `failed`: 渲染失败，且已超过重试次数或不可恢复
 
-### 7. 下载结果 `GET /tasks/{id}/download`
+### 8. 下载结果 `GET /tasks/{id}/download`
 
 示例：
 
 ```bash
 curl -L "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78/download" \
-  -H "X-Api-Key: your-api-key-here" \
+  -H "X-Api-Key: goumee-music" \
   -o final.mp4
 ```
 
@@ -456,7 +485,7 @@ curl -L "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78/download" \
 2. 再请求 `/tasks/{id}/download`
 3. 或直接使用 `/tasks/{id}` 返回的 `outputUrl`
 
-### 8. 任务状态流转
+### 9. 任务状态流转
 
 典型状态流转如下：
 
@@ -483,12 +512,12 @@ render failure
   -> else tasks.status = failed
 ```
 
-### 9. 本地联调推荐流程
+### 10. 本地联调推荐流程
 
 如果你不想连真实 OSS，建议启用本地 OSS 模式：
 
 ```powershell
-$env:API_KEYS = 'demo-key'
+$env:API_KEYS = 'goumee-music'
 $env:OSS_LOCAL_ROOT = 'D:\VideoCut-Wrapper\temp\oss-local'
 $env:DB_PATH = 'D:\VideoCut-Wrapper\temp\tasks.db'
 videocut serve --port 3000
@@ -506,9 +535,10 @@ videocut serve --port 3000
 
 1. 调 `/health` 确认服务和 worker 已就绪。
 2. 调 `/upload` 上传所有素材，记录返回的 `fileId`。
-3. 调 `/render` 创建任务，拿到 `taskId`。
-4. 轮询 `/tasks/{id}` 直到 `status` 变成 `completed` 或 `failed`。
-5. 成功后调 `/tasks/{id}/download`，或者直接取 `outputUrl`。
+3. 如需指定 BGM，调 `/bgm` 查询 `category + filename`。
+4. 调 `/render` 创建任务，拿到 `taskId`。
+5. 轮询 `/tasks/{id}` 直到 `status` 变成 `completed` 或 `failed`。
+6. 成功后调 `/tasks/{id}/download`，或者直接取 `outputUrl`。
 
 ## 环境变量
 
@@ -516,7 +546,7 @@ videocut serve --port 3000
 
 本机执行 `python -m videocut ...` 和容器内执行服务时，程序会自动读取仓库根目录的 `.env`。如果同名变量已经通过 PowerShell、Docker `environment` 或 `env_file` 注入，则以已存在的环境变量为准。
 
-- `API_KEYS`: 允许访问 API 的 key，逗号分隔
+- `API_KEYS`: 允许访问 API 的 key，当前对接文档固定使用 `goumee-music`
 - `FFMPEG_PATH`: 可选，指定 ffmpeg 可执行文件路径
 - `FFPROBE_PATH`: 可选，指定 ffprobe 可执行文件路径
 - `FFMPEG_ENCODER`: 可选，默认 `auto`，优先探测 GPU 编码器，失败回退到 `libx264`
@@ -564,7 +594,7 @@ python api-test/render_zoom_dissolve.py
 
 ```powershell
 $env:API_BASE_URL = 'http://127.0.0.1:3000'
-$env:API_KEY = 'demo-key'
+$env:API_KEY = 'goumee-music'
 ```
 
 ## 仓库结构
