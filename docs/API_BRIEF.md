@@ -85,7 +85,7 @@ curl -X GET "http://127.0.0.1:3000/bgm" \
 - 精确指定歌曲使用 `files[].category + files[].filename`。
 - 按分类随机使用 `categories[].name` 作为 `overrides.bgm.category`。
 - 目录存在但没有音频时，`categories` 和 `files` 返回空数组。
-- `docs/BGM_MANIFEST.json` 仅作为静态示例/历史清单参考。
+- `docs/BGM_MANIFEST.json` 是静态清单，适合离线对齐；运行时仍以 `GET /bgm` 为准。
 
 ## 3. 创建渲染任务
 

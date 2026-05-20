@@ -19,15 +19,22 @@ docker build \
   .
 ```
 
-build 业务镜像，tag 直接写 `v2`：
+build 业务镜像，tag 直接写 `v2`。建议走脚本，它会先扫描本地 `input/bgm` 并刷新 `docs/BGM_MANIFEST.json`，再执行 `docker build`：
 
 ```bash
-docker build \
-  --build-arg BASE_IMAGE=magicwang/pytorch-base:torch210-cu128-runtime-v1 \
-  --build-arg IMAGE_VERSION=v2 \
-  --build-arg IMAGE_DESCRIPTION="VideoCut Docker image v2" \
-  -t videocut-wrapper:v2 \
-  .
+./docker/build_image.sh v2
+```
+
+如果 BGM 不在默认目录，可以指定：
+
+```bash
+BGM_MANIFEST_SOURCE=/path/to/bgm ./docker/build_image.sh v2
+```
+
+如果本机 Python 命令不是 `python`，脚本会自动尝试 `python3`，也可以手动指定：
+
+```bash
+PYTHON=python3 ./docker/build_image.sh v2
 ```
 
 本地检查镜像：
@@ -211,7 +218,7 @@ BGM 支持按类型放在子目录里，例如：
 
 程序会递归扫描 `/app/input/bgm` 下的音频文件。
 
-当前 BGM 对齐清单在仓库里：
+当前 BGM 对齐清单在仓库里。每次用 `./docker/build_image.sh` 打包前会自动刷新：
 
 ```text
 docs/BGM_MANIFEST.json

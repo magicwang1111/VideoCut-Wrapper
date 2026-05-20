@@ -712,6 +712,12 @@ docker build -f docker/base/Dockerfile -t magicwang/pytorch-base:torch210-cu128-
 
 4. 构建并启动业务容器。建议每次正式打包都给业务镜像一个递增 tag，例如 `v1`、`v2`、`v3`。
 
+如果是导出镜像包交付，建议使用打包脚本；它会先扫描本地 `input/bgm` 并刷新 `docs/BGM_MANIFEST.json`：
+
+```bash
+./docker/build_image.sh v1
+```
+
 CPU-only Linux 机器：
 
 ```bash

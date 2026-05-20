@@ -454,7 +454,7 @@ zoom-dissolve
 
 BGM 指定规则：
 
-- 对接方应先调用 `GET /bgm` 获取当前实时清单；`docs/BGM_MANIFEST.json` 仅作为静态示例/历史清单参考。
+- 对接方应先调用 `GET /bgm` 获取当前实时清单；`docs/BGM_MANIFEST.json` 是打包脚本可刷新的静态清单，适合离线对齐，不替代运行时扫描结果。
 - `overrides.bgm.category` 是 `/app/input/bgm` 下的相对目录名，例如 `舒缓`。
 - `overrides.bgm.filename` 是分类目录下的文件名，例如 `1.mp3`。
 - 传 `category + filename` 时，服务端精确选择该分类下的文件；只传 `category` 时，服务端只在该分类目录下随机选择一首。

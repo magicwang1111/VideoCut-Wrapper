@@ -7,6 +7,7 @@ from typing import Optional
 import typer
 import uvicorn
 
+from videocut.bgm import write_bgm_manifest
 from videocut.env import load_project_env
 from videocut.errors import VideoCutError
 from videocut.ffmpeg_config import resolve_runtime_video_settings, resolve_video_settings
@@ -68,6 +69,41 @@ def check() -> None:
         fonts = [path.name for path in fonts_dir.iterdir() if path.suffix.lower() in {'.otf', '.ttf', '.woff', '.woff2'}]
         typer.echo(f"  Fonts: {len(fonts)} ({', '.join(fonts) if fonts else 'none'})")
     typer.echo("")
+
+
+@app.command("bgm-manifest")
+def bgm_manifest(
+    bgm_dir: Optional[Path] = typer.Option(
+        None,
+        "--bgm-dir",
+        help="Local BGM directory to scan. Defaults to input/bgm under the project root.",
+    ),
+    output: Path = typer.Option(
+        ROOT_DIR / "docs" / "BGM_MANIFEST.json",
+        "--output",
+        "-o",
+        help="Manifest JSON path to write.",
+    ),
+    api_bgm_root: str = typer.Option(
+        "/app/input/bgm",
+        "--api-bgm-root",
+        help="BGM root path shown to API consumers in the manifest.",
+    ),
+) -> None:
+    source_dir = (bgm_dir or (ROOT_DIR / "input" / "bgm")).expanduser().resolve()
+    manifest_path = output.expanduser().resolve()
+    try:
+        manifest = write_bgm_manifest(source_dir, manifest_path, api_bgm_root=api_bgm_root)
+    except VideoCutError as exc:
+        typer.secho(f"\n[E{exc.code}] {exc}\n", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+
+    files = manifest.get("files", [])
+    categories = manifest.get("categories", [])
+    typer.echo(f"Updated {manifest_path}")
+    typer.echo(f"  Source: {source_dir}")
+    typer.echo(f"  Files: {len(files) if isinstance(files, list) else 0}")
+    typer.echo(f"  Categories: {len(categories) if isinstance(categories, list) else 0}")
 
 
 @app.command()

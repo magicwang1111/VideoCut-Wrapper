@@ -1,7 +1,17 @@
 {
   "bgmRoot": "/app/input/bgm",
   "pathRule": "API overrides.bgm.category + overrides.bgm.filename uses the category and filename fields below, relative to /app/input/bgm.",
-  "generatedFrom": "D:\\VideoCut-Wrapper\\input\\bgm",
+  "generatedFrom": "/mnt/d/VideoCut-Wrapper/input/bgm",
+  "categories": [
+    {
+      "name": "激烈",
+      "count": 5
+    },
+    {
+      "name": "舒缓",
+      "count": 5
+    }
+  ],
   "files": [
     {
       "category": "激烈",

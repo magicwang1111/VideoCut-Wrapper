@@ -7,11 +7,13 @@ import pytest
 
 import videocut.bgm as bgm_module
 from videocut.bgm import apply_bgm
+from videocut.bgm import build_bgm_manifest
 from videocut.bgm import list_bgm_catalog
 from videocut.bgm import resolve_bgm_category_file
 from videocut.bgm import resolve_bgm_dir
 from videocut.bgm import scan_bgm_category_files
 from videocut.bgm import scan_bgm_files
+from videocut.bgm import write_bgm_manifest
 from videocut.errors import RenderError
 
 
@@ -91,6 +93,36 @@ def test_list_bgm_catalog_uses_relative_category_paths_and_plain_filenames(tmp_p
             {"category": "舒缓/nested", "filename": "2.wav"},
         ],
     }
+
+
+def test_build_bgm_manifest_uses_api_root_and_generated_source(tmp_path) -> None:
+    bgm_dir = tmp_path / "input" / "bgm"
+    (bgm_dir / "舒缓").mkdir(parents=True)
+    (bgm_dir / "舒缓" / "1.mp3").write_text("calm", encoding="utf-8")
+
+    assert build_bgm_manifest(bgm_dir, api_bgm_root="/app/input/bgm") == {
+        "bgmRoot": "/app/input/bgm",
+        "pathRule": (
+            "API overrides.bgm.category + overrides.bgm.filename uses the category and filename fields below, "
+            "relative to /app/input/bgm."
+        ),
+        "generatedFrom": str(bgm_dir.resolve()),
+        "categories": [{"name": "舒缓", "count": 1}],
+        "files": [{"category": "舒缓", "filename": "1.mp3"}],
+    }
+
+
+def test_write_bgm_manifest_writes_utf8_json(tmp_path) -> None:
+    bgm_dir = tmp_path / "input" / "bgm"
+    output_path = tmp_path / "docs" / "BGM_MANIFEST.json"
+    (bgm_dir / "舒缓").mkdir(parents=True)
+    (bgm_dir / "舒缓" / "1.mp3").write_text("calm", encoding="utf-8")
+
+    manifest = write_bgm_manifest(bgm_dir, output_path)
+
+    assert output_path.read_text(encoding="utf-8").endswith("\n")
+    assert '"category": "舒缓"' in output_path.read_text(encoding="utf-8")
+    assert manifest["files"] == [{"category": "舒缓", "filename": "1.mp3"}]
 
 
 def test_scan_bgm_category_files_rejects_missing_category(tmp_path) -> None:

@@ -9,6 +9,10 @@ from uuid import uuid4
 from videocut.errors import RenderError
 
 _BGM_EXTENSIONS = {".mp3", ".wav", ".aac", ".ogg", ".flac", ".m4a"}
+_BGM_MANIFEST_PATH_RULE = (
+    "API overrides.bgm.category + overrides.bgm.filename uses the category and filename fields below, "
+    "relative to /app/input/bgm."
+)
 
 
 def resolve_bgm_dir(root_dir: str | Path, configured_dir: str | None = None) -> Path:
@@ -64,6 +68,30 @@ def list_bgm_catalog(bgm_dir: Path) -> dict[str, object]:
         "categories": categories,
         "files": files,
     }
+
+
+def build_bgm_manifest(bgm_dir: Path, *, api_bgm_root: str = "/app/input/bgm") -> dict[str, object]:
+    base_dir = bgm_dir.resolve()
+    catalog = list_bgm_catalog(base_dir)
+    return {
+        "bgmRoot": api_bgm_root,
+        "pathRule": _BGM_MANIFEST_PATH_RULE,
+        "generatedFrom": str(base_dir),
+        "categories": catalog["categories"],
+        "files": catalog["files"],
+    }
+
+
+def write_bgm_manifest(
+    bgm_dir: Path,
+    output_path: Path,
+    *,
+    api_bgm_root: str = "/app/input/bgm",
+) -> dict[str, object]:
+    manifest = build_bgm_manifest(bgm_dir, api_bgm_root=api_bgm_root)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return manifest
 
 
 def resolve_bgm_category_dir(bgm_dir: Path, configured_category: str) -> Path:
