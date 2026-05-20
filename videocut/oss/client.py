@@ -1,13 +1,28 @@
 from __future__ import annotations
 
 import shutil
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import oss2
 
 from videocut.errors import DependencyError
 from videocut.runtime_paths import project_root, resolve_runtime_path
+
+
+try:
+    BEIJING_TZ = ZoneInfo("Asia/Shanghai")
+except ZoneInfoNotFoundError:
+    BEIJING_TZ = timezone(timedelta(hours=8))
+
+
+def _as_output_time(timestamp: datetime | None = None) -> datetime:
+    if timestamp is None:
+        return datetime.now(BEIJING_TZ)
+    if timestamp.tzinfo is None:
+        return timestamp
+    return timestamp.astimezone(BEIJING_TZ)
 
 
 class OssClient:
@@ -38,9 +53,10 @@ class OssClient:
         return f"{self.prefix}/inputs/{file_id}{ext}"
 
     def output_key(self, task_id: str, timestamp: datetime | None = None) -> str:
-        output_time = timestamp or datetime.now()
+        output_time = _as_output_time(timestamp)
+        date_dir = output_time.strftime("%Y%m%d")
         timestamp_dir = output_time.strftime("%Y%m%d_%H%M%S")
-        return f"{self.prefix}/outputs/{timestamp_dir}/{task_id}/final.mp4"
+        return f"{self.prefix}/outputs/{date_dir}/{timestamp_dir}/{task_id}/final.mp4"
 
     def upload(self, local_path: str | Path, oss_key: str) -> None:
         if self.local_root:
