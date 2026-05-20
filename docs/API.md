@@ -433,7 +433,7 @@ other-prefix/input/a.mp4
 | `transition_overrides` | 覆盖单个转场的类型、时长和缩放参数 |
 | `default_transition` | 覆盖默认转场 |
 | `bgm` | 覆盖 BGM 设置，常用 `{"enabled": false}` 禁用 BGM，`{"category": "舒缓"}` 按分类随机，或 `{"category": "舒缓", "filename": "1.mp3"}` 指定某一首 |
-| `output` | 覆盖渲染临时输出文件名，API 最终 OSS key 仍固定为 `outputs/<taskId>/final.mp4` |
+| `output` | 覆盖渲染临时输出文件名，API 最终 OSS key 使用 `outputs/<YYYYMMDD_HHMMSS>/<taskId>/final.mp4` |
 
 转场类型：
 
@@ -751,7 +751,7 @@ videocut serve --host 127.0.0.1 --port 3000
 
 - `/upload` 会把素材复制到 `OSS_LOCAL_ROOT/GouMei-Video-Cut/inputs/...`。
 - worker 会从 `OSS_LOCAL_ROOT` 下载素材到 `TEMP_DIR/<taskId>/`。
-- 渲染结果会写到 `OSS_LOCAL_ROOT/GouMei-Video-Cut/outputs/<taskId>/final.mp4`。
+- 渲染结果会写到 `OSS_LOCAL_ROOT/GouMei-Video-Cut/outputs/<YYYYMMDD_HHMMSS>/<taskId>/final.mp4`。
 - `/tasks/{taskId}/download` 直接返回本地文件。
 
 ## 13. Python 对接示例

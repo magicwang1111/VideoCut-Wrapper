@@ -241,7 +241,7 @@ X-Api-Key: goumee-music
 7. `TaskQueue` 把任务投递给空闲 worker。
 8. worker 从 OSS 或本地 OSS 下载素材到 `temp/<taskId>/`。
 9. worker 调用 `PipelineRunner` 执行渲染（含 trim、转场、BGM 混合）。
-10. 渲染完成后，worker 把结果上传到 OSS 或本地 OSS 的 `outputs/<taskId>/final.mp4`。
+10. 渲染完成后，worker 把结果上传到 OSS 或本地 OSS 的 `outputs/<YYYYMMDD_HHMMSS>/<taskId>/final.mp4`。
 11. `TaskQueue` 把任务状态更新为 `completed`，并记录输出 `ossKey`。
 12. 客户端轮询 `/tasks/{id}` 获取状态。
 13. 客户端在任务完成后调用 `/tasks/{id}/download` 下载结果，或者直接使用 `/tasks/{id}` 返回的 `outputUrl`。
@@ -421,7 +421,7 @@ worker 的逻辑在 [worker_process.py](videocut/queue/worker_process.py)。
 
 1. 把所有素材从 OSS 或本地 OSS 下载到 `temp/<taskId>/`。
 2. 调用 `PipelineRunner` 执行渲染（含 trim、转场、BGM 混合）。
-3. 渲染成功后，把结果上传到 `GouMei-Video-Cut/outputs/<taskId>/final.mp4`。
+3. 渲染成功后，把结果上传到 `GouMei-Video-Cut/outputs/<YYYYMMDD_HHMMSS>/<taskId>/final.mp4`。
 4. 通知 `TaskQueue` 当前任务完成。
 5. 删除 `temp/<taskId>/` 临时目录。
 
@@ -505,7 +505,7 @@ render success
   -> output upload to OSS
   -> tasks.status = completed
   -> progress = 100
-  -> oss_key = GouMei-Video-Cut/outputs/<taskId>/final.mp4
+  -> oss_key = GouMei-Video-Cut/outputs/<YYYYMMDD_HHMMSS>/<taskId>/final.mp4
 
 render failure
   -> retry if attempt < TASK_MAX_ATTEMPT
@@ -527,7 +527,7 @@ videocut serve --port 3000
 
 - `/upload` 会把文件复制到 `OSS_LOCAL_ROOT/GouMei-Video-Cut/inputs/...`
 - worker 会从这个本地目录把素材再下载到 `temp/<taskId>/`
-- 渲染结果会写到 `OSS_LOCAL_ROOT/GouMei-Video-Cut/outputs/<taskId>/final.mp4`
+- 渲染结果会写到 `OSS_LOCAL_ROOT/GouMei-Video-Cut/outputs/<YYYYMMDD_HHMMSS>/<taskId>/final.mp4`
 - `/tasks/{id}` 返回的 `outputUrl` 是本地绝对路径
 - `/tasks/{id}/download` 直接回传本地文件
 

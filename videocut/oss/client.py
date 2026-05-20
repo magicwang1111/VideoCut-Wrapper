@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+from datetime import datetime
 from pathlib import Path
 
 import oss2
@@ -36,8 +37,10 @@ class OssClient:
     def input_key(self, file_id: str, ext: str) -> str:
         return f"{self.prefix}/inputs/{file_id}{ext}"
 
-    def output_key(self, task_id: str) -> str:
-        return f"{self.prefix}/outputs/{task_id}/final.mp4"
+    def output_key(self, task_id: str, timestamp: datetime | None = None) -> str:
+        output_time = timestamp or datetime.now()
+        timestamp_dir = output_time.strftime("%Y%m%d_%H%M%S")
+        return f"{self.prefix}/outputs/{timestamp_dir}/{task_id}/final.mp4"
 
     def upload(self, local_path: str | Path, oss_key: str) -> None:
         if self.local_root:

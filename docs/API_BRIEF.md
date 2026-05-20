@@ -48,9 +48,11 @@ GET /health
 
 ## 2. 查询音乐列表
 
-```http
-GET /bgm
-X-Api-Key: goumee-music
+请求示例：
+
+```bash
+curl -X GET "http://127.0.0.1:3000/bgm" \
+  -H "X-Api-Key: goumee-music"
 ```
 
 响应：
@@ -383,7 +385,7 @@ HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读
 查询音乐列表：
 
 ```bash
-curl "http://127.0.0.1:3000/bgm" \
+curl -X GET "http://127.0.0.1:3000/bgm" \
   -H "X-Api-Key: goumee-music"
 ```
 
