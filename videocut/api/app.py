@@ -4,11 +4,12 @@ import os
 import re
 from contextlib import asynccontextmanager
 from dataclasses import asdict
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from enum import IntEnum
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
@@ -34,6 +35,10 @@ logger = get_logger(__name__)
 
 ALLOWED_UPLOAD_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".mp3", ".wav", ".aac", ".png", ".jpg", ".jpeg", ".webp"}
 MAX_UPLOAD_BYTES = 500 * 1024 * 1024
+try:
+    BEIJING_TZ = ZoneInfo("Asia/Shanghai")
+except ZoneInfoNotFoundError:
+    BEIJING_TZ = timezone(timedelta(hours=8))
 
 
 class ApiErrorCode(IntEnum):
@@ -78,6 +83,34 @@ def api_http_exception(
 
 def parse_media_type(content_type: str) -> str:
     return content_type.split(";", 1)[0].strip().lower()
+
+
+def format_api_time(value: str | datetime | None) -> str | None:
+    if value is None:
+        return None
+    parsed = value if isinstance(value, datetime) else datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(BEIJING_TZ).replace(tzinfo=None).isoformat(timespec="microseconds")
+
+
+def now_api_time() -> str:
+    return format_api_time(datetime.now(UTC)) or ""
+
+
+def active_task_payload(task: TaskRecord) -> dict[str, Any]:
+    return {
+        "taskId": task.id,
+        "status": task.status,
+        "progress": task.progress,
+        "attempt": task.attempt,
+        "createdAt": format_api_time(task.created_at),
+        "startedAt": format_api_time(task.started_at),
+        "lastError": task.last_error,
+        "lastErrorAt": format_api_time(task.last_error_at),
+        "taskKind": task.task_kind,
+        "sourceName": task.source_name,
+    }
 
 
 def auth_guard(request: Request) -> None:
@@ -362,6 +395,25 @@ def create_app() -> FastAPI:
             )
         return {"taskId": task_id}
 
+    @app.get("/tasks/summary", dependencies=[Depends(auth_guard)])
+    async def task_summary() -> dict[str, Any]:
+        store: TaskStore = app.state.store
+        queue_obj: TaskQueue = app.state.task_queue
+        return {
+            "generatedAt": now_api_time(),
+            "workers": app.state.worker_count,
+            "queueSize": queue_obj.queue_size,
+            "counts": store.count_tasks_by_status(),
+        }
+
+    @app.get("/tasks/active", dependencies=[Depends(auth_guard)])
+    async def active_tasks() -> dict[str, Any]:
+        store: TaskStore = app.state.store
+        return {
+            "generatedAt": now_api_time(),
+            "tasks": [active_task_payload(task) for task in store.list_active_tasks()],
+        }
+
     @app.get("/tasks/{task_id}", dependencies=[Depends(auth_guard)])
     async def get_task(task_id: str) -> dict[str, Any]:
         store: TaskStore = app.state.store
@@ -376,18 +428,18 @@ def create_app() -> FastAPI:
             "status": task.status,
             "progress": task.progress,
             "attempt": task.attempt,
-            "createdAt": task.created_at,
-            "startedAt": task.started_at,
-            "completedAt": task.completed_at,
+            "createdAt": format_api_time(task.created_at),
+            "startedAt": format_api_time(task.started_at),
+            "completedAt": format_api_time(task.completed_at),
             "outputUrl": output_url,
             "error": task.error,
             "lastError": task.last_error,
-            "lastErrorAt": task.last_error_at,
+            "lastErrorAt": format_api_time(task.last_error_at),
             "failureHistory": [
                 {
                     "attempt": item.attempt,
                     "error": item.error,
-                    "createdAt": item.created_at,
+                    "createdAt": format_api_time(item.created_at),
                 }
                 for item in failures
             ],

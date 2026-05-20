@@ -208,7 +208,76 @@ GouMei-Video-Cut/test-input/1/clip_001.mp4
 |---|---|---|
 | `taskId` | `string` | 异步任务 ID，后续用于查询状态和下载结果 |
 
-## 4. 查询任务
+## 4. 查询整体任务状态
+
+```http
+GET /tasks/summary
+X-Api-Key: goumee-music
+```
+
+curl 示例：
+
+```bash
+curl "http://127.0.0.1:3000/tasks/summary" \
+  -H "X-Api-Key: goumee-music"
+```
+
+响应：
+
+```json
+{
+  "generatedAt": "2026-05-20T18:44:36.000000",
+  "workers": 4,
+  "queueSize": 2,
+  "counts": {
+    "total": 12,
+    "pending": 2,
+    "rendering": 1,
+    "completed": 8,
+    "failed": 1
+  }
+}
+```
+
+## 5. 查询未结束任务
+
+```http
+GET /tasks/active
+X-Api-Key: goumee-music
+```
+
+curl 示例：
+
+```bash
+curl "http://127.0.0.1:3000/tasks/active" \
+  -H "X-Api-Key: goumee-music"
+```
+
+只返回 `pending` 和 `rendering` 任务，按创建时间升序排列。
+
+响应：
+
+```json
+{
+  "generatedAt": "2026-05-20T18:44:36.000000",
+  "tasks": [
+    {
+      "taskId": "t_ab12cd34ef56ab78",
+      "status": "rendering",
+      "progress": 45,
+      "attempt": 1,
+      "createdAt": "2026-05-20T18:40:00.000000",
+      "startedAt": "2026-05-20T18:40:05.000000",
+      "lastError": null,
+      "lastErrorAt": null,
+      "taskKind": "pipeline",
+      "sourceName": "bgm-concat"
+    }
+  ]
+}
+```
+
+## 6. 查询任务
 
 ```http
 GET /tasks/{taskId}
@@ -223,9 +292,9 @@ X-Api-Key: goumee-music
   "status": "completed",
   "progress": 100,
   "attempt": 1,
-  "createdAt": "2026-04-17T09:00:00.000000+00:00",
-  "startedAt": "2026-04-17T09:00:03.000000+00:00",
-  "completedAt": "2026-04-17T09:00:21.000000+00:00",
+  "createdAt": "2026-04-17T17:00:00.000000",
+  "startedAt": "2026-04-17T17:00:03.000000",
+  "completedAt": "2026-04-17T17:00:21.000000",
   "outputUrl": "https://...",
   "error": null,
   "lastError": null,
@@ -244,13 +313,13 @@ X-Api-Key: goumee-music
 | `status` | `string` | `pending`, `rendering`, `completed`, `failed` |
 | `progress` | `number` | 进度，完成时为 `100` |
 | `attempt` | `number` | 已尝试次数 |
-| `createdAt` | `string` | 创建时间 |
-| `startedAt` | `string|null` | 最近一次开始执行时间 |
-| `completedAt` | `string|null` | 完成或最终失败时间 |
+| `createdAt` | `string` | 创建时间，北京时间 |
+| `startedAt` | `string|null` | 最近一次开始执行时间，北京时间 |
+| `completedAt` | `string|null` | 完成或最终失败时间，北京时间 |
 | `outputUrl` | `string|null` | 完成后返回结果地址 |
 | `error` | `string|null` | 最终失败原因 |
 | `lastError` | `string|null` | 最近一次失败原因 |
-| `lastErrorAt` | `string|null` | 最近一次失败时间 |
+| `lastErrorAt` | `string|null` | 最近一次失败时间，北京时间 |
 | `failureHistory` | `array` | 失败历史 |
 | `taskKind` | `string` | 当前固定为 `pipeline` |
 | `sourceName` | `string` | pipeline 名称 |
@@ -261,7 +330,7 @@ X-Api-Key: goumee-music
 - `completed` 表示成功，可以下载。
 - `failed` 表示最终失败，读取 `error`。
 
-## 5. 下载结果
+## 7. 下载结果
 
 ```http
 GET /tasks/{taskId}/download
@@ -280,7 +349,7 @@ curl -L "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78/download" \
   -o final.mp4
 ```
 
-## 6. 错误码
+## 8. 错误码
 
 HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读取响应体里的 `error_code`。
 
@@ -380,7 +449,7 @@ HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读
 }
 ```
 
-## 7. 完整调用示例
+## 9. 完整调用示例
 
 查询音乐列表：
 
@@ -414,10 +483,21 @@ curl -X POST "http://127.0.0.1:3000/render" \
 Python `requests` 版本：
 
 ```python
+import time
+from pathlib import Path
+
 import requests
 
 base_url = "http://127.0.0.1:3000"
 api_key = "goumee-music"
+
+
+def headers(json_body=False):
+    result = {"X-Api-Key": api_key}
+    if json_body:
+        result["Content-Type"] = "application/json"
+    return result
+
 
 payload = {
     "pipeline": "bgm-concat",
@@ -436,13 +516,44 @@ payload = {
 
 resp = requests.post(
     f"{base_url}/render",
-    headers={"X-Api-Key": api_key, "Content-Type": "application/json"},
+    headers=headers(json_body=True),
     json=payload,
     timeout=60,
 )
 resp.raise_for_status()
 task_id = resp.json()["taskId"]
-print(task_id)
+
+deadline = time.time() + 30 * 60
+while True:
+    task_resp = requests.get(f"{base_url}/tasks/{task_id}", headers=headers(), timeout=60)
+    task_resp.raise_for_status()
+    task = task_resp.json()
+
+    if task["status"] == "completed":
+        break
+    if task["status"] == "failed":
+        raise RuntimeError(task)
+    if time.time() > deadline:
+        raise TimeoutError(f"task timeout: {task_id}")
+
+    time.sleep(5)
+
+download_resp = requests.get(
+    f"{base_url}/tasks/{task_id}/download",
+    headers=headers(),
+    allow_redirects=True,
+    stream=True,
+    timeout=60,
+)
+download_resp.raise_for_status()
+
+target = Path("final.mp4")
+with target.open("wb") as handle:
+    for chunk in download_resp.iter_content(1024 * 1024):
+        if chunk:
+            handle.write(chunk)
+
+print(f"saved to {target}")
 ```
 
 查询任务：
@@ -460,7 +571,7 @@ curl -L "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78/download" \
   -o final.mp4
 ```
 
-## 8. 可用 pipeline
+## 10. 可用 pipeline
 
 | Pipeline ID | 含义 |
 |---|---|

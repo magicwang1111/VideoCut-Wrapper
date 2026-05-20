@@ -24,6 +24,8 @@ videocut serve --host 0.0.0.0 --port 3000
 | `GET` | `/bgm` | 是 | 查询当前可用 BGM 分类和文件清单 |
 | `POST` | `/upload` | 是 | 上传本地素材，返回 `fileId` 和 `ossKey` |
 | `POST` | `/render` | 是 | 创建异步渲染任务，返回 `taskId` |
+| `GET` | `/tasks/summary` | 是 | 查询整体任务状态计数 |
+| `GET` | `/tasks/active` | 是 | 查询当前未结束任务 |
 | `GET` | `/tasks/{taskId}` | 是 | 查询任务状态、结果地址和失败历史 |
 | `GET` | `/tasks/{taskId}/download` | 是 | 下载渲染结果，真实 OSS 模式下可能返回 `302` |
 
@@ -31,7 +33,7 @@ videocut serve --host 0.0.0.0 --port 3000
 
 - FastAPI 默认还会提供 `/docs`、`/redoc`、`/openapi.json`，但 OpenAPI 里不会完整表达 `X-Api-Key` 鉴权规则，对接以本文档为准。
 - 当前代码没有实现 `GET /pipelines`。如需查看 pipeline 列表，使用 `videocut pipelines` 或查看 `pipelines/*/config.json`。
-- 当前没有任务取消、任务列表、任务删除、幂等键接口。重复调用 `/render` 会创建多个任务。
+- 当前没有任务取消、完整分页任务列表、任务删除、幂等键接口。重复调用 `/render` 会创建多个任务。
 
 ## 2. 鉴权
 
@@ -542,7 +544,77 @@ JSON 结构类型错误返回 `422`：
 }
 ```
 
-## 8. `GET /tasks/{taskId}`
+## 8. `GET /tasks/summary`
+
+查询整体任务状态计数。
+
+请求示例：
+
+```bash
+curl "http://127.0.0.1:3000/tasks/summary" \
+  -H "X-Api-Key: goumee-music"
+```
+
+成功响应示例：
+
+```json
+{
+  "generatedAt": "2026-05-20T18:44:36.000000",
+  "workers": 4,
+  "queueSize": 2,
+  "counts": {
+    "total": 12,
+    "pending": 2,
+    "rendering": 1,
+    "completed": 8,
+    "failed": 1
+  }
+}
+```
+
+字段说明：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `generatedAt` | `string` | 生成时间，北京时间 |
+| `workers` | `number` | worker 进程数量 |
+| `queueSize` | `number` | 等待队列长度 |
+| `counts` | `object` | 当前任务库中各状态任务数量 |
+
+## 9. `GET /tasks/active`
+
+查询当前未结束任务，只返回 `pending` 和 `rendering`，按创建时间升序排列。
+
+请求示例：
+
+```bash
+curl "http://127.0.0.1:3000/tasks/active" \
+  -H "X-Api-Key: goumee-music"
+```
+
+成功响应示例：
+
+```json
+{
+  "generatedAt": "2026-05-20T18:44:36.000000",
+  "tasks": [
+    {
+      "taskId": "t_ab12cd34ef56ab78",
+      "status": "rendering",
+      "progress": 45,
+      "attempt": 1,
+      "createdAt": "2026-05-20T18:40:00.000000",
+      "startedAt": "2026-05-20T18:40:05.000000",
+      "lastError": null,
+      "lastErrorAt": null,
+      "taskKind": "pipeline",
+      "sourceName": "bgm-concat"
+    }
+  ]
+}
+```
+
+## 10. `GET /tasks/{taskId}`
 
 查询任务状态。建议调用方每 `3-5` 秒轮询一次，直到 `status` 为 `completed` 或 `failed`。
 
@@ -561,9 +633,9 @@ curl "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78" \
   "status": "completed",
   "progress": 100,
   "attempt": 1,
-  "createdAt": "2026-04-17T09:00:00.000000+00:00",
-  "startedAt": "2026-04-17T09:00:03.000000+00:00",
-  "completedAt": "2026-04-17T09:00:21.000000+00:00",
+  "createdAt": "2026-04-17T17:00:00.000000",
+  "startedAt": "2026-04-17T17:00:03.000000",
+  "completedAt": "2026-04-17T17:00:21.000000",
   "outputUrl": "https://...",
   "error": null,
   "lastError": null,
@@ -582,13 +654,13 @@ curl "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78" \
 | `status` | `string` | `pending`, `rendering`, `completed`, `failed` |
 | `progress` | `number` | 当前进度，完成时为 `100` |
 | `attempt` | `number` | 当前已经执行的尝试次数 |
-| `createdAt` | `string` | 任务创建时间，UTC ISO 8601 |
-| `startedAt` | `string|null` | 最近一次开始执行时间 |
-| `completedAt` | `string|null` | 完成或最终失败时间 |
+| `createdAt` | `string` | 任务创建时间，北京时间 |
+| `startedAt` | `string|null` | 最近一次开始执行时间，北京时间 |
+| `completedAt` | `string|null` | 完成或最终失败时间，北京时间 |
 | `outputUrl` | `string|null` | 仅任务完成且有输出时返回。真实 OSS 模式下为 1 小时预签名 URL |
 | `error` | `string|null` | 最终失败原因。任务成功时为 `null` |
 | `lastError` | `string|null` | 最近一次失败原因，任务最终成功后仍可能保留 |
-| `lastErrorAt` | `string|null` | 最近一次失败时间 |
+| `lastErrorAt` | `string|null` | 最近一次失败时间，北京时间 |
 | `failureHistory` | `array` | 所有已记录的失败尝试 |
 | `taskKind` | `string` | 当前固定为 `pipeline` |
 | `sourceName` | `string` | pipeline 名称 |
@@ -632,7 +704,7 @@ rendering
 - 服务重启时，会把遗留的 `pending` 和 `rendering` 任务重新放回队列。遗留的 `rendering` 任务会记录一次失败历史。
 - 任务完成或最终失败后，会在服务启动清理中按 `TASK_TTL_DAYS` 删除历史记录，默认保留 `7` 天。
 
-## 9. `GET /tasks/{taskId}/download`
+## 11. `GET /tasks/{taskId}/download`
 
 下载渲染结果。调用前建议先确认 `/tasks/{taskId}` 返回 `status=completed`。
 
@@ -668,7 +740,7 @@ curl -L "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78/download" \
 
 HTTP 状态码为 `404`。
 
-## 10. 当前 pipeline 列表
+## 12. 当前 pipeline 列表
 
 服务启动时从 `PIPELINES_DIR` 扫描 pipeline。默认目录是仓库下的 `pipelines/`。
 
@@ -690,7 +762,7 @@ HTTP 状态码为 `404`。
 - 如果传入素材数量超过默认槽位，后续素材会使用默认空裁剪和默认转场。
 - 如果传入素材数量少于默认槽位，只会渲染实际传入的素材。
 
-## 11. 环境变量
+## 13. 环境变量
 
 常用服务配置：
 
@@ -735,7 +807,7 @@ BGM 配置：
 | `SYNC_BGM_ON_STARTUP` | `1` | Docker entrypoint 是否启动时同步 BGM |
 | `BGM_OSS_URI` | `oss://goumee-coze/GouMei-Video-Cut/bgm/` | BGM 同步源 |
 
-## 12. 本地联调配置
+## 14. 本地联调配置
 
 不访问真实 OSS 时，建议启用本地 OSS 模式：
 
@@ -754,7 +826,7 @@ videocut serve --host 127.0.0.1 --port 3000
 - 渲染结果会写到 `OSS_LOCAL_ROOT/GouMei-Video-Cut/outputs/<YYYYMMDD>/<YYYYMMDD_HHMMSS>/<taskId>/final.mp4`，时间戳为北京时间（Asia/Shanghai）。
 - `/tasks/{taskId}/download` 直接返回本地文件。
 
-## 13. Python 对接示例
+## 15. Python 对接示例
 
 ```python
 from __future__ import annotations
@@ -829,7 +901,7 @@ with target.open("wb") as handle:
             handle.write(chunk)
 ```
 
-## 14. 测试客户端
+## 16. 测试客户端
 
 仓库内置了 HTTP API 测试客户端：
 
@@ -852,7 +924,7 @@ $env:API_KEY = "goumee-music"
 
 测试客户端默认使用真实 OSS 测试素材组。素材组定义在 `api-test/http_test_data.py` 的 `REAL_OSS_TEST_CLIP_GROUPS` 中；每个测试脚本顶部都有自己的测试说明和参数。
 
-## 15. 对接注意事项
+## 17. 对接注意事项
 
 - 线上建议在服务前面放 HTTPS 网关或反向代理，API 服务本身只做 `X-Api-Key` 校验。
 - 渲染是 CPU/GPU 和 IO 密集任务，调用方应设置较长轮询超时，例如 30 分钟。

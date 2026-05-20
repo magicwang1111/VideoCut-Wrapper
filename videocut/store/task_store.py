@@ -10,6 +10,7 @@ from typing import Any, Literal
 
 TaskKind = Literal["template", "pipeline"]
 TaskStatus = Literal["pending", "rendering", "completed", "failed"]
+TASK_STATUSES: tuple[TaskStatus, ...] = ("pending", "rendering", "completed", "failed")
 
 
 @dataclass(slots=True)
@@ -187,6 +188,24 @@ class TaskStore:
             self._db.commit()
 
     def get_pending_and_stalled(self) -> list[TaskRecord]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM tasks WHERE status IN ('pending', 'rendering') ORDER BY created_at ASC"
+            ).fetchall()
+        return [self._row_to_record(row) for row in rows]
+
+    def count_tasks_by_status(self) -> dict[str, int]:
+        counts = {"total": 0, **{status: 0 for status in TASK_STATUSES}}
+        with self._lock:
+            rows = self._db.execute("SELECT status, COUNT(*) AS count FROM tasks GROUP BY status").fetchall()
+        for row in rows:
+            status = str(row["status"])
+            if status in TASK_STATUSES:
+                counts[status] = int(row["count"])
+        counts["total"] = sum(counts[status] for status in TASK_STATUSES)
+        return counts
+
+    def list_active_tasks(self) -> list[TaskRecord]:
         with self._lock:
             rows = self._db.execute(
                 "SELECT * FROM tasks WHERE status IN ('pending', 'rendering') ORDER BY created_at ASC"

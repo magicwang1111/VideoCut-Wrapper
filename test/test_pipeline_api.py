@@ -12,7 +12,7 @@ from videocut.errors import PipelineDefinitionError, VideoCutError
 from videocut.pipeline import PipelineRegistry, build_pipeline_context, parse_pipeline_config
 from videocut.pipeline.config import validate_variables, resolve_variable_values
 from videocut.pipeline.types import PipelineVariableDef
-from videocut.store import PipelineRecord, TaskStore
+from videocut.store import PipelineRecord, TaskRecord, TaskStore
 
 api_app_module = importlib.import_module("videocut.api.app")
 
@@ -90,6 +90,36 @@ def _configure_api_env(tmp_path, monkeypatch, pipelines_root: Path, *, bgm_dir: 
     else:
         monkeypatch.setenv("BGM_DIR", str(bgm_dir))
     monkeypatch.setattr(api_app_module, "TaskQueue", FakeTaskQueue)
+
+
+def _make_api_task(
+    task_id: str,
+    status: str,
+    created_at: str,
+    *,
+    progress: int = 0,
+    attempt: int = 0,
+    started_at: str | None = None,
+    completed_at: str | None = None,
+    last_error: str | None = None,
+    last_error_at: str | None = None,
+) -> TaskRecord:
+    return TaskRecord(
+        id=task_id,
+        task_kind="pipeline",
+        source_name="bgm-concat",
+        status=status,  # type: ignore[arg-type]
+        progress=progress,
+        attempt=attempt,
+        payload={"clips": ["GouMei-Video-Cut/inputs/file1.mp4"]},
+        oss_key=None,
+        error=None,
+        last_error=last_error,
+        last_error_at=last_error_at,
+        created_at=created_at,
+        started_at=started_at,
+        completed_at=completed_at,
+    )
 
 
 def test_pipeline_registry_scans_and_syncs_to_store(tmp_path) -> None:
@@ -519,6 +549,75 @@ def test_api_error_codes_for_auth_pipeline_task_and_download(tmp_path, monkeypat
             "message": "Task output is not ready.",
             "details": {},
         }
+
+
+def test_task_summary_and_active_routes_return_overall_status(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    _write_pipeline_config(pipelines_root, "bgm-concat", _make_pipeline_payload(name="bgm-concat"))
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root)
+
+    with TestClient(api_app_module.create_app()) as client:
+        assert client.get("/tasks/summary").status_code == 401
+        assert client.get("/tasks/active").status_code == 401
+
+        store = client.app.state.store
+        store.create(_make_api_task("t_completed", "completed", "2026-05-20T01:00:00+00:00"))
+        store.create(_make_api_task("t_failed", "failed", "2026-05-20T01:10:00+00:00"))
+        store.create(
+            _make_api_task(
+                "t_rendering",
+                "rendering",
+                "2026-05-20T02:20:00+00:00",
+                progress=45,
+                attempt=1,
+                started_at="2026-05-20T02:20:05+00:00",
+                last_error="download timeout",
+                last_error_at="2026-05-20T02:19:00+00:00",
+            )
+        )
+        store.create(_make_api_task("t_pending", "pending", "2026-05-20T02:10:00+00:00"))
+
+        summary = client.get("/tasks/summary", headers={"X-Api-Key": "test-key"})
+        assert summary.status_code == 200
+        summary_body = summary.json()
+        assert "+00:00" not in summary_body["generatedAt"]
+        assert summary_body["workers"] >= 1
+        assert summary_body["queueSize"] == 0
+        assert summary_body["counts"] == {
+            "total": 4,
+            "pending": 1,
+            "rendering": 1,
+            "completed": 1,
+            "failed": 1,
+        }
+
+        active = client.get("/tasks/active", headers={"X-Api-Key": "test-key"})
+        assert active.status_code == 200
+        active_body = active.json()
+        assert "+00:00" not in active_body["generatedAt"]
+        assert [item["taskId"] for item in active_body["tasks"]] == ["t_pending", "t_rendering"]
+        assert active_body["tasks"][0]["createdAt"] == "2026-05-20T10:10:00.000000"
+        assert active_body["tasks"][0]["startedAt"] is None
+        assert active_body["tasks"][1] == {
+            "taskId": "t_rendering",
+            "status": "rendering",
+            "progress": 45,
+            "attempt": 1,
+            "createdAt": "2026-05-20T10:20:00.000000",
+            "startedAt": "2026-05-20T10:20:05.000000",
+            "lastError": "download timeout",
+            "lastErrorAt": "2026-05-20T10:19:00.000000",
+            "taskKind": "pipeline",
+            "sourceName": "bgm-concat",
+        }
+
+        task = client.get("/tasks/t_rendering", headers={"X-Api-Key": "test-key"})
+        assert task.status_code == 200
+        task_body = task.json()
+        assert task_body["createdAt"] == "2026-05-20T10:20:00.000000"
+        assert task_body["startedAt"] == "2026-05-20T10:20:05.000000"
+        assert task_body["lastErrorAt"] == "2026-05-20T10:19:00.000000"
 
 
 def test_render_queue_full_returns_error_code(tmp_path, monkeypatch) -> None:

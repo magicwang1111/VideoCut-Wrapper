@@ -67,3 +67,17 @@ def test_task_store_records_final_failure(tmp_path) -> None:
     assert failures[0].attempt == 1
     assert failures[0].error == "ffmpeg exited with code 1"
     store.close()
+
+
+def test_task_store_empty_summary_and_active_tasks(tmp_path) -> None:
+    store = TaskStore(tmp_path / "tasks.db")
+
+    assert store.count_tasks_by_status() == {
+        "total": 0,
+        "pending": 0,
+        "rendering": 0,
+        "completed": 0,
+        "failed": 0,
+    }
+    assert store.list_active_tasks() == []
+    store.close()

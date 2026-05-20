@@ -213,6 +213,8 @@ videocut serve --host 0.0.0.0 --port 3000
 - `GET /bgm`
 - `POST /upload`
 - `POST /render`
+- `GET /tasks/summary`
+- `GET /tasks/active`
 - `GET /tasks/{id}`
 - `GET /tasks/{id}/download`
 
@@ -431,7 +433,44 @@ worker 的逻辑在 [worker_process.py](videocut/queue/worker_process.py)。
 - `TaskQueue` 会根据 `TASK_MAX_ATTEMPT` 自动重试
 - 超过最大重试次数后，任务会被标记为 `failed`
 
-### 7. 查询任务状态 `GET /tasks/{id}`
+### 7. 查询整体任务状态 `GET /tasks/summary`
+
+示例：
+
+```bash
+curl "http://127.0.0.1:3000/tasks/summary" \
+  -H "X-Api-Key: goumee-music"
+```
+
+返回示例：
+
+```json
+{
+  "generatedAt": "2026-05-20T18:44:36.000000",
+  "workers": 4,
+  "queueSize": 2,
+  "counts": {
+    "total": 12,
+    "pending": 2,
+    "rendering": 1,
+    "completed": 8,
+    "failed": 1
+  }
+}
+```
+
+### 8. 查询未结束任务 `GET /tasks/active`
+
+示例：
+
+```bash
+curl "http://127.0.0.1:3000/tasks/active" \
+  -H "X-Api-Key: goumee-music"
+```
+
+只返回 `pending` 和 `rendering` 任务，按创建时间升序排列。
+
+### 9. 查询任务状态 `GET /tasks/{id}`
 
 示例：
 
@@ -456,6 +495,8 @@ curl "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78" \
 }
 ```
 
+时间字段为北京时间。
+
 状态字段说明：
 
 - `pending`: 已创建，等待 worker 领取
@@ -463,7 +504,7 @@ curl "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78" \
 - `completed`: 渲染完成，结果已上传
 - `failed`: 渲染失败，且已超过重试次数或不可恢复
 
-### 8. 下载结果 `GET /tasks/{id}/download`
+### 10. 下载结果 `GET /tasks/{id}/download`
 
 示例：
 
@@ -485,7 +526,7 @@ curl -L "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78/download" \
 2. 再请求 `/tasks/{id}/download`
 3. 或直接使用 `/tasks/{id}` 返回的 `outputUrl`
 
-### 9. 任务状态流转
+### 11. 任务状态流转
 
 典型状态流转如下：
 
@@ -512,7 +553,7 @@ render failure
   -> else tasks.status = failed
 ```
 
-### 10. 本地联调推荐流程
+### 12. 本地联调推荐流程
 
 如果你不想连真实 OSS，建议启用本地 OSS 模式：
 
