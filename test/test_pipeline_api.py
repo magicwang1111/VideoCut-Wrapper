@@ -287,12 +287,12 @@ def test_bgm_endpoint_returns_catalog_from_runtime_bgm_dir(tmp_path, monkeypatch
                 {
                     "category": "激烈",
                     "filename": "2.mp3",
-                    "ossUri": "oss://goumee-coze/GouMei-Video-Cut/bgm/激烈/2.mp3",
+                    "ossUrl": "oss://goumee-coze/GouMei-Video-Cut/bgm/激烈/2.mp3",
                 },
                 {
                     "category": "舒缓",
                     "filename": "1.mp3",
-                    "ossUri": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/1.mp3",
+                    "ossUrl": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/1.mp3",
                 },
             ],
         }

@@ -77,7 +77,7 @@ def list_bgm_catalog(bgm_dir: Path, *, oss_uri_base: str | None = None) -> dict[
             {
                 "category": category,
                 "filename": audio_file.name,
-                "ossUri": build_bgm_oss_uri(resolved_oss_uri, category, audio_file.name),
+                "ossUrl": build_bgm_oss_uri(resolved_oss_uri, category, audio_file.name),
             }
         )
         category_counts[category] = category_counts.get(category, 0) + 1

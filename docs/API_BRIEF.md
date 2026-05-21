@@ -65,8 +65,8 @@ curl -X GET "http://127.0.0.1:3000/bgm" \
     {"name": "舒缓", "count": 5}
   ],
   "files": [
-    {"category": "激烈", "filename": "2.mp3", "ossUri": "oss://goumee-coze/GouMei-Video-Cut/bgm/激烈/2.mp3"},
-    {"category": "舒缓", "filename": "1.mp3", "ossUri": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/1.mp3"}
+    {"category": "激烈", "filename": "2.mp3", "ossUrl": "oss://goumee-coze/GouMei-Video-Cut/bgm/激烈/2.mp3"},
+    {"category": "舒缓", "filename": "1.mp3", "ossUrl": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/1.mp3"}
   ]
 }
 ```
@@ -77,13 +77,13 @@ curl -X GET "http://127.0.0.1:3000/bgm" \
 |---|---|---|
 | `bgmRoot` | `string` | 服务端实际扫描的 BGM 根目录 |
 | `categories` | `array` | 分类汇总，`name` 是分类目录，`count` 是该分类下音频数量 |
-| `files` | `array` | 音乐文件清单，`category + filename` 可直接用于 `/render`，`ossUri` 是 OSS 地址 |
+| `files` | `array` | 音乐文件清单，`category + filename` 可直接用于 `/render`，`ossUrl` 是 OSS 地址 |
 
 说明：
 
 - 调用方需要指定某首 BGM 时，先调用 `GET /bgm` 查询实时清单。
 - 精确指定歌曲使用 `files[].category + files[].filename`。
-- `files[].ossUri` 是该音乐在 OSS 上的地址。
+- `files[].ossUrl` 是该音乐在 OSS 上的地址。
 - 按分类随机使用 `categories[].name` 作为 `overrides.bgm.category`。
 - 目录存在但没有音频时，`categories` 和 `files` 返回空数组。
 - `docs/BGM_MANIFEST.json` 是静态清单，适合离线对齐；运行时仍以 `GET /bgm` 为准。

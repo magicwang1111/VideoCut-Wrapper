@@ -92,17 +92,17 @@ def test_list_bgm_catalog_uses_relative_category_paths_and_plain_filenames(tmp_p
             {
                 "category": "激烈",
                 "filename": "3.flac",
-                "ossUri": "oss://goumee-coze/GouMei-Video-Cut/bgm/激烈/3.flac",
+                "ossUrl": "oss://goumee-coze/GouMei-Video-Cut/bgm/激烈/3.flac",
             },
             {
                 "category": "舒缓",
                 "filename": "1.mp3",
-                "ossUri": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/1.mp3",
+                "ossUrl": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/1.mp3",
             },
             {
                 "category": "舒缓/nested",
                 "filename": "2.wav",
-                "ossUri": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/nested/2.wav",
+                "ossUrl": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/nested/2.wav",
             },
         ],
     }
@@ -120,7 +120,7 @@ def test_list_bgm_catalog_uses_configured_oss_uri_without_trailing_slash(tmp_pat
         {
             "category": "舒缓",
             "filename": "1.mp3",
-            "ossUri": "oss://bucket/custom/bgm/舒缓/1.mp3",
+            "ossUrl": "oss://bucket/custom/bgm/舒缓/1.mp3",
         }
     ]
 
@@ -137,7 +137,7 @@ def test_list_bgm_catalog_uses_bgm_oss_uri_env(tmp_path, monkeypatch) -> None:
         {
             "category": "舒缓",
             "filename": "1.mp3",
-            "ossUri": "oss://bucket/env-bgm/舒缓/1.mp3",
+            "ossUrl": "oss://bucket/env-bgm/舒缓/1.mp3",
         }
     ]
 
@@ -160,7 +160,7 @@ def test_build_bgm_manifest_uses_api_root_and_generated_source(tmp_path, monkeyp
             {
                 "category": "舒缓",
                 "filename": "1.mp3",
-                "ossUri": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/1.mp3",
+                "ossUrl": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/1.mp3",
             }
         ],
     }
@@ -181,7 +181,7 @@ def test_write_bgm_manifest_writes_utf8_json(tmp_path, monkeypatch) -> None:
         {
             "category": "舒缓",
             "filename": "1.mp3",
-            "ossUri": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/1.mp3",
+            "ossUrl": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/1.mp3",
         }
     ]
 
