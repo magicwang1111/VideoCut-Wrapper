@@ -61,12 +61,12 @@ curl -X GET "http://127.0.0.1:3000/bgm" \
 {
   "bgmRoot": "/app/input/bgm",
   "categories": [
-    {"name": "激烈", "count": 5},
-    {"name": "舒缓", "count": 5}
+    {"name": "calm", "displayName": "舒缓", "count": 5},
+    {"name": "intense", "displayName": "激烈", "count": 5}
   ],
   "files": [
-    {"category": "激烈", "filename": "2.mp3", "ossUrl": "oss://goumee-coze/GouMei-Video-Cut/bgm/激烈/2.mp3"},
-    {"category": "舒缓", "filename": "1.mp3", "ossUrl": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/1.mp3"}
+    {"category": "calm", "displayName": "舒缓", "filename": "1.mp3", "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/1.mp3"},
+    {"category": "intense", "displayName": "激烈", "filename": "2.mp3", "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/2.mp3"}
   ]
 }
 ```
@@ -76,14 +76,14 @@ curl -X GET "http://127.0.0.1:3000/bgm" \
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `bgmRoot` | `string` | 服务端实际扫描的 BGM 根目录 |
-| `categories` | `array` | 分类汇总，`name` 是分类目录，`count` 是该分类下音频数量 |
-| `files` | `array` | 音乐文件清单，`category + filename` 可直接用于 `/render`，`ossUrl` 是 OSS 地址 |
+| `categories` | `array` | 分类汇总，`name` 是英文分类目录，`displayName` 是展示名，`count` 是该分类下音频数量 |
+| `files` | `array` | 音乐文件清单，`category + filename` 可直接用于 `/render`，`displayName` 是展示名，`ossUrl` 是可直接下载的 OSS HTTPS 地址 |
 
 说明：
 
 - 调用方需要指定某首 BGM 时，先调用 `GET /bgm` 查询实时清单。
 - 精确指定歌曲使用 `files[].category + files[].filename`。
-- `files[].ossUrl` 是该音乐在 OSS 上的地址。
+- `files[].ossUrl` 是该音乐在 OSS 上可直接下载的 HTTPS 地址。
 - 按分类随机使用 `categories[].name` 作为 `overrides.bgm.category`。
 - 目录存在但没有音频时，`categories` 和 `files` 返回空数组。
 - `docs/BGM_MANIFEST.json` 是静态清单，适合离线对齐；运行时仍以 `GET /bgm` 为准。
@@ -130,7 +130,7 @@ X-Api-Key: goumee-music
   ],
   "overrides": {
     "bgm": {
-      "category": "舒缓",
+      "category": "calm",
       "filename": "1.mp3"
     }
   }
@@ -140,8 +140,8 @@ X-Api-Key: goumee-music
 BGM 路径规则：
 
 - `GET /bgm` 返回实时清单；`docs/BGM_MANIFEST.json` 仅作为静态示例/历史清单参考。
-- `category` 只能是 `/app/input/bgm` 下的相对目录名，例如 `舒缓`。
-- `category + filename` 可精确指定该分类下的文件，例如 `{"category": "舒缓", "filename": "1.mp3"}`。
+- `category` 只能是 `/app/input/bgm` 下的英文相对目录名，例如 `calm`。
+- `category + filename` 可精确指定该分类下的文件，例如 `{"category": "calm", "filename": "1.mp3"}`。
 - 只传 `bgm.category` 且不传 `bgm.filename` 时，服务端只在该分类目录下随机选择一首。
 - 不允许绝对路径，也不允许 `.` 或 `..`。
 - 指定文件或分类目录不存在时任务失败，不会回退随机音乐。
@@ -159,7 +159,7 @@ BGM 路径规则：
   ],
   "overrides": {
     "bgm": {
-      "category": "舒缓"
+      "category": "calm"
     }
   }
 }
@@ -176,7 +176,7 @@ BGM 路径规则：
   ],
   "overrides": {
     "bgm": {
-      "category": "舒缓",
+      "category": "calm",
       "filename": "1.mp3"
     }
   }
@@ -474,7 +474,7 @@ curl -X POST "http://127.0.0.1:3000/render" \
     ],
     "overrides": {
       "bgm": {
-        "category": "舒缓",
+        "category": "calm",
         "filename": "1.mp3"
       }
     }
@@ -509,7 +509,7 @@ payload = {
     ],
     "overrides": {
         "bgm": {
-            "category": "舒缓",
+            "category": "calm",
             "filename": "1.mp3",
         },
     },

@@ -90,6 +90,7 @@ def _configure_api_env(tmp_path, monkeypatch, pipelines_root: Path, *, bgm_dir: 
     else:
         monkeypatch.setenv("BGM_DIR", str(bgm_dir))
     monkeypatch.delenv("BGM_OSS_URI", raising=False)
+    monkeypatch.delenv("OSS_PUBLIC_ENDPOINT", raising=False)
     monkeypatch.setattr(api_app_module, "TaskQueue", FakeTaskQueue)
 
 
@@ -267,11 +268,11 @@ def test_bgm_endpoint_returns_catalog_from_runtime_bgm_dir(tmp_path, monkeypatch
     pipelines_root = tmp_path / "pipelines"
     bgm_dir = tmp_path / "runtime" / "bgm"
     _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
-    (bgm_dir / "激烈").mkdir(parents=True)
-    (bgm_dir / "舒缓").mkdir(parents=True)
-    (bgm_dir / "激烈" / "2.mp3").write_text("intense", encoding="utf-8")
-    (bgm_dir / "舒缓" / "1.mp3").write_text("calm", encoding="utf-8")
-    (bgm_dir / "舒缓" / "note.txt").write_text("ignored", encoding="utf-8")
+    (bgm_dir / "intense").mkdir(parents=True)
+    (bgm_dir / "calm").mkdir(parents=True)
+    (bgm_dir / "intense" / "2.mp3").write_text("intense", encoding="utf-8")
+    (bgm_dir / "calm" / "1.mp3").write_text("calm", encoding="utf-8")
+    (bgm_dir / "calm" / "note.txt").write_text("ignored", encoding="utf-8")
     _configure_api_env(tmp_path, monkeypatch, pipelines_root, bgm_dir=bgm_dir)
 
     with TestClient(api_app_module.create_app()) as client:
@@ -280,19 +281,21 @@ def test_bgm_endpoint_returns_catalog_from_runtime_bgm_dir(tmp_path, monkeypatch
         assert response.json() == {
             "bgmRoot": str(bgm_dir.resolve()),
             "categories": [
-                {"name": "激烈", "count": 1},
-                {"name": "舒缓", "count": 1},
+                {"name": "calm", "displayName": "舒缓", "count": 1},
+                {"name": "intense", "displayName": "激烈", "count": 1},
             ],
             "files": [
                 {
-                    "category": "激烈",
-                    "filename": "2.mp3",
-                    "ossUrl": "oss://goumee-coze/GouMei-Video-Cut/bgm/激烈/2.mp3",
+                    "category": "calm",
+                    "displayName": "舒缓",
+                    "filename": "1.mp3",
+                    "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/1.mp3",
                 },
                 {
-                    "category": "舒缓",
-                    "filename": "1.mp3",
-                    "ossUrl": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/1.mp3",
+                    "category": "intense",
+                    "displayName": "激烈",
+                    "filename": "2.mp3",
+                    "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/2.mp3",
                 },
             ],
         }

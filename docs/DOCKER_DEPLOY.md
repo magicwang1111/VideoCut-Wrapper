@@ -228,7 +228,7 @@ docs/BGM_MANIFEST.json
 
 ```json
 {
-  "category": "舒缓",
+  "category": "calm",
   "filename": "1.mp3"
 }
 ```
@@ -245,7 +245,7 @@ python api-test/render_bgm_file.py
 {
   "overrides": {
     "bgm": {
-      "category": "舒缓",
+      "category": "calm",
       "filename": "1.mp3"
     }
   }

@@ -199,12 +199,12 @@ curl "http://127.0.0.1:3000/bgm" \
 {
   "bgmRoot": "/app/input/bgm",
   "categories": [
-    {"name": "激烈", "count": 5},
-    {"name": "舒缓", "count": 5}
+    {"name": "calm", "displayName": "舒缓", "count": 5},
+    {"name": "intense", "displayName": "激烈", "count": 5}
   ],
   "files": [
-    {"category": "激烈", "filename": "2.mp3", "ossUrl": "oss://goumee-coze/GouMei-Video-Cut/bgm/激烈/2.mp3"},
-    {"category": "舒缓", "filename": "1.mp3", "ossUrl": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/1.mp3"}
+    {"category": "calm", "displayName": "舒缓", "filename": "1.mp3", "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/1.mp3"},
+    {"category": "intense", "displayName": "激烈", "filename": "2.mp3", "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/2.mp3"}
   ]
 }
 ```
@@ -214,8 +214,8 @@ curl "http://127.0.0.1:3000/bgm" \
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `bgmRoot` | `string` | 服务端实际扫描的 BGM 根目录，`BGM_DIR` 优先，否则默认 `input/bgm` |
-| `categories` | `array` | 分类汇总，`name` 是分类目录，`count` 是该分类下音频数量 |
-| `files` | `array` | 音乐文件清单，每项的 `category` 和 `filename` 可传给 `/render`，`ossUrl` 是 OSS 地址 |
+| `categories` | `array` | 分类汇总，`name` 是英文分类目录，`displayName` 是展示名，`count` 是该分类下音频数量 |
+| `files` | `array` | 音乐文件清单，每项的 `category` 和 `filename` 可传给 `/render`，`displayName` 是展示名，`ossUrl` 是可直接下载的 OSS HTTPS 地址 |
 
 目录存在但没有音频文件时，`categories` 和 `files` 返回空数组。目录不存在时返回：
 
@@ -415,7 +415,7 @@ other-prefix/input/a.mp4
     {"index": 0, "type": "dissolve", "duration": 0.5, "scale": 1.18}
   ],
   "default_transition": {"type": "cut", "duration": 0},
-  "bgm": {"enabled": true, "dir": "input/bgm", "category": "舒缓", "filename": "1.mp3", "volume": 0.3, "fade_out": 0},
+  "bgm": {"enabled": true, "dir": "input/bgm", "category": "calm", "filename": "1.mp3", "volume": 0.3, "fade_out": 0},
   "output": {"filename": "final.mp4"}
 }
 ```
@@ -434,7 +434,7 @@ other-prefix/input/a.mp4
 | `clip_overrides` | 覆盖单个素材的 `trim_start`、`trim_end`，单位秒 |
 | `transition_overrides` | 覆盖单个转场的类型、时长和缩放参数 |
 | `default_transition` | 覆盖默认转场 |
-| `bgm` | 覆盖 BGM 设置，常用 `{"enabled": false}` 禁用 BGM，`{"category": "舒缓"}` 按分类随机，或 `{"category": "舒缓", "filename": "1.mp3"}` 指定某一首 |
+| `bgm` | 覆盖 BGM 设置，常用 `{"enabled": false}` 禁用 BGM，`{"category": "calm"}` 按分类随机，或 `{"category": "calm", "filename": "1.mp3"}` 指定某一首 |
 | `output` | 覆盖渲染临时输出文件名，API 最终 OSS key 使用 `outputs/<YYYYMMDD>/<YYYYMMDD_HHMMSS>/<taskId>/final.mp4`，时间戳为北京时间（Asia/Shanghai） |
 
 转场类型：
@@ -455,7 +455,7 @@ zoom-dissolve
 BGM 指定规则：
 
 - 对接方应先调用 `GET /bgm` 获取当前实时清单；`docs/BGM_MANIFEST.json` 是打包脚本可刷新的静态清单，适合离线对齐，不替代运行时扫描结果。
-- `overrides.bgm.category` 是 `/app/input/bgm` 下的相对目录名，例如 `舒缓`。
+- `overrides.bgm.category` 是 `/app/input/bgm` 下的英文相对目录名，例如 `calm`。
 - `overrides.bgm.filename` 是分类目录下的文件名，例如 `1.mp3`。
 - 传 `category + filename` 时，服务端精确选择该分类下的文件；只传 `category` 时，服务端只在该分类目录下随机选择一首。
 - 精确指定歌曲时使用 `GET /bgm` 响应里的 `files[].category + files[].filename`，按分类随机时使用 `categories[].name`。
@@ -470,7 +470,7 @@ BGM 指定规则：
 {
   "overrides": {
     "bgm": {
-      "category": "舒缓"
+      "category": "calm"
     }
   }
 }
@@ -482,7 +482,7 @@ BGM 指定规则：
 {
   "overrides": {
     "bgm": {
-      "category": "舒缓",
+      "category": "calm",
       "filename": "1.mp3"
     }
   }
@@ -784,6 +784,7 @@ OSS 配置：
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `OSS_ENDPOINT` | `oss-cn-hangzhou.aliyuncs.com` | 阿里云 OSS endpoint |
+| `OSS_PUBLIC_ENDPOINT` | `oss-cn-hangzhou.aliyuncs.com` | `GET /bgm` 返回可下载 `ossUrl` 时使用的公网 endpoint |
 | `OSS_BUCKET` | `goumee-coze` | OSS bucket |
 | `OSS_PREFIX` | `GouMei-Video-Cut` | 输入和输出 key 前缀 |
 | `OSS_ACCESS_KEY_ID` | 空 | 真实 OSS 模式必填 |
@@ -856,7 +857,7 @@ payload = {
         "GouMei-Video-Cut/test-input/1/clip_003.mp4",
     ],
     "overrides": {
-        "bgm": {"category": "舒缓", "filename": "1.mp3"},
+        "bgm": {"category": "calm", "filename": "1.mp3"},
         "quality": "medium",
     },
 }

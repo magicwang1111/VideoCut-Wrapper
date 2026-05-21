@@ -70,10 +70,11 @@ def test_scan_bgm_category_files_limits_random_pool_to_category(tmp_path) -> Non
 
 def test_list_bgm_catalog_uses_relative_category_paths_and_plain_filenames(tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("BGM_OSS_URI", raising=False)
+    monkeypatch.delenv("OSS_PUBLIC_ENDPOINT", raising=False)
     bgm_dir = tmp_path / "input" / "bgm"
-    calm_dir = bgm_dir / "舒缓"
+    calm_dir = bgm_dir / "calm"
     nested_dir = calm_dir / "nested"
-    intense_dir = bgm_dir / "激烈"
+    intense_dir = bgm_dir / "intense"
     nested_dir.mkdir(parents=True)
     intense_dir.mkdir(parents=True)
     (calm_dir / "1.mp3").write_text("calm", encoding="utf-8")
@@ -84,25 +85,28 @@ def test_list_bgm_catalog_uses_relative_category_paths_and_plain_filenames(tmp_p
     assert list_bgm_catalog(bgm_dir) == {
         "bgmRoot": str(bgm_dir.resolve()),
         "categories": [
-            {"name": "激烈", "count": 1},
-            {"name": "舒缓", "count": 1},
-            {"name": "舒缓/nested", "count": 1},
+            {"name": "calm", "displayName": "舒缓", "count": 1},
+            {"name": "calm/nested", "displayName": "舒缓/nested", "count": 1},
+            {"name": "intense", "displayName": "激烈", "count": 1},
         ],
         "files": [
             {
-                "category": "激烈",
-                "filename": "3.flac",
-                "ossUrl": "oss://goumee-coze/GouMei-Video-Cut/bgm/激烈/3.flac",
-            },
-            {
-                "category": "舒缓",
+                "category": "calm",
+                "displayName": "舒缓",
                 "filename": "1.mp3",
-                "ossUrl": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/1.mp3",
+                "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/1.mp3",
             },
             {
-                "category": "舒缓/nested",
+                "category": "calm/nested",
+                "displayName": "舒缓/nested",
                 "filename": "2.wav",
-                "ossUrl": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/nested/2.wav",
+                "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/nested/2.wav",
+            },
+            {
+                "category": "intense",
+                "displayName": "激烈",
+                "filename": "3.flac",
+                "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/3.flac",
             },
         ],
     }
@@ -110,43 +114,48 @@ def test_list_bgm_catalog_uses_relative_category_paths_and_plain_filenames(tmp_p
 
 def test_list_bgm_catalog_uses_configured_oss_uri_without_trailing_slash(tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("BGM_OSS_URI", raising=False)
+    monkeypatch.delenv("OSS_PUBLIC_ENDPOINT", raising=False)
     bgm_dir = tmp_path / "input" / "bgm"
-    (bgm_dir / "舒缓").mkdir(parents=True)
-    (bgm_dir / "舒缓" / "1.mp3").write_text("calm", encoding="utf-8")
+    (bgm_dir / "calm").mkdir(parents=True)
+    (bgm_dir / "calm" / "1.mp3").write_text("calm", encoding="utf-8")
 
     catalog = list_bgm_catalog(bgm_dir, oss_uri_base="oss://bucket/custom/bgm")
 
     assert catalog["files"] == [
         {
-            "category": "舒缓",
+            "category": "calm",
+            "displayName": "舒缓",
             "filename": "1.mp3",
-            "ossUrl": "oss://bucket/custom/bgm/舒缓/1.mp3",
+            "ossUrl": "https://bucket.oss-cn-hangzhou.aliyuncs.com/custom/bgm/calm/1.mp3",
         }
     ]
 
 
 def test_list_bgm_catalog_uses_bgm_oss_uri_env(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("BGM_OSS_URI", "oss://bucket/env-bgm/")
+    monkeypatch.delenv("OSS_PUBLIC_ENDPOINT", raising=False)
     bgm_dir = tmp_path / "input" / "bgm"
-    (bgm_dir / "舒缓").mkdir(parents=True)
-    (bgm_dir / "舒缓" / "1.mp3").write_text("calm", encoding="utf-8")
+    (bgm_dir / "calm").mkdir(parents=True)
+    (bgm_dir / "calm" / "1.mp3").write_text("calm", encoding="utf-8")
 
     catalog = list_bgm_catalog(bgm_dir, oss_uri_base="oss://bucket/configured")
 
     assert catalog["files"] == [
         {
-            "category": "舒缓",
+            "category": "calm",
+            "displayName": "舒缓",
             "filename": "1.mp3",
-            "ossUrl": "oss://bucket/env-bgm/舒缓/1.mp3",
+            "ossUrl": "https://bucket.oss-cn-hangzhou.aliyuncs.com/env-bgm/calm/1.mp3",
         }
     ]
 
 
 def test_build_bgm_manifest_uses_api_root_and_generated_source(tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("BGM_OSS_URI", raising=False)
+    monkeypatch.delenv("OSS_PUBLIC_ENDPOINT", raising=False)
     bgm_dir = tmp_path / "input" / "bgm"
-    (bgm_dir / "舒缓").mkdir(parents=True)
-    (bgm_dir / "舒缓" / "1.mp3").write_text("calm", encoding="utf-8")
+    (bgm_dir / "calm").mkdir(parents=True)
+    (bgm_dir / "calm" / "1.mp3").write_text("calm", encoding="utf-8")
 
     assert build_bgm_manifest(bgm_dir, api_bgm_root="/app/input/bgm") == {
         "bgmRoot": "/app/input/bgm",
@@ -155,12 +164,13 @@ def test_build_bgm_manifest_uses_api_root_and_generated_source(tmp_path, monkeyp
             "relative to /app/input/bgm."
         ),
         "generatedFrom": str(bgm_dir.resolve()),
-        "categories": [{"name": "舒缓", "count": 1}],
+        "categories": [{"name": "calm", "displayName": "舒缓", "count": 1}],
         "files": [
             {
-                "category": "舒缓",
+                "category": "calm",
+                "displayName": "舒缓",
                 "filename": "1.mp3",
-                "ossUrl": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/1.mp3",
+                "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/1.mp3",
             }
         ],
     }
@@ -168,20 +178,22 @@ def test_build_bgm_manifest_uses_api_root_and_generated_source(tmp_path, monkeyp
 
 def test_write_bgm_manifest_writes_utf8_json(tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("BGM_OSS_URI", raising=False)
+    monkeypatch.delenv("OSS_PUBLIC_ENDPOINT", raising=False)
     bgm_dir = tmp_path / "input" / "bgm"
     output_path = tmp_path / "docs" / "BGM_MANIFEST.json"
-    (bgm_dir / "舒缓").mkdir(parents=True)
-    (bgm_dir / "舒缓" / "1.mp3").write_text("calm", encoding="utf-8")
+    (bgm_dir / "calm").mkdir(parents=True)
+    (bgm_dir / "calm" / "1.mp3").write_text("calm", encoding="utf-8")
 
     manifest = write_bgm_manifest(bgm_dir, output_path)
 
     assert output_path.read_text(encoding="utf-8").endswith("\n")
-    assert '"category": "舒缓"' in output_path.read_text(encoding="utf-8")
+    assert '"displayName": "舒缓"' in output_path.read_text(encoding="utf-8")
     assert manifest["files"] == [
         {
-            "category": "舒缓",
+            "category": "calm",
+            "displayName": "舒缓",
             "filename": "1.mp3",
-            "ossUrl": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/1.mp3",
+            "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/1.mp3",
         }
     ]
 

@@ -176,7 +176,7 @@ videocut serve --host 0.0.0.0 --port 3000
       { "index": 1, "type": "cut", "duration": 0 }
     ],
     "bgm": {
-      "category": "舒缓",
+      "category": "calm",
       "filename": "1.mp3"
     }
   }
@@ -289,17 +289,17 @@ curl "http://127.0.0.1:3000/bgm" \
 {
   "bgmRoot": "/app/input/bgm",
   "categories": [
-    {"name": "激烈", "count": 5},
-    {"name": "舒缓", "count": 5}
+    {"name": "calm", "displayName": "舒缓", "count": 5},
+    {"name": "intense", "displayName": "激烈", "count": 5}
   ],
   "files": [
-    {"category": "激烈", "filename": "2.mp3", "ossUrl": "oss://goumee-coze/GouMei-Video-Cut/bgm/激烈/2.mp3"},
-    {"category": "舒缓", "filename": "1.mp3", "ossUrl": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/1.mp3"}
+    {"category": "calm", "displayName": "舒缓", "filename": "1.mp3", "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/1.mp3"},
+    {"category": "intense", "displayName": "激烈", "filename": "2.mp3", "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/2.mp3"}
   ]
 }
 ```
 
-`files[].category + files[].filename` 可直接用于 `/render` 的 `overrides.bgm`，`files[].ossUrl` 是该音乐在 OSS 上的地址。
+`files[].category + files[].filename` 可直接用于 `/render` 的 `overrides.bgm`，`displayName` 是展示名，`files[].ossUrl` 是可直接下载的 OSS HTTPS 地址。
 
 ### 3. 查看已注册 Pipeline
 
@@ -365,7 +365,7 @@ curl -X POST "http://127.0.0.1:3000/upload" \
       { "index": 1, "type": "dissolve", "duration": 0.5 }
     ],
     "bgm": {
-      "category": "舒缓",
+      "category": "calm",
       "filename": "1.mp3"
     }
   }
@@ -395,7 +395,7 @@ curl -X POST "http://127.0.0.1:3000/render" \
         { "index": 1, "type": "dissolve", "duration": 0.5 }
       ],
       "bgm": {
-        "category": "舒缓",
+        "category": "calm",
         "filename": "1.mp3"
       }
     }
@@ -594,6 +594,7 @@ videocut serve --port 3000
 - `FFMPEG_HWACCEL`: 可选，需要时手动指定 `cuda` 等硬件解码参数
 - `PIPELINES_DIR`: 可选，pipeline 配置目录，默认 `pipelines/`
 - `OSS_ENDPOINT`
+- `OSS_PUBLIC_ENDPOINT`: 可选，`GET /bgm` 返回可下载 `ossUrl` 时使用的公网 endpoint
 - `OSS_ACCESS_KEY_ID`
 - `OSS_ACCESS_KEY_SECRET`
 - `OSS_BUCKET`
@@ -695,6 +696,7 @@ cp .env.example .env
 
 - 如果接阿里云 OSS：
   - 填好 `OSS_ENDPOINT`
+  - 如 `OSS_ENDPOINT` 使用内网地址，另填 `OSS_PUBLIC_ENDPOINT=oss-cn-hangzhou.aliyuncs.com`
   - 填好 `OSS_ACCESS_KEY_ID`
   - 填好 `OSS_ACCESS_KEY_SECRET`
   - 保持 `OSS_LOCAL_ROOT=` 为空

@@ -4,12 +4,19 @@ import json
 import os
 import subprocess
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from urllib.parse import quote, urlparse
 from uuid import uuid4
 
 from videocut.errors import RenderError
 
 _BGM_EXTENSIONS = {".mp3", ".wav", ".aac", ".ogg", ".flac", ".m4a"}
 _DEFAULT_BGM_OSS_URI = "oss://goumee-coze/GouMei-Video-Cut/bgm/"
+_DEFAULT_OSS_BUCKET = "goumee-coze"
+_DEFAULT_OSS_ENDPOINT = "oss-cn-hangzhou.aliyuncs.com"
+_BGM_CATEGORY_DISPLAY_NAMES = {
+    "calm": "舒缓",
+    "intense": "激烈",
+}
 _BGM_MANIFEST_PATH_RULE = (
     "API overrides.bgm.category + overrides.bgm.filename uses the category and filename fields below, "
     "relative to /app/input/bgm."
@@ -49,9 +56,22 @@ def resolve_bgm_oss_uri(configured_uri: str | None = None) -> str:
     return raw_uri.rstrip("/") + "/"
 
 
-def build_bgm_oss_uri(base_uri: str, category: str, filename: str) -> str:
+def build_bgm_oss_url(base_uri: str, category: str, filename: str) -> str:
+    parsed = urlparse(base_uri)
+    bucket = parsed.netloc or os.getenv("OSS_BUCKET", _DEFAULT_OSS_BUCKET)
+    object_prefix = parsed.path.strip("/")
     relative_path = (PurePosixPath(category) / filename).as_posix() if category else filename
-    return f"{base_uri.rstrip('/')}/{relative_path}"
+    object_key = (PurePosixPath(object_prefix) / relative_path).as_posix() if object_prefix else relative_path
+    encoded_key = quote(object_key, safe="/")
+    endpoint = os.getenv("OSS_PUBLIC_ENDPOINT") or _DEFAULT_OSS_ENDPOINT
+    public_host = endpoint.removeprefix("https://").removeprefix("http://").strip("/")
+    return f"https://{bucket}.{public_host}/{encoded_key}"
+
+
+def display_bgm_category(category: str) -> str:
+    if not category:
+        return ""
+    return "/".join(_BGM_CATEGORY_DISPLAY_NAMES.get(part, part) for part in category.split("/"))
 
 
 def list_bgm_catalog(bgm_dir: Path, *, oss_uri_base: str | None = None) -> dict[str, object]:
@@ -76,14 +96,15 @@ def list_bgm_catalog(bgm_dir: Path, *, oss_uri_base: str | None = None) -> dict[
         files.append(
             {
                 "category": category,
+                "displayName": display_bgm_category(category),
                 "filename": audio_file.name,
-                "ossUrl": build_bgm_oss_uri(resolved_oss_uri, category, audio_file.name),
+                "ossUrl": build_bgm_oss_url(resolved_oss_uri, category, audio_file.name),
             }
         )
         category_counts[category] = category_counts.get(category, 0) + 1
 
     categories = [
-        {"name": category, "count": category_counts[category]}
+        {"name": category, "displayName": display_bgm_category(category), "count": category_counts[category]}
         for category in sorted(category_counts)
     ]
     return {
