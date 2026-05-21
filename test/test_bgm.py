@@ -68,7 +68,8 @@ def test_scan_bgm_category_files_limits_random_pool_to_category(tmp_path) -> Non
     assert scan_bgm_category_files(bgm_dir, "舒缓") == sorted([calm_audio, calm_nested_audio])
 
 
-def test_list_bgm_catalog_uses_relative_category_paths_and_plain_filenames(tmp_path) -> None:
+def test_list_bgm_catalog_uses_relative_category_paths_and_plain_filenames(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("BGM_OSS_URI", raising=False)
     bgm_dir = tmp_path / "input" / "bgm"
     calm_dir = bgm_dir / "舒缓"
     nested_dir = calm_dir / "nested"
@@ -88,14 +89,61 @@ def test_list_bgm_catalog_uses_relative_category_paths_and_plain_filenames(tmp_p
             {"name": "舒缓/nested", "count": 1},
         ],
         "files": [
-            {"category": "激烈", "filename": "3.flac"},
-            {"category": "舒缓", "filename": "1.mp3"},
-            {"category": "舒缓/nested", "filename": "2.wav"},
+            {
+                "category": "激烈",
+                "filename": "3.flac",
+                "ossUri": "oss://goumee-coze/GouMei-Video-Cut/bgm/激烈/3.flac",
+            },
+            {
+                "category": "舒缓",
+                "filename": "1.mp3",
+                "ossUri": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/1.mp3",
+            },
+            {
+                "category": "舒缓/nested",
+                "filename": "2.wav",
+                "ossUri": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/nested/2.wav",
+            },
         ],
     }
 
 
-def test_build_bgm_manifest_uses_api_root_and_generated_source(tmp_path) -> None:
+def test_list_bgm_catalog_uses_configured_oss_uri_without_trailing_slash(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("BGM_OSS_URI", raising=False)
+    bgm_dir = tmp_path / "input" / "bgm"
+    (bgm_dir / "舒缓").mkdir(parents=True)
+    (bgm_dir / "舒缓" / "1.mp3").write_text("calm", encoding="utf-8")
+
+    catalog = list_bgm_catalog(bgm_dir, oss_uri_base="oss://bucket/custom/bgm")
+
+    assert catalog["files"] == [
+        {
+            "category": "舒缓",
+            "filename": "1.mp3",
+            "ossUri": "oss://bucket/custom/bgm/舒缓/1.mp3",
+        }
+    ]
+
+
+def test_list_bgm_catalog_uses_bgm_oss_uri_env(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("BGM_OSS_URI", "oss://bucket/env-bgm/")
+    bgm_dir = tmp_path / "input" / "bgm"
+    (bgm_dir / "舒缓").mkdir(parents=True)
+    (bgm_dir / "舒缓" / "1.mp3").write_text("calm", encoding="utf-8")
+
+    catalog = list_bgm_catalog(bgm_dir, oss_uri_base="oss://bucket/configured")
+
+    assert catalog["files"] == [
+        {
+            "category": "舒缓",
+            "filename": "1.mp3",
+            "ossUri": "oss://bucket/env-bgm/舒缓/1.mp3",
+        }
+    ]
+
+
+def test_build_bgm_manifest_uses_api_root_and_generated_source(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("BGM_OSS_URI", raising=False)
     bgm_dir = tmp_path / "input" / "bgm"
     (bgm_dir / "舒缓").mkdir(parents=True)
     (bgm_dir / "舒缓" / "1.mp3").write_text("calm", encoding="utf-8")
@@ -108,11 +156,18 @@ def test_build_bgm_manifest_uses_api_root_and_generated_source(tmp_path) -> None
         ),
         "generatedFrom": str(bgm_dir.resolve()),
         "categories": [{"name": "舒缓", "count": 1}],
-        "files": [{"category": "舒缓", "filename": "1.mp3"}],
+        "files": [
+            {
+                "category": "舒缓",
+                "filename": "1.mp3",
+                "ossUri": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/1.mp3",
+            }
+        ],
     }
 
 
-def test_write_bgm_manifest_writes_utf8_json(tmp_path) -> None:
+def test_write_bgm_manifest_writes_utf8_json(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("BGM_OSS_URI", raising=False)
     bgm_dir = tmp_path / "input" / "bgm"
     output_path = tmp_path / "docs" / "BGM_MANIFEST.json"
     (bgm_dir / "舒缓").mkdir(parents=True)
@@ -122,7 +177,13 @@ def test_write_bgm_manifest_writes_utf8_json(tmp_path) -> None:
 
     assert output_path.read_text(encoding="utf-8").endswith("\n")
     assert '"category": "舒缓"' in output_path.read_text(encoding="utf-8")
-    assert manifest["files"] == [{"category": "舒缓", "filename": "1.mp3"}]
+    assert manifest["files"] == [
+        {
+            "category": "舒缓",
+            "filename": "1.mp3",
+            "ossUri": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/1.mp3",
+        }
+    ]
 
 
 def test_scan_bgm_category_files_rejects_missing_category(tmp_path) -> None:

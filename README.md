@@ -293,13 +293,13 @@ curl "http://127.0.0.1:3000/bgm" \
     {"name": "舒缓", "count": 5}
   ],
   "files": [
-    {"category": "激烈", "filename": "2.mp3"},
-    {"category": "舒缓", "filename": "1.mp3"}
+    {"category": "激烈", "filename": "2.mp3", "ossUri": "oss://goumee-coze/GouMei-Video-Cut/bgm/激烈/2.mp3"},
+    {"category": "舒缓", "filename": "1.mp3", "ossUri": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/1.mp3"}
   ]
 }
 ```
 
-`files[].category + files[].filename` 可直接用于 `/render` 的 `overrides.bgm`。
+`files[].category + files[].filename` 可直接用于 `/render` 的 `overrides.bgm`，`files[].ossUri` 是该音乐在 OSS 上的地址。
 
 ### 3. 查看已注册 Pipeline
 

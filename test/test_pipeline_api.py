@@ -89,6 +89,7 @@ def _configure_api_env(tmp_path, monkeypatch, pipelines_root: Path, *, bgm_dir: 
         monkeypatch.delenv("BGM_DIR", raising=False)
     else:
         monkeypatch.setenv("BGM_DIR", str(bgm_dir))
+    monkeypatch.delenv("BGM_OSS_URI", raising=False)
     monkeypatch.setattr(api_app_module, "TaskQueue", FakeTaskQueue)
 
 
@@ -283,8 +284,16 @@ def test_bgm_endpoint_returns_catalog_from_runtime_bgm_dir(tmp_path, monkeypatch
                 {"name": "舒缓", "count": 1},
             ],
             "files": [
-                {"category": "激烈", "filename": "2.mp3"},
-                {"category": "舒缓", "filename": "1.mp3"},
+                {
+                    "category": "激烈",
+                    "filename": "2.mp3",
+                    "ossUri": "oss://goumee-coze/GouMei-Video-Cut/bgm/激烈/2.mp3",
+                },
+                {
+                    "category": "舒缓",
+                    "filename": "1.mp3",
+                    "ossUri": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/1.mp3",
+                },
             ],
         }
 

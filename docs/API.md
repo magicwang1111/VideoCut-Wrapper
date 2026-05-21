@@ -203,8 +203,8 @@ curl "http://127.0.0.1:3000/bgm" \
     {"name": "舒缓", "count": 5}
   ],
   "files": [
-    {"category": "激烈", "filename": "2.mp3"},
-    {"category": "舒缓", "filename": "1.mp3"}
+    {"category": "激烈", "filename": "2.mp3", "ossUri": "oss://goumee-coze/GouMei-Video-Cut/bgm/激烈/2.mp3"},
+    {"category": "舒缓", "filename": "1.mp3", "ossUri": "oss://goumee-coze/GouMei-Video-Cut/bgm/舒缓/1.mp3"}
   ]
 }
 ```
@@ -215,7 +215,7 @@ curl "http://127.0.0.1:3000/bgm" \
 |---|---|---|
 | `bgmRoot` | `string` | 服务端实际扫描的 BGM 根目录，`BGM_DIR` 优先，否则默认 `input/bgm` |
 | `categories` | `array` | 分类汇总，`name` 是分类目录，`count` 是该分类下音频数量 |
-| `files` | `array` | 音乐文件清单，每项的 `category` 和 `filename` 可传给 `/render` |
+| `files` | `array` | 音乐文件清单，每项的 `category` 和 `filename` 可传给 `/render`，`ossUri` 是 OSS 地址 |
 
 目录存在但没有音频文件时，`categories` 和 `files` 返回空数组。目录不存在时返回：
 

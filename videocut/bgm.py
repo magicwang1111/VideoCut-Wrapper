@@ -9,6 +9,7 @@ from uuid import uuid4
 from videocut.errors import RenderError
 
 _BGM_EXTENSIONS = {".mp3", ".wav", ".aac", ".ogg", ".flac", ".m4a"}
+_DEFAULT_BGM_OSS_URI = "oss://goumee-coze/GouMei-Video-Cut/bgm/"
 _BGM_MANIFEST_PATH_RULE = (
     "API overrides.bgm.category + overrides.bgm.filename uses the category and filename fields below, "
     "relative to /app/input/bgm."
@@ -38,11 +39,27 @@ def scan_bgm_files(bgm_dir: Path) -> list[Path]:
     return files
 
 
-def list_bgm_catalog(bgm_dir: Path) -> dict[str, object]:
+def resolve_bgm_oss_uri(configured_uri: str | None = None) -> str:
+    env_uri = os.getenv("BGM_OSS_URI")
+    raw_uri = (
+        env_uri.strip()
+        if env_uri and env_uri.strip()
+        else (configured_uri.strip() if configured_uri and configured_uri.strip() else _DEFAULT_BGM_OSS_URI)
+    )
+    return raw_uri.rstrip("/") + "/"
+
+
+def build_bgm_oss_uri(base_uri: str, category: str, filename: str) -> str:
+    relative_path = (PurePosixPath(category) / filename).as_posix() if category else filename
+    return f"{base_uri.rstrip('/')}/{relative_path}"
+
+
+def list_bgm_catalog(bgm_dir: Path, *, oss_uri_base: str | None = None) -> dict[str, object]:
     base_dir = bgm_dir.resolve()
     if not base_dir.is_dir():
         raise RenderError(f"BGM directory does not exist: {base_dir}")
 
+    resolved_oss_uri = resolve_bgm_oss_uri(oss_uri_base)
     files: list[dict[str, str]] = []
     category_counts: dict[str, int] = {}
     audio_files = sorted(
@@ -56,7 +73,13 @@ def list_bgm_catalog(bgm_dir: Path) -> dict[str, object]:
     for audio_file in audio_files:
         relative_parent = audio_file.parent.relative_to(base_dir).as_posix()
         category = "" if relative_parent == "." else relative_parent
-        files.append({"category": category, "filename": audio_file.name})
+        files.append(
+            {
+                "category": category,
+                "filename": audio_file.name,
+                "ossUri": build_bgm_oss_uri(resolved_oss_uri, category, audio_file.name),
+            }
+        )
         category_counts[category] = category_counts.get(category, 0) + 1
 
     categories = [
