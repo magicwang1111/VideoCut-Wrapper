@@ -78,6 +78,7 @@ def test_list_bgm_catalog_uses_relative_category_paths_and_plain_filenames(tmp_p
     nested_dir.mkdir(parents=True)
     intense_dir.mkdir(parents=True)
     (calm_dir / "1.mp3").write_text("calm", encoding="utf-8")
+    (calm_dir / "测试1.mp3").write_text("calm-cn", encoding="utf-8")
     (nested_dir / "2.wav").write_text("nested", encoding="utf-8")
     (intense_dir / "3.flac").write_text("intense", encoding="utf-8")
     (intense_dir / "note.txt").write_text("ignored", encoding="utf-8")
@@ -85,7 +86,7 @@ def test_list_bgm_catalog_uses_relative_category_paths_and_plain_filenames(tmp_p
     assert list_bgm_catalog(bgm_dir) == {
         "bgmRoot": str(bgm_dir.resolve()),
         "categories": [
-            {"name": "calm", "displayName": "舒缓", "count": 1},
+            {"name": "calm", "displayName": "舒缓", "count": 2},
             {"name": "calm/nested", "displayName": "舒缓/nested", "count": 1},
             {"name": "intense", "displayName": "激烈", "count": 1},
         ],
@@ -93,19 +94,25 @@ def test_list_bgm_catalog_uses_relative_category_paths_and_plain_filenames(tmp_p
             {
                 "category": "calm",
                 "displayName": "舒缓",
-                "filename": "1.mp3",
+                "filename": "1",
                 "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/1.mp3",
             },
             {
                 "category": "calm/nested",
                 "displayName": "舒缓/nested",
-                "filename": "2.wav",
+                "filename": "2",
                 "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/nested/2.wav",
+            },
+            {
+                "category": "calm",
+                "displayName": "舒缓",
+                "filename": "测试1",
+                "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/%E6%B5%8B%E8%AF%951.mp3",
             },
             {
                 "category": "intense",
                 "displayName": "激烈",
-                "filename": "3.flac",
+                "filename": "3",
                 "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/3.flac",
             },
         ],
@@ -125,7 +132,7 @@ def test_list_bgm_catalog_uses_configured_oss_uri_without_trailing_slash(tmp_pat
         {
             "category": "calm",
             "displayName": "舒缓",
-            "filename": "1.mp3",
+            "filename": "1",
             "ossUrl": "https://bucket.oss-cn-hangzhou.aliyuncs.com/custom/bgm/calm/1.mp3",
         }
     ]
@@ -144,7 +151,7 @@ def test_list_bgm_catalog_uses_bgm_oss_uri_env(tmp_path, monkeypatch) -> None:
         {
             "category": "calm",
             "displayName": "舒缓",
-            "filename": "1.mp3",
+            "filename": "1",
             "ossUrl": "https://bucket.oss-cn-hangzhou.aliyuncs.com/env-bgm/calm/1.mp3",
         }
     ]
@@ -160,7 +167,7 @@ def test_build_bgm_manifest_uses_api_root_and_generated_source(tmp_path, monkeyp
     assert build_bgm_manifest(bgm_dir, api_bgm_root="/app/input/bgm") == {
         "bgmRoot": "/app/input/bgm",
         "pathRule": (
-            "API overrides.bgm.category + overrides.bgm.filename uses the category and filename fields below, "
+            "API overrides.bgm.category + overrides.bgm.filename uses the category and extensionless filename fields below, "
             "relative to /app/input/bgm."
         ),
         "generatedFrom": str(bgm_dir.resolve()),
@@ -169,7 +176,7 @@ def test_build_bgm_manifest_uses_api_root_and_generated_source(tmp_path, monkeyp
             {
                 "category": "calm",
                 "displayName": "舒缓",
-                "filename": "1.mp3",
+                "filename": "1",
                 "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/1.mp3",
             }
         ],
@@ -192,7 +199,7 @@ def test_write_bgm_manifest_writes_utf8_json(tmp_path, monkeypatch) -> None:
         {
             "category": "calm",
             "displayName": "舒缓",
-            "filename": "1.mp3",
+            "filename": "1",
             "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/1.mp3",
         }
     ]
@@ -231,17 +238,51 @@ def test_resolve_bgm_category_file_accepts_category_and_filename(tmp_path) -> No
     target.parent.mkdir(parents=True)
     target.write_text("music", encoding="utf-8")
 
-    assert resolve_bgm_category_file(bgm_dir, "舒缓", "1.mp3") == target
+    assert resolve_bgm_category_file(bgm_dir, "舒缓", "1") == target
 
 
-@pytest.mark.parametrize("filename", ["/tmp/1.mp3", "D:\\tmp\\1.mp3", "../1.mp3", "./1.mp3", ".", "nested/1.mp3"])
+@pytest.mark.parametrize("filename", ["/tmp/1", "D:\\tmp\\1", "../1", "./1", ".", "nested/1", "1.mp3"])
 def test_resolve_bgm_category_file_rejects_unsafe_filenames(tmp_path, filename: str) -> None:
     bgm_dir = tmp_path / "input" / "bgm"
     category_dir = bgm_dir / "舒缓"
     category_dir.mkdir(parents=True)
 
-    with pytest.raises(RenderError, match="plain file name"):
+    with pytest.raises(RenderError, match="extensionless plain file name"):
         resolve_bgm_category_file(bgm_dir, "舒缓", filename)
+
+
+def test_resolve_bgm_category_file_rejects_duplicate_stems(tmp_path) -> None:
+    bgm_dir = tmp_path / "input" / "bgm"
+    category_dir = bgm_dir / "舒缓"
+    category_dir.mkdir(parents=True)
+    (category_dir / "1.mp3").write_text("music", encoding="utf-8")
+    (category_dir / "1.wav").write_text("music", encoding="utf-8")
+
+    with pytest.raises(RenderError, match="Duplicate BGM filename stem"):
+        resolve_bgm_category_file(bgm_dir, "舒缓", "1")
+
+
+def test_list_bgm_catalog_rejects_duplicate_stems_in_same_category(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("BGM_OSS_URI", raising=False)
+    bgm_dir = tmp_path / "input" / "bgm"
+    category_dir = bgm_dir / "calm"
+    category_dir.mkdir(parents=True)
+    (category_dir / "1.mp3").write_text("music", encoding="utf-8")
+    (category_dir / "1.wav").write_text("music", encoding="utf-8")
+
+    with pytest.raises(RenderError, match="Duplicate BGM filename stem"):
+        list_bgm_catalog(bgm_dir)
+
+
+def test_list_bgm_catalog_rejects_stems_with_dots(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("BGM_OSS_URI", raising=False)
+    bgm_dir = tmp_path / "input" / "bgm"
+    category_dir = bgm_dir / "calm"
+    category_dir.mkdir(parents=True)
+    (category_dir / "song.v1.mp3").write_text("music", encoding="utf-8")
+
+    with pytest.raises(RenderError, match="extensionless plain file name"):
+        list_bgm_catalog(bgm_dir)
 
 
 def test_apply_bgm_uses_task_unique_tmp_and_replaces_video(tmp_path, monkeypatch) -> None:

@@ -411,7 +411,7 @@ payload = {
     "overrides": {
         "bgm": {
             "category": "舒缓",
-            "filename": "1.mp3",
+            "filename": "1",
         },
     },
 }
@@ -462,7 +462,7 @@ curl -X POST "http://127.0.0.1:3000/render" \
     "overrides": {
       "bgm": {
         "category": "舒缓",
-        "filename": "1.mp3"
+        "filename": "1"
       }
     }
   }'
@@ -511,7 +511,7 @@ python api-test/render_zoom_dissolve.py
 
 说明：
 
-- `render_bgm_file.py` 顶部的 `BGM_CATEGORY = "舒缓"`、`BGM_FILENAME = "1.mp3"` 可以直接改成清单里的其他值。
+- `render_bgm_file.py` 顶部的 `BGM_CATEGORY = "舒缓"`、`BGM_FILENAME = "1"` 可以直接改成清单里的其他值；`BGM_FILENAME` 使用不带扩展名的歌曲 ID。
 - 可选 BGM 清单见 [../docs/BGM_MANIFEST.json](../docs/BGM_MANIFEST.json)。
 - `render_groups_1_5.py` / `render_groups_1_16.py` 顶部的 `GROUP_IDS` 控制并发组。
 - `render_trim_mixed.py` / `render_zoom_dissolve.py` 顶部的 `PIPELINE` 控制要测的 pipeline。

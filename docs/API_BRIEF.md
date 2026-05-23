@@ -65,8 +65,8 @@ curl -X GET "http://127.0.0.1:3000/bgm" \
     {"name": "intense", "displayName": "激烈", "count": 5}
   ],
   "files": [
-    {"category": "calm", "displayName": "舒缓", "filename": "1.mp3", "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/1.mp3"},
-    {"category": "intense", "displayName": "激烈", "filename": "2.mp3", "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/2.mp3"}
+    {"category": "calm", "displayName": "舒缓", "filename": "测试1", "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/%E6%B5%8B%E8%AF%951.mp3"},
+    {"category": "intense", "displayName": "激烈", "filename": "测试2", "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/%E6%B5%8B%E8%AF%952.mp3"}
   ]
 }
 ```
@@ -77,7 +77,7 @@ curl -X GET "http://127.0.0.1:3000/bgm" \
 |---|---|---|
 | `bgmRoot` | `string` | 服务端实际扫描的 BGM 根目录 |
 | `categories` | `array` | 分类汇总，`name` 是英文分类目录，`displayName` 是展示名，`count` 是该分类下音频数量 |
-| `files` | `array` | 音乐文件清单，`category + filename` 可直接用于 `/render`，`displayName` 是展示名，`ossUrl` 是可直接下载的 OSS HTTPS 地址 |
+| `files` | `array` | 音乐文件清单，`category + filename` 可直接用于 `/render`，其中 `filename` 不带扩展名；`displayName` 是展示名，`ossUrl` 是可直接下载的 OSS HTTPS 地址 |
 
 说明：
 
@@ -131,7 +131,7 @@ X-Api-Key: goumee-music
   "overrides": {
     "bgm": {
       "category": "calm",
-      "filename": "1.mp3"
+      "filename": "测试1"
     }
   }
 }
@@ -141,9 +141,9 @@ BGM 路径规则：
 
 - `GET /bgm` 返回实时清单；`docs/BGM_MANIFEST.json` 仅作为静态示例/历史清单参考。
 - `category` 只能是 `/app/input/bgm` 下的英文相对目录名，例如 `calm`。
-- `category + filename` 可精确指定该分类下的文件，例如 `{"category": "calm", "filename": "1.mp3"}`。
+- `category + filename` 可精确指定该分类下的文件，例如 `{"category": "calm", "filename": "测试1"}`；`filename` 是不带扩展名的歌曲 ID，真实文件仍可以是 `测试1.mp3`。
 - 只传 `bgm.category` 且不传 `bgm.filename` 时，服务端只在该分类目录下随机选择一首。
-- 不允许绝对路径，也不允许 `.` 或 `..`。
+- `filename` 不允许包含扩展名、`.`、`/`、`\`、绝对路径或 `..`；同一分类下不允许同名 stem 文件。
 - 指定文件或分类目录不存在时任务失败，不会回退随机音乐。
 - 不传 `bgm.category` 时，服务端会在 `/app/input/bgm` 下递归随机选择一首。
 - BGM 文件由容器启动同步逻辑从 `BGM_OSS_URI` 同步到 `/app/input/bgm`，`/render` 不按 OSS key 单独下载音乐。
@@ -177,7 +177,7 @@ BGM 路径规则：
   "overrides": {
     "bgm": {
       "category": "calm",
-      "filename": "1.mp3"
+      "filename": "测试1"
     }
   }
 }
@@ -475,7 +475,7 @@ curl -X POST "http://127.0.0.1:3000/render" \
     "overrides": {
       "bgm": {
         "category": "calm",
-        "filename": "1.mp3"
+        "filename": "测试1"
       }
     }
   }'
@@ -510,7 +510,7 @@ payload = {
     "overrides": {
         "bgm": {
             "category": "calm",
-            "filename": "1.mp3",
+            "filename": "测试1",
         },
     },
 }

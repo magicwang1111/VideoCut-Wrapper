@@ -177,13 +177,13 @@ videocut serve --host 0.0.0.0 --port 3000
     ],
     "bgm": {
       "category": "calm",
-      "filename": "1.mp3"
+      "filename": "1"
     }
   }
 }
 ```
 
-`GET /bgm` 用来查询实时音乐清单；`overrides.bgm.category + filename` 用来指定某一首 BGM。只指定 `category` 时，会在该分类目录下随机选择一首；都不传时保持全目录随机选择。
+`GET /bgm` 用来查询实时音乐清单；`overrides.bgm.category + filename` 用来指定某一首 BGM，其中 `filename` 是不带扩展名的歌曲 ID。只指定 `category` 时，会在该分类目录下随机选择一首；都不传时保持全目录随机选择。
 
 ## API
 
@@ -293,13 +293,13 @@ curl "http://127.0.0.1:3000/bgm" \
     {"name": "intense", "displayName": "激烈", "count": 5}
   ],
   "files": [
-    {"category": "calm", "displayName": "舒缓", "filename": "1.mp3", "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/1.mp3"},
-    {"category": "intense", "displayName": "激烈", "filename": "2.mp3", "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/2.mp3"}
+    {"category": "calm", "displayName": "舒缓", "filename": "1", "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/1.mp3"},
+    {"category": "intense", "displayName": "激烈", "filename": "2", "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/2.mp3"}
   ]
 }
 ```
 
-`files[].category + files[].filename` 可直接用于 `/render` 的 `overrides.bgm`，`displayName` 是展示名，`files[].ossUrl` 是可直接下载的 OSS HTTPS 地址。
+`files[].category + files[].filename` 可直接用于 `/render` 的 `overrides.bgm`，`filename` 不带扩展名，`displayName` 是展示名，`files[].ossUrl` 是可直接下载的 OSS HTTPS 地址。
 
 ### 3. 查看已注册 Pipeline
 
@@ -366,7 +366,7 @@ curl -X POST "http://127.0.0.1:3000/upload" \
     ],
     "bgm": {
       "category": "calm",
-      "filename": "1.mp3"
+      "filename": "1"
     }
   }
 }
@@ -396,7 +396,7 @@ curl -X POST "http://127.0.0.1:3000/render" \
       ],
       "bgm": {
         "category": "calm",
-        "filename": "1.mp3"
+        "filename": "1"
       }
     }
   }'

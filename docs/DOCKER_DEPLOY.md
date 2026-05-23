@@ -229,9 +229,11 @@ docs/BGM_MANIFEST.json
 ```json
 {
   "category": "calm",
-  "filename": "1.mp3"
+  "filename": "1"
 }
 ```
+
+这里的 `filename` 是不带扩展名的歌曲 ID；真实文件和 `ossUrl` 仍保留 `.mp3` 等扩展名。
 
 如果接口里要指定某一首 BGM，就传清单里的 `category + filename`：
 
@@ -246,7 +248,7 @@ python api-test/render_bgm_file.py
   "overrides": {
     "bgm": {
       "category": "calm",
-      "filename": "1.mp3"
+      "filename": "1"
     }
   }
 }

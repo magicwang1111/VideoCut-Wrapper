@@ -288,13 +288,13 @@ def test_bgm_endpoint_returns_catalog_from_runtime_bgm_dir(tmp_path, monkeypatch
                 {
                     "category": "calm",
                     "displayName": "舒缓",
-                    "filename": "1.mp3",
+                    "filename": "1",
                     "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/1.mp3",
                 },
                 {
                     "category": "intense",
                     "displayName": "激烈",
-                    "filename": "2.mp3",
+                    "filename": "2",
                     "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/2.mp3",
                 },
             ],
@@ -415,7 +415,7 @@ def test_bgm_category_override_clears_existing_filename_and_preserves_options(tm
         "enabled": True,
         "dir": "input/bgm",
         "category": "激烈",
-        "filename": "2.mp3",
+        "filename": "2",
         "volume": 0.45,
         "fade_out": 1.5,
     }
@@ -449,12 +449,12 @@ def test_bgm_category_filename_override_preserves_manifest_shape(tmp_path) -> No
         config,
         ["/tmp/a.mp4", "/tmp/b.mp4", "/tmp/c.mp4"],
         tmp_path / "config.json",
-        {"bgm": {"category": "舒缓", "filename": "1.mp3"}},
+        {"bgm": {"category": "舒缓", "filename": "1"}},
     )
 
     assert ctx.config.bgm is not None
     assert ctx.config.bgm.category == "舒缓"
-    assert ctx.config.bgm.filename == "1.mp3"
+    assert ctx.config.bgm.filename == "1"
     assert ctx.config.bgm.enabled is True
     assert ctx.config.bgm.dir == "input/bgm"
     assert ctx.config.bgm.volume == pytest.approx(0.45)

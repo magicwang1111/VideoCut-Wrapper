@@ -18,7 +18,7 @@ _BGM_CATEGORY_DISPLAY_NAMES = {
     "intense": "激烈",
 }
 _BGM_MANIFEST_PATH_RULE = (
-    "API overrides.bgm.category + overrides.bgm.filename uses the category and filename fields below, "
+    "API overrides.bgm.category + overrides.bgm.filename uses the category and extensionless filename fields below, "
     "relative to /app/input/bgm."
 )
 
@@ -74,6 +74,28 @@ def display_bgm_category(category: str) -> str:
     return "/".join(_BGM_CATEGORY_DISPLAY_NAMES.get(part, part) for part in category.split("/"))
 
 
+def _normalize_bgm_filename_stem(configured_filename: str) -> str:
+    raw_filename = configured_filename.strip().replace("\\", "/")
+    if not raw_filename:
+        raise RenderError("BGM filename must not be empty.")
+
+    relative_filename = Path(raw_filename)
+    posix_filename = PurePosixPath(raw_filename)
+    windows_filename = PureWindowsPath(raw_filename)
+    filename_parts = [part for part in raw_filename.split("/") if part]
+    if (
+        len(filename_parts) != 1
+        or relative_filename.is_absolute()
+        or posix_filename.is_absolute()
+        or windows_filename.is_absolute()
+        or windows_filename.drive
+        or "." in raw_filename
+        or any(part in {".", ".."} for part in filename_parts)
+    ):
+        raise RenderError(f"BGM filename must be an extensionless plain file name under BGM category: {configured_filename}")
+    return raw_filename
+
+
 def list_bgm_catalog(bgm_dir: Path, *, oss_uri_base: str | None = None) -> dict[str, object]:
     base_dir = bgm_dir.resolve()
     if not base_dir.is_dir():
@@ -90,14 +112,24 @@ def list_bgm_catalog(bgm_dir: Path, *, oss_uri_base: str | None = None) -> dict[
         ),
         key=lambda p: p.relative_to(base_dir).as_posix(),
     )
+    seen_stems: dict[tuple[str, str], Path] = {}
     for audio_file in audio_files:
         relative_parent = audio_file.parent.relative_to(base_dir).as_posix()
         category = "" if relative_parent == "." else relative_parent
+        filename_stem = _normalize_bgm_filename_stem(audio_file.stem)
+        stem_key = (category, filename_stem)
+        previous = seen_stems.get(stem_key)
+        if previous is not None:
+            raise RenderError(
+                f"Duplicate BGM filename stem in category {category or '<root>'}: "
+                f"{filename_stem} ({previous.name}, {audio_file.name})"
+            )
+        seen_stems[stem_key] = audio_file
         files.append(
             {
                 "category": category,
                 "displayName": display_bgm_category(category),
-                "filename": audio_file.name,
+                "filename": filename_stem,
                 "ossUrl": build_bgm_oss_url(resolved_oss_uri, category, audio_file.name),
             }
         )
@@ -173,34 +205,19 @@ def scan_bgm_category_files(bgm_dir: Path, configured_category: str) -> list[Pat
 
 def resolve_bgm_category_file(bgm_dir: Path, configured_category: str, configured_filename: str) -> Path:
     category_dir = resolve_bgm_category_dir(bgm_dir, configured_category)
-    raw_filename = configured_filename.strip().replace("\\", "/")
-    if not raw_filename:
-        raise RenderError("BGM filename must not be empty.")
+    raw_filename = _normalize_bgm_filename_stem(configured_filename)
 
-    relative_filename = Path(raw_filename)
-    posix_filename = PurePosixPath(raw_filename)
-    windows_filename = PureWindowsPath(raw_filename)
-    filename_parts = [part for part in raw_filename.split("/") if part]
-    if (
-        len(filename_parts) != 1
-        or relative_filename.is_absolute()
-        or posix_filename.is_absolute()
-        or windows_filename.is_absolute()
-        or windows_filename.drive
-        or any(part in {".", ".."} for part in filename_parts)
-    ):
-        raise RenderError(f"BGM filename must be a plain file name under BGM category: {configured_filename}")
-    if relative_filename.suffix.lower() not in _BGM_EXTENSIONS:
-        raise RenderError(f"Unsupported BGM file extension: {configured_filename}")
-
-    candidate = (category_dir / relative_filename).resolve()
-    try:
-        candidate.relative_to(category_dir)
-    except ValueError as exc:
-        raise RenderError(f"BGM filename must stay under BGM category: {configured_filename}") from exc
-    if not candidate.is_file():
-        raise RenderError(f"BGM file not found: {candidate}")
-    return candidate
+    candidates = sorted(
+        p
+        for p in category_dir.iterdir()
+        if p.is_file() and p.suffix.lower() in _BGM_EXTENSIONS and p.stem == raw_filename
+    )
+    if len(candidates) > 1:
+        names = ", ".join(p.name for p in candidates)
+        raise RenderError(f"Duplicate BGM filename stem in category {configured_category}: {configured_filename} ({names})")
+    if not candidates:
+        raise RenderError(f"BGM file not found for filename stem: {category_dir / raw_filename}")
+    return candidates[0].resolve()
 
 
 def apply_bgm(

@@ -1,6 +1,6 @@
 """测试指定某一首 BGM 渲染。
 
-默认测试 group 1，pipeline 使用 bgm-concat，BGM 使用 /app/input/bgm/舒缓/1.mp3。
+默认测试 group 1，pipeline 使用 bgm-concat，BGM 使用 /app/input/bgm/舒缓/1.mp3，接口 filename 传不带扩展名的 1。
 BGM 可选路径见 docs/BGM_MANIFEST.json。
 运行:
 python api-test/render_bgm_file.py
@@ -20,7 +20,7 @@ DOWNLOAD_DIR = Path(__file__).resolve().parent / "downloads"
 PIPELINE = "bgm-concat"
 GROUP_IDS = [1]
 BGM_CATEGORY = "舒缓"
-BGM_FILENAME = "1.mp3"
+BGM_FILENAME = "1"
 DOWNLOAD = True
 
 

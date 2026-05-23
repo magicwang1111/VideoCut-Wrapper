@@ -1,6 +1,6 @@
 {
   "bgmRoot": "/app/input/bgm",
-  "pathRule": "API overrides.bgm.category + overrides.bgm.filename uses the category and filename fields below, relative to /app/input/bgm.",
+  "pathRule": "API overrides.bgm.category + overrides.bgm.filename uses the category and extensionless filename fields below, relative to /app/input/bgm.",
   "generatedFrom": "/mnt/d/VideoCut-Wrapper/input/bgm",
   "categories": [
     {
@@ -18,62 +18,62 @@
     {
       "category": "calm",
       "displayName": "舒缓",
-      "filename": "1.mp3",
-      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/1.mp3"
-    },
-    {
-      "category": "calm",
-      "displayName": "舒缓",
-      "filename": "10.mp3",
+      "filename": "10",
       "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/10.mp3"
     },
     {
       "category": "calm",
       "displayName": "舒缓",
-      "filename": "3.mp3",
-      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/3.mp3"
-    },
-    {
-      "category": "calm",
-      "displayName": "舒缓",
-      "filename": "6.mp3",
+      "filename": "6",
       "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/6.mp3"
     },
     {
       "category": "calm",
       "displayName": "舒缓",
-      "filename": "8.mp3",
+      "filename": "8",
       "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/8.mp3"
     },
     {
-      "category": "intense",
-      "displayName": "激烈",
-      "filename": "2.mp3",
-      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/2.mp3"
+      "category": "calm",
+      "displayName": "舒缓",
+      "filename": "测试1",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/%E6%B5%8B%E8%AF%951.mp3"
+    },
+    {
+      "category": "calm",
+      "displayName": "舒缓",
+      "filename": "测试3",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/%E6%B5%8B%E8%AF%953.mp3"
     },
     {
       "category": "intense",
       "displayName": "激烈",
-      "filename": "4.mp3",
+      "filename": "4",
       "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/4.mp3"
     },
     {
       "category": "intense",
       "displayName": "激烈",
-      "filename": "5.mp3",
+      "filename": "5",
       "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/5.mp3"
     },
     {
       "category": "intense",
       "displayName": "激烈",
-      "filename": "7.mp3",
+      "filename": "7",
       "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/7.mp3"
     },
     {
       "category": "intense",
       "displayName": "激烈",
-      "filename": "9.mp3",
+      "filename": "9",
       "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/9.mp3"
+    },
+    {
+      "category": "intense",
+      "displayName": "激烈",
+      "filename": "测试2",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/%E6%B5%8B%E8%AF%952.mp3"
     }
   ]
 }
