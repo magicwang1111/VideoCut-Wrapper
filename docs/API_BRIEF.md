@@ -18,7 +18,7 @@ X-Api-Key: goumee-music
 API_KEYS=goumee-music
 ```
 
-本文默认调用方已经把素材放在 OSS 中，并在 `/render` 的 `clips` 中传 OSS key。本文不约定上传接口。
+本文支持两种素材接入方式：调用方已经把视频素材放在 OSS 中时，可在 `/render` 的 `clips` 中直接传 OSS key；调用方只有本地文件时，可先调用 `/upload` 上传。用户自带音频也通过 `/upload` 上传，但渲染时放在 `overrides.bgm.fileId`，不要放进 `clips`。
 
 ## 1. 健康检查
 
@@ -88,6 +88,55 @@ curl -X GET "http://127.0.0.1:3000/bgm" \
 - 目录存在但没有音频时，`categories` 和 `files` 返回空数组。
 - `docs/BGM_MANIFEST.json` 是静态清单，适合离线对齐；运行时仍以 `GET /bgm` 为准。
 
+## 2.1 上传素材或用户音频
+
+```http
+POST /upload
+Content-Type: multipart/form-data
+X-Api-Key: goumee-music
+```
+
+表单字段固定为 `file`。视频/图片素材上传后返回 `kind=asset`，后续可放进 `/render.clips`；用户音频上传后返回 `kind=user_audio`，后续只能放进 `/render.overrides.bgm.fileId`。
+
+上传视频素材：
+
+```bash
+curl -X POST "http://127.0.0.1:3000/upload" \
+  -H "X-Api-Key: goumee-music" \
+  -F "file=@D:/input/demo.mp4"
+```
+
+响应：
+
+```json
+{
+  "fileId": "video123def45",
+  "ossKey": "GouMei-Video-Cut/inputs/video123def45.mp4",
+  "kind": "asset"
+}
+```
+
+上传用户音频：
+
+```bash
+curl -X POST "http://127.0.0.1:3000/upload" \
+  -H "X-Api-Key: goumee-music" \
+  -F "file=@D:/input/Furious.mp3"
+```
+
+响应：
+
+```json
+{
+  "fileId": "audio123def45",
+  "ossKey": "GouMei-Video-Cut/user-audio/audio123def45.mp3",
+  "kind": "user_audio",
+  "expiresAt": "2026-06-03T12:00:00.000000"
+}
+```
+
+用户音频不会写入 `/input/bgm`，不会出现在 `GET /bgm`，也不会参与随机 BGM。真实 OSS 模式建议给 `GouMei-Video-Cut/user-audio/` 前缀配置生命周期规则，到期自动删除；不需要新建 bucket。
+
 ## 3. 创建渲染任务
 
 ```http
@@ -114,10 +163,26 @@ X-Api-Key: goumee-music
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `pipeline` | `string` | 是 | Pipeline ID |
-| `clips` | `string[]` | 是 | 素材 OSS key 列表 |
+| `clips` | `string[]` | 是 | 视频/图片素材列表，可传素材 OSS key 或 `kind=asset` 的上传 `fileId` |
 | `overrides` | `object` | 否 | 运行时覆盖参数，不传时使用 pipeline 默认配置 |
 
 调用方通常只需要传 `pipeline` 和 `clips`。裁剪、转场、画质、BGM 等渲染参数由服务端按选定 pipeline 的固定配置处理。
+
+如果要使用用户上传音频，先调用 `/upload` 上传音频，再在 `overrides.bgm.fileId` 中传返回的音频 `fileId`：
+
+```json
+{
+  "pipeline": "bgm-concat",
+  "clips": ["video123def45"],
+  "overrides": {
+    "bgm": {
+      "fileId": "audio123def45"
+    }
+  }
+}
+```
+
+`overrides.bgm.fileId` 只接受 `fileId` 一个字段，不能同时传 `category`、`filename`、`dir`、`volume`、`fade_out` 或其它 BGM 字段。音量使用 pipeline 默认配置。传了 `fileId` 后，服务端直接使用用户音频，不扫描 `/input/bgm`，最终视频不保留原声。
 
 如果要指定某一首 BGM，先调用 `GET /bgm` 查询清单，再在 `overrides.bgm` 里传返回的 `category + filename`：
 
@@ -140,6 +205,7 @@ X-Api-Key: goumee-music
 BGM 路径规则：
 
 - `GET /bgm` 返回实时清单；`docs/BGM_MANIFEST.json` 仅作为静态示例/历史清单参考。
+- 用户上传音频不属于曲库，使用 `overrides.bgm.fileId`，不需要调用 `GET /bgm`。
 - `category` 只能是 `/app/input/bgm` 下的英文相对目录名，例如 `calm`。
 - `category + filename` 可精确指定该分类下的文件，例如 `{"category": "calm", "filename": "测试1"}`；`filename` 是不带扩展名的歌曲 ID，真实文件仍可以是 `测试1.mp3`。
 - 只传 `bgm.category` 且不传 `bgm.filename` 时，服务端只在该分类目录下随机选择一首。
@@ -185,8 +251,9 @@ BGM 路径规则：
 
 `clips` 约定：
 
-- `clips` 中每一项都是 OSS key。
-- 默认必须以 `GouMei-Video-Cut/` 开头。
+- `clips` 中每一项可以是视频/图片素材 OSS key，也可以是 `/upload` 返回的 `kind=asset` 的 `fileId`。
+- OSS key 默认必须以 `GouMei-Video-Cut/` 开头。
+- 不允许把用户音频 `fileId` 或 `GouMei-Video-Cut/user-audio/...` 放进 `clips`。
 - 不支持传本地路径或公网 URL。
 
 合法示例：
@@ -384,7 +451,9 @@ HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读
 | `422` | `1003` | JSON 字段类型校验失败 | 按字段类型修正 |
 | `404` | `1004` | 请求路径不存在 | 检查 URL path |
 | `400` | `2001` | `/render` 缺少 `pipeline` 或 `clips` | 修正请求体 |
-| `400` | `2002` | `clips` 中存在本地路径、URL 或非法 OSS key | 改传合法 OSS key |
+| `400` | `2001` | `overrides.bgm.fileId` 与其它 BGM 字段混传 | 只保留 `fileId` |
+| `400` | `2002` | `clips` 中存在本地路径、URL、非法 OSS key，或把用户音频当素材传入 | 改传合法素材 OSS key 或素材 `fileId` |
+| `400` | `2002` | `overrides.bgm.fileId` 指向非用户音频上传 | 重新上传音频并传音频 `fileId` |
 | `400` | `2003` | pipeline 不存在 | 使用已注册 pipeline |
 | `404` | `2004` | 查询的 `taskId` 不存在 | 检查 `taskId` |
 | `400/404` | `2006` | 上传引用的 `fileId` 不存在，或 BGM 目录不存在 | 重新上传、修正 `fileId` 或检查 `BGM_DIR` |
@@ -408,6 +477,28 @@ HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读
   "message": "Invalid clip reference.",
   "details": {
     "value": "D:/tmp/local.mp4"
+  }
+}
+```
+
+```json
+{
+  "error_code": 2001,
+  "message": "Invalid request body.",
+  "details": {
+    "field": "overrides.bgm.fileId",
+    "conflicts": ["volume"]
+  }
+}
+```
+
+```json
+{
+  "error_code": 2002,
+  "message": "Invalid BGM file reference.",
+  "details": {
+    "fileId": "video123def45",
+    "kind": "asset"
   }
 }
 ```
@@ -480,6 +571,29 @@ curl -X POST "http://127.0.0.1:3000/render" \
     }
   }'
 ```
+
+上传用户音频并渲染：
+
+```bash
+audio_json=$(curl -s -X POST "http://127.0.0.1:3000/upload" \
+  -H "X-Api-Key: goumee-music" \
+  -F "file=@D:/input/Furious.mp3")
+
+curl -X POST "http://127.0.0.1:3000/render" \
+  -H "X-Api-Key: goumee-music" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "pipeline": "bgm-concat",
+    "clips": ["GouMei-Video-Cut/test-input/1/clip_001.mp4"],
+    "overrides": {
+      "bgm": {
+        "fileId": "audio123def45"
+      }
+    }
+  }'
+```
+
+上例里 `audio123def45` 需要替换成 `/upload` 返回的用户音频 `fileId`。
 
 Python `requests` 版本：
 
