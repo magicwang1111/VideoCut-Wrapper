@@ -269,6 +269,7 @@ class ParsedPipelineContext:
     config_path: Path
     resolved_srcs: list[str]
     junctions: list[PipelineTransitionConfig]
+    user_bgm_path: str | None = None
 
 
 def resolve_pipeline_config(config_path: str | Path) -> ParsedPipelineContext:
@@ -455,6 +456,8 @@ def build_pipeline_context(
     resolved_srcs: list[str],
     config_path: str | Path,
     overrides: dict[str, Any] | None = None,
+    *,
+    user_bgm_path: str | None = None,
 ) -> ParsedPipelineContext:
     abs_config_path = Path(config_path).resolve()
     bound = bind_pipeline_config(config, len(resolved_srcs), overrides)
@@ -464,4 +467,5 @@ def build_pipeline_context(
         config_path=abs_config_path,
         resolved_srcs=list(resolved_srcs),
         junctions=resolve_junctions(len(bound.clips), bound.transitions, bound.default_transition),
+        user_bgm_path=user_bgm_path,
     )

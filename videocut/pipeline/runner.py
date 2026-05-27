@@ -361,19 +361,23 @@ class PipelineRunner:
 
             bgm_file_used = None
             if config.bgm and config.bgm.enabled:
-                bgm_dir_path = resolve_bgm_dir(self.root_dir, config.bgm.dir)
-                if config.bgm.category and config.bgm.filename:
-                    chosen = resolve_bgm_category_file(bgm_dir_path, config.bgm.category, config.bgm.filename)
-                elif config.bgm.category:
-                    bgm_files = scan_bgm_category_files(bgm_dir_path, config.bgm.category)
-                    chosen = random.choice(bgm_files)
+                if ctx.user_bgm_path:
+                    chosen = Path(ctx.user_bgm_path)
+                    chosen_label = chosen.name
                 else:
-                    bgm_files = scan_bgm_files(bgm_dir_path)
-                    chosen = random.choice(bgm_files)
-                try:
-                    chosen_label = str(chosen.relative_to(bgm_dir_path))
-                except ValueError:
-                    chosen_label = str(chosen)
+                    bgm_dir_path = resolve_bgm_dir(self.root_dir, config.bgm.dir)
+                    if config.bgm.category and config.bgm.filename:
+                        chosen = resolve_bgm_category_file(bgm_dir_path, config.bgm.category, config.bgm.filename)
+                    elif config.bgm.category:
+                        bgm_files = scan_bgm_category_files(bgm_dir_path, config.bgm.category)
+                        chosen = random.choice(bgm_files)
+                    else:
+                        bgm_files = scan_bgm_files(bgm_dir_path)
+                        chosen = random.choice(bgm_files)
+                    try:
+                        chosen_label = str(chosen.relative_to(bgm_dir_path))
+                    except ValueError:
+                        chosen_label = str(chosen)
                 logger.info("[2.5/3] 混入 BGM: %s (volume=%.2f)", chosen_label, config.bgm.volume)
                 apply_bgm(ffmpeg_path, ffprobe_path, output_path, chosen, config.bgm.volume, config.bgm.fade_out, task.id)
                 bgm_file_used = str(chosen)

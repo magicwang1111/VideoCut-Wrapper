@@ -22,7 +22,7 @@ videocut serve --host 0.0.0.0 --port 3000
 |---|---|---|---|
 | `GET` | `/health` | 否 | 服务和队列健康检查 |
 | `GET` | `/bgm` | 是 | 查询当前可用 BGM 分类和文件清单 |
-| `POST` | `/upload` | 是 | 上传本地素材，返回 `fileId` 和 `ossKey` |
+| `POST` | `/upload` | 是 | 上传本地素材或临时用户音频，返回 `fileId` 和 `ossKey` |
 | `POST` | `/render` | 是 | 创建异步渲染任务，返回 `taskId` |
 | `GET` | `/tasks/summary` | 是 | 查询整体任务状态计数 |
 | `GET` | `/tasks/active` | 是 | 查询当前未结束任务 |
@@ -231,7 +231,7 @@ curl "http://127.0.0.1:3000/bgm" \
 
 ## 6. `POST /upload`
 
-上传单个素材文件。服务端会写入临时目录，再上传到真实 OSS 或本地 OSS 模式目录，并保存 `fileId -> ossKey` 映射。
+上传单个素材文件或用户临时音频。服务端会写入临时目录，再上传到真实 OSS 或本地 OSS 模式目录，并保存 `fileId -> ossKey` 映射。
 
 请求要求：
 
@@ -240,7 +240,7 @@ curl "http://127.0.0.1:3000/bgm" \
 | `Content-Type` | `multipart/form-data` |
 | 表单字段名 | `file` |
 | 单文件大小上限 | `500 MB` |
-| 支持扩展名 | `.mp4`, `.mov`, `.avi`, `.mkv`, `.webm`, `.mp3`, `.wav`, `.aac`, `.png`, `.jpg`, `.jpeg`, `.webp` |
+| 支持扩展名 | 素材：`.mp4`, `.mov`, `.avi`, `.mkv`, `.webm`, `.png`, `.jpg`, `.jpeg`, `.webp`；用户音频：`.mp3`, `.wav`, `.aac`, `.ogg`, `.flac`, `.m4a` |
 
 请求示例：
 
@@ -255,7 +255,27 @@ curl -X POST "http://127.0.0.1:3000/upload" \
 ```json
 {
   "fileId": "abc123def456",
-  "ossKey": "GouMei-Video-Cut/inputs/abc123def456.mp4"
+  "ossKey": "GouMei-Video-Cut/inputs/abc123def456.mp4",
+  "kind": "asset"
+}
+```
+
+上传用户音频：
+
+```bash
+curl -X POST "http://127.0.0.1:3000/upload" \
+  -H "X-Api-Key: goumee-music" \
+  -F "file=@D:/input/Furious.mp3"
+```
+
+用户音频成功响应：
+
+```json
+{
+  "fileId": "abc123def456",
+  "ossKey": "GouMei-Video-Cut/user-audio/abc123def456.mp3",
+  "kind": "user_audio",
+  "expiresAt": "2026-06-03T12:00:00.000000"
 }
 ```
 
@@ -264,7 +284,11 @@ curl -X POST "http://127.0.0.1:3000/upload" \
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `fileId` | `string` | 12 位十六进制字符串，后续 `/render` 可直接引用 |
-| `ossKey` | `string` | 素材实际写入的 OSS key |
+| `ossKey` | `string` | 文件实际写入的 OSS key |
+| `kind` | `string` | `asset` 表示视频/图片素材，`user_audio` 表示用户临时音频 |
+| `expiresAt` | `string` | 仅用户临时音频返回，表示服务记录过期时间 |
+
+用户临时音频不会写入 `/input/bgm`，不会出现在 `GET /bgm`，也不会参与随机 BGM。它只在 `/render` 的 `overrides.bgm.fileId` 中使用。
 
 常见错误：
 
@@ -340,6 +364,22 @@ Content-Type: application/json
 }
 ```
 
+使用用户上传音频的示例：
+
+```json
+{
+  "pipeline": "bgm-concat",
+  "clips": ["videoFileId1", "videoFileId2"],
+  "overrides": {
+    "bgm": {
+      "fileId": "audioFileId1"
+    }
+  }
+}
+```
+
+`clips` 只放视频/图片素材；用户上传音频放在 `overrides.bgm.fileId`。传入 `fileId` 后，服务端使用该上传音频替代曲库音乐，最终视频不保留原声。
+
 成功响应：
 
 ```json
@@ -356,9 +396,11 @@ Content-Type: application/json
 
 | 输入形态 | 服务端行为 |
 |---|---|
-| 不包含 `/` 或 `\` | 当作 `fileId`，从 SQLite `files` 表查询实际 `ossKey` |
+| 不包含 `/` 或 `\` | 当作素材 `fileId`，从 SQLite `files` 表查询实际 `ossKey` |
 | 包含 `/` | 当作 OSS key，但必须以 `OSS_PREFIX + "/"` 开头 |
 | Windows 绝对路径、Linux 绝对路径、`./`、`../`、`http://` 等外部路径 | 拒绝 |
+
+`clips` 不能传 `kind=user_audio` 的上传音频，也不能直接传 `GouMei-Video-Cut/user-audio/...` OSS key。用户音频只能通过 `overrides.bgm.fileId` 指定。
 
 默认合法 OSS key 示例：
 
@@ -415,7 +457,7 @@ other-prefix/input/a.mp4
     {"index": 0, "type": "dissolve", "duration": 0.5, "scale": 1.18}
   ],
   "default_transition": {"type": "cut", "duration": 0},
-  "bgm": {"enabled": true, "dir": "input/bgm", "category": "calm", "filename": "1", "volume": 0.3, "fade_out": 0},
+  "bgm": {"enabled": true, "category": "calm", "filename": "1"},
   "output": {"filename": "final.mp4"}
 }
 ```
@@ -434,7 +476,7 @@ other-prefix/input/a.mp4
 | `clip_overrides` | 覆盖单个素材的 `trim_start`、`trim_end`，单位秒 |
 | `transition_overrides` | 覆盖单个转场的类型、时长和缩放参数 |
 | `default_transition` | 覆盖默认转场 |
-| `bgm` | 覆盖 BGM 设置，常用 `{"enabled": false}` 禁用 BGM，`{"category": "calm"}` 按分类随机，或 `{"category": "calm", "filename": "1"}` 指定某一首 |
+| `bgm` | 覆盖 BGM 设置，常用 `{"enabled": false}` 禁用 BGM，`{"category": "calm"}` 按分类随机，`{"category": "calm", "filename": "1"}` 指定曲库音乐，或 `{"fileId": "audioFileId1"}` 使用用户上传音频 |
 | `output` | 覆盖渲染临时输出文件名，API 最终 OSS key 使用 `outputs/<YYYYMMDD>/<YYYYMMDD_HHMMSS>/<taskId>/final.mp4`，时间戳为北京时间（Asia/Shanghai） |
 
 转场类型：
@@ -455,6 +497,9 @@ zoom-dissolve
 BGM 指定规则：
 
 - 对接方应先调用 `GET /bgm` 获取当前实时清单；`docs/BGM_MANIFEST.json` 是打包脚本可刷新的静态清单，适合离线对齐，不替代运行时扫描结果。
+- 用户上传音频不需要调用 `GET /bgm`。客户端先用 `/upload` 上传音频，再在 `/render` 的 `overrides.bgm.fileId` 里传音频 `fileId`。
+- `overrides.bgm.fileId` 场景只接受 `fileId` 一个字段，不能同时传 `category`、`filename`、`dir`、`volume`、`fade_out` 或其它 BGM 字段。音量使用 pipeline 默认配置。
+- 使用 `overrides.bgm.fileId` 后，服务端直接使用用户上传音频，不扫描 `/input/bgm`，不随机选择曲库音乐。
 - `overrides.bgm.category` 是 `/app/input/bgm` 下的英文相对目录名，例如 `calm`。
 - `overrides.bgm.filename` 是分类目录下不带扩展名的歌曲 ID，例如 `1`；真实文件仍可以是 `1.mp3`。
 - 传 `category + filename` 时，服务端精确选择该分类下的文件；只传 `category` 时，服务端只在该分类目录下随机选择一首。
@@ -463,6 +508,18 @@ BGM 指定规则：
 - `filename` 不允许包含扩展名、`.`、`/`、`\`、绝对路径或 `..` 路径穿越；同一分类下不允许同时存在 `1.mp3` 和 `1.wav` 这类同名 stem 文件。
 - 指定文件或分类目录不存在时任务失败，不会回退随机音乐。
 - BGM 文件仍由容器启动同步逻辑从 `BGM_OSS_URI` 同步到 `/app/input/bgm`，`/render` 不按 OSS key 单独下载音乐。
+
+使用用户上传音频：
+
+```json
+{
+  "overrides": {
+    "bgm": {
+      "fileId": "audioFileId1"
+    }
+  }
+}
+```
 
 按分类随机选择 BGM：
 
@@ -498,6 +555,32 @@ BGM 指定规则：
   "error_code": 2001,
   "message": "Invalid request body.",
   "details": {}
+}
+```
+
+`overrides.bgm.fileId` 与其它 BGM 字段混传：
+
+```json
+{
+  "error_code": 2001,
+  "message": "Invalid request body.",
+  "details": {
+    "field": "overrides.bgm.fileId",
+    "conflicts": ["volume"]
+  }
+}
+```
+
+`overrides.bgm.fileId` 指向非用户音频上传：
+
+```json
+{
+  "error_code": 2002,
+  "message": "Invalid BGM file reference.",
+  "details": {
+    "fileId": "videoFileId1",
+    "kind": "asset"
+  }
 }
 ```
 
@@ -703,6 +786,7 @@ rendering
 - `TASK_MAX_ATTEMPT` 控制最大尝试次数，默认 `3`。
 - 服务重启时，会把遗留的 `pending` 和 `rendering` 任务重新放回队列。遗留的 `rendering` 任务会记录一次失败历史。
 - 任务完成或最终失败后，会在服务启动清理中按 `TASK_TTL_DAYS` 删除历史记录，默认保留 `7` 天。
+- 用户临时音频的服务记录会在启动清理中按 `UPLOAD_TTL_DAYS` 过期，默认跟随 `TASK_TTL_DAYS` 或 `7` 天。本地 OSS 模式会同步删除过期的 `user-audio/` 文件。
 
 ## 11. `GET /tasks/{taskId}/download`
 
@@ -778,6 +862,7 @@ HTTP 状态码为 `404`。
 | `QUEUE_MAX` | `200` | 等待队列最大长度 |
 | `TASK_MAX_ATTEMPT` | `3` | 最大渲染尝试次数 |
 | `TASK_TTL_DAYS` | `7` | 完成和失败任务保留天数 |
+| `UPLOAD_TTL_DAYS` | `TASK_TTL_DAYS` 或 `7` | 用户临时音频上传记录保留天数 |
 
 OSS 配置：
 
@@ -790,6 +875,8 @@ OSS 配置：
 | `OSS_ACCESS_KEY_ID` | 空 | 真实 OSS 模式必填 |
 | `OSS_ACCESS_KEY_SECRET` | 空 | 真实 OSS 模式必填 |
 | `OSS_LOCAL_ROOT` | 空 | 设置后启用本地 OSS 模式，不访问真实 OSS |
+
+真实 OSS 模式下，用户临时音频会写入 `OSS_PREFIX/user-audio/`，例如 `GouMei-Video-Cut/user-audio/abc123def456.mp3`。建议在当前 bucket 配置生命周期规则，匹配该前缀并在 `UPLOAD_TTL_DAYS` 后自动删除对象；不需要新建 bucket。
 
 FFmpeg 配置：
 
@@ -822,7 +909,7 @@ videocut serve --host 127.0.0.1 --port 3000
 
 此时：
 
-- `/upload` 会把素材复制到 `OSS_LOCAL_ROOT/GouMei-Video-Cut/inputs/...`。
+- `/upload` 会把素材复制到 `OSS_LOCAL_ROOT/GouMei-Video-Cut/inputs/...`，用户临时音频复制到 `OSS_LOCAL_ROOT/GouMei-Video-Cut/user-audio/...`。
 - worker 会从 `OSS_LOCAL_ROOT` 下载素材到 `TEMP_DIR/<taskId>/`。
 - 渲染结果会写到 `OSS_LOCAL_ROOT/GouMei-Video-Cut/outputs/<YYYYMMDD>/<YYYYMMDD_HHMMSS>/<taskId>/final.mp4`，时间戳为北京时间（Asia/Shanghai）。
 - `/tasks/{taskId}/download` 直接返回本地文件。

@@ -249,6 +249,185 @@ def test_render_endpoint_pipeline_mode(tmp_path, monkeypatch) -> None:
         assert bad_response.json()["error_code"] == 1003
 
 
+def test_upload_audio_uses_user_audio_prefix_and_is_not_bgm_catalog(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    bgm_dir = tmp_path / "runtime" / "bgm"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    (bgm_dir / "calm").mkdir(parents=True)
+    (bgm_dir / "calm" / "1.mp3").write_text("library", encoding="utf-8")
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root, bgm_dir=bgm_dir)
+
+    with TestClient(api_app_module.create_app()) as client:
+        response = client.post(
+            "/upload",
+            headers={"X-Api-Key": "test-key"},
+            files={"file": ("Furious.mp3", b"audio", "audio/mpeg")},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["kind"] == "user_audio"
+        assert body["ossKey"] == f"GouMei-Video-Cut/user-audio/{body['fileId']}.mp3"
+        assert "expiresAt" in body
+        assert (tmp_path / "oss" / body["ossKey"]).read_bytes() == b"audio"
+
+        store = client.app.state.store
+        record = store.get_file(body["fileId"])
+        assert record is not None
+        assert record.kind == "user_audio"
+        assert record.size_bytes == 5
+
+        catalog = client.get("/bgm", headers={"X-Api-Key": "test-key"})
+        assert catalog.status_code == 200
+        assert all(item["filename"] != "Furious" for item in catalog.json()["files"])
+
+
+def test_upload_video_keeps_asset_prefix(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root)
+
+    with TestClient(api_app_module.create_app()) as client:
+        response = client.post(
+            "/upload",
+            headers={"X-Api-Key": "test-key"},
+            files={"file": ("clip.mp4", b"video", "video/mp4")},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["kind"] == "asset"
+        assert body["ossKey"] == f"GouMei-Video-Cut/inputs/{body['fileId']}.mp4"
+        assert "expiresAt" not in body
+
+
+def test_render_endpoint_accepts_uploaded_user_audio_bgm(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root)
+
+    with TestClient(api_app_module.create_app()) as client:
+        store = client.app.state.store
+        store.save_file("file1", "GouMei-Video-Cut/inputs/file1.mp4")
+        store.save_file(
+            "audio1",
+            "GouMei-Video-Cut/user-audio/audio1.mp3",
+            kind="user_audio",
+            size_bytes=123,
+        )
+
+        response = client.post(
+            "/render",
+            headers={"X-Api-Key": "test-key", "Content-Type": "application/json"},
+            json={
+                "pipeline": "trim-mixed-dissolve-v1",
+                "clips": ["file1"],
+                "overrides": {"bgm": {"fileId": "audio1"}},
+            },
+        )
+
+        assert response.status_code == 200
+        pipeline_task = FakeTaskQueue.instances[-1].tasks[-1]
+        assert pipeline_task.payload["user_bgm"] == {
+            "fileId": "audio1",
+            "ossKey": "GouMei-Video-Cut/user-audio/audio1.mp3",
+        }
+        assert pipeline_task.payload["overrides"]["bgm"]["enabled"] is True
+
+
+def test_render_endpoint_rejects_invalid_user_audio_bgm_refs(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root)
+
+    with TestClient(api_app_module.create_app()) as client:
+        store = client.app.state.store
+        store.save_file("file1", "GouMei-Video-Cut/inputs/file1.mp4")
+        store.save_file("video1", "GouMei-Video-Cut/inputs/video1.mp4")
+        store.save_file(
+            "audio1",
+            "GouMei-Video-Cut/user-audio/audio1.mp3",
+            kind="user_audio",
+            size_bytes=123,
+        )
+        headers = {"X-Api-Key": "test-key", "Content-Type": "application/json"}
+
+        missing = client.post(
+            "/render",
+            headers=headers,
+            json={
+                "pipeline": "trim-mixed-dissolve-v1",
+                "clips": ["file1"],
+                "overrides": {"bgm": {"fileId": "missing"}},
+            },
+        )
+        assert missing.status_code == 400
+        assert missing.json()["error_code"] == 2006
+
+        wrong_kind = client.post(
+            "/render",
+            headers=headers,
+            json={
+                "pipeline": "trim-mixed-dissolve-v1",
+                "clips": ["file1"],
+                "overrides": {"bgm": {"fileId": "video1"}},
+            },
+        )
+        assert wrong_kind.status_code == 400
+        assert wrong_kind.json()["error_code"] == 2002
+
+        mixed = client.post(
+            "/render",
+            headers=headers,
+            json={
+                "pipeline": "trim-mixed-dissolve-v1",
+                "clips": ["file1"],
+                "overrides": {"bgm": {"fileId": "audio1", "volume": 0.3}},
+            },
+        )
+        assert mixed.status_code == 400
+        assert mixed.json()["error_code"] == 2001
+
+        audio_as_clip = client.post(
+            "/render",
+            headers=headers,
+            json={
+                "pipeline": "trim-mixed-dissolve-v1",
+                "clips": ["audio1"],
+                "overrides": {},
+            },
+        )
+        assert audio_as_clip.status_code == 400
+        assert audio_as_clip.json()["error_code"] == 2002
+
+
+def test_cleanup_expired_user_audio_removes_local_oss_file(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("OSS_LOCAL_ROOT", str(tmp_path / "oss"))
+    monkeypatch.setenv("OSS_PREFIX", "GouMei-Video-Cut")
+    store = TaskStore(tmp_path / "tasks.db")
+    oss = api_app_module.OssClient()
+    oss_key = "GouMei-Video-Cut/user-audio/audio1.mp3"
+    local_file = tmp_path / "oss" / oss_key
+    local_file.parent.mkdir(parents=True)
+    local_file.write_text("audio", encoding="utf-8")
+    store.save_file(
+        "audio1",
+        oss_key,
+        kind="user_audio",
+        size_bytes=123,
+        expires_at="2000-01-01T00:00:00+00:00",
+    )
+
+    assert api_app_module._cleanup_expired_uploads(store, oss) == 1
+    assert store.get_file("audio1") is None
+    assert not local_file.exists()
+    store.close()
+
+
 def test_bgm_endpoint_requires_auth(tmp_path, monkeypatch) -> None:
     FakeTaskQueue.instances.clear()
     pipelines_root = tmp_path / "pipelines"

@@ -23,6 +23,19 @@ def _download_pipeline_clips(oss: OssClient, clip_keys: list[str], task_temp_dir
     return local_paths
 
 
+def _download_user_bgm(oss: OssClient, payload: dict, task_temp_dir: Path) -> str | None:
+    user_bgm = payload.get("user_bgm")
+    if user_bgm is None:
+        return None
+    if not isinstance(user_bgm, dict) or not isinstance(user_bgm.get("ossKey"), str):
+        raise ValueError("pipeline payload user_bgm requires an ossKey")
+    oss_key = user_bgm["ossKey"]
+    ext = Path(oss_key).suffix or ".mp3"
+    local_path = task_temp_dir / f"user_audio{ext}"
+    oss.download(oss_key, local_path)
+    return str(local_path)
+
+
 def worker_main(
     worker_id: int,
     input_queue: mp.Queue,
@@ -59,6 +72,7 @@ def worker_main(
             if not isinstance(raw_config, dict):
                 raise ValueError("pipeline payload requires pipeline_config")
             local_clips = _download_pipeline_clips(oss, clip_keys, task_temp_dir)
+            user_bgm_path = _download_user_bgm(oss, payload, task_temp_dir)
             event_queue.put({"type": "progress", "worker_id": worker_id, "task_id": task_id, "progress": 25})
             config = parse_pipeline_config(raw_config, payload.get("pipeline_source_path") or message["source_name"], require_name=True)
             ctx = build_pipeline_context(
@@ -66,6 +80,7 @@ def worker_main(
                 local_clips,
                 payload.get("pipeline_source_path") or message["source_name"],
                 payload.get("overrides") if isinstance(payload.get("overrides"), dict) else None,
+                user_bgm_path=user_bgm_path,
             )
             ffmpeg_path = resolve_ffmpeg_path(root_dir)
             ffprobe_path = resolve_ffprobe_path(root_dir)

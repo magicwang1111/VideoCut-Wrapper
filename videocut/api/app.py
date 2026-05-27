@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+from copy import deepcopy
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta, timezone
@@ -33,7 +34,9 @@ load_project_env()
 
 logger = get_logger(__name__)
 
-ALLOWED_UPLOAD_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".mp3", ".wav", ".aac", ".png", ".jpg", ".jpeg", ".webp"}
+AUDIO_UPLOAD_EXTS = {".mp3", ".wav", ".aac", ".ogg", ".flac", ".m4a"}
+ASSET_UPLOAD_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".png", ".jpg", ".jpeg", ".webp"}
+ALLOWED_UPLOAD_EXTS = ASSET_UPLOAD_EXTS | AUDIO_UPLOAD_EXTS
 MAX_UPLOAD_BYTES = 500 * 1024 * 1024
 try:
     BEIJING_TZ = ZoneInfo("Asia/Shanghai")
@@ -168,10 +171,11 @@ def _looks_like_external_path(value: str) -> bool:
 def _resolve_clip_refs(store: TaskStore, oss: OssClient, clips: list[str], *, strict_pipeline: bool) -> list[str]:
     resolved_keys: list[str] = []
     prefix = f"{oss.prefix}/"
+    user_audio_prefix = f"{oss.prefix}/user-audio/"
     for item in clips:
         if "/" in item or "\\" in item:
             if strict_pipeline:
-                if _looks_like_external_path(item) or not item.startswith(prefix):
+                if _looks_like_external_path(item) or not item.startswith(prefix) or item.startswith(user_audio_prefix):
                     raise api_http_exception(
                         400,
                         ApiErrorCode.INVALID_CLIP_REFERENCE,
@@ -180,16 +184,84 @@ def _resolve_clip_refs(store: TaskStore, oss: OssClient, clips: list[str], *, st
                     )
             resolved_keys.append(item)
             continue
-        oss_key = store.get_oss_key(item)
-        if not oss_key:
+        file_record = store.get_file(item)
+        if not file_record:
             raise api_http_exception(
                 400,
                 ApiErrorCode.FILE_NOT_FOUND,
                 "File reference not found.",
                 {"fileId": item},
             )
-        resolved_keys.append(oss_key)
+        if file_record.kind != "asset":
+            raise api_http_exception(
+                400,
+                ApiErrorCode.INVALID_CLIP_REFERENCE,
+                "Invalid clip reference.",
+                {"fileId": item, "kind": file_record.kind},
+            )
+        resolved_keys.append(file_record.oss_key)
     return resolved_keys
+
+
+def _upload_ttl_days() -> int:
+    raw = os.getenv("UPLOAD_TTL_DAYS") or os.getenv("TASK_TTL_DAYS") or "7"
+    return max(1, int(raw))
+
+
+def _user_audio_expires_at() -> str:
+    return (datetime.now(UTC) + timedelta(days=_upload_ttl_days())).isoformat()
+
+
+def _cleanup_expired_uploads(store: TaskStore, oss: OssClient) -> int:
+    records = store.cleanup_expired_files()
+    if oss.local_root:
+        for record in records:
+            if record.kind == "user_audio":
+                try:
+                    oss.delete(record.oss_key)
+                except Exception:  # intentional: cleanup should not prevent API startup
+                    logger.warning("failed to cleanup expired upload: %s", record.oss_key, exc_info=True)
+    return len(records)
+
+
+def _resolve_user_bgm(store: TaskStore, overrides: dict[str, Any]) -> dict[str, str] | None:
+    bgm = overrides.get("bgm")
+    if not isinstance(bgm, dict) or "fileId" not in bgm:
+        return None
+    file_id = bgm.get("fileId")
+    if not isinstance(file_id, str) or not file_id.strip():
+        raise api_http_exception(
+            400,
+            ApiErrorCode.INVALID_BODY,
+            "Invalid request body.",
+            {"field": "overrides.bgm.fileId"},
+        )
+    conflicts = sorted(field for field in bgm if field != "fileId")
+    if conflicts:
+        raise api_http_exception(
+            400,
+            ApiErrorCode.INVALID_BODY,
+            "Invalid request body.",
+            {"field": "overrides.bgm.fileId", "conflicts": conflicts},
+        )
+    if "enabled" not in bgm:
+        bgm["enabled"] = True
+    file_record = store.get_file(file_id.strip())
+    if not file_record:
+        raise api_http_exception(
+            400,
+            ApiErrorCode.FILE_NOT_FOUND,
+            "File reference not found.",
+            {"fileId": file_id.strip()},
+        )
+    if file_record.kind != "user_audio":
+        raise api_http_exception(
+            400,
+            ApiErrorCode.INVALID_CLIP_REFERENCE,
+            "Invalid BGM file reference.",
+            {"fileId": file_id.strip(), "kind": file_record.kind},
+        )
+    return {"fileId": file_record.file_id, "ossKey": file_record.oss_key}
 
 
 @asynccontextmanager
@@ -228,6 +300,9 @@ async def lifespan(app: FastAPI):
     cleaned = store.cleanup_old_tasks(int(os.getenv("TASK_TTL_DAYS", "7")))
     if cleaned:
         logger.info("cleaned %d expired task(s)", cleaned)
+    cleaned_uploads = _cleanup_expired_uploads(store, oss)
+    if cleaned_uploads:
+        logger.info("cleaned %d expired upload file record(s)", cleaned_uploads)
 
     app.state.root_dir = root_dir
     app.state.store = store
@@ -333,7 +408,9 @@ def create_app() -> FastAPI:
 
         file_id = uuid4().hex[:12]
         oss: OssClient = app.state.oss
-        oss_key = oss.input_key(file_id, ext)
+        kind = "user_audio" if ext in AUDIO_UPLOAD_EXTS else "asset"
+        expires_at = _user_audio_expires_at() if kind == "user_audio" else None
+        oss_key = oss.user_audio_key(file_id, ext) if kind == "user_audio" else oss.input_key(file_id, ext)
         temp_root = resolve_runtime_path(os.getenv("TEMP_DIR"), app.state.root_dir / "temp", root_dir=app.state.root_dir)
         temp_path = temp_root / f"upload_{file_id}{ext}"
         temp_path.parent.mkdir(parents=True, exist_ok=True)
@@ -353,11 +430,14 @@ def create_app() -> FastAPI:
         try:
             oss.upload(temp_path, oss_key)
             store: TaskStore = app.state.store
-            store.save_file(file_id, oss_key)
+            store.save_file(file_id, oss_key, kind=kind, size_bytes=size, expires_at=expires_at)
         finally:
             temp_path.unlink(missing_ok=True)
 
-        return {"fileId": file_id, "ossKey": oss_key}
+        response = {"fileId": file_id, "ossKey": oss_key, "kind": kind}
+        if expires_at:
+            response["expiresAt"] = format_api_time(expires_at) or expires_at
+        return response
 
     @app.post("/render", dependencies=[Depends(auth_guard)])
     async def render(request: Request, body: RenderBody) -> dict[str, str]:
@@ -369,6 +449,8 @@ def create_app() -> FastAPI:
         oss: OssClient = app.state.oss
 
         resolved_keys = _resolve_clip_refs(store, oss, body.clips, strict_pipeline=True)
+        overrides = deepcopy(body.overrides)
+        user_bgm = _resolve_user_bgm(store, overrides)
         pipeline_name = body.pipeline
         pipeline_record = store.get_pipeline(pipeline_name)
         if pipeline_record is None:
@@ -377,8 +459,10 @@ def create_app() -> FastAPI:
             "clips": resolved_keys,
             "pipeline_config": pipeline_record.config,
             "pipeline_source_path": pipeline_record.source_path,
-            "overrides": body.overrides,
+            "overrides": overrides,
         }
+        if user_bgm:
+            payload["user_bgm"] = user_bgm
         task_id = generate_task_id(prefix="t_")
         store.create(_create_store_record(task_id, "pipeline", pipeline_name, payload))
         queue_obj: TaskQueue = app.state.task_queue

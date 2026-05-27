@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
+FileKind = Literal["asset", "user_audio"]
 TaskKind = Literal["template", "pipeline"]
 TaskStatus = Literal["pending", "rendering", "completed", "failed"]
 TASK_STATUSES: tuple[TaskStatus, ...] = ("pending", "rendering", "completed", "failed")
@@ -47,6 +48,16 @@ class PipelineRecord:
     updated_at: str
 
 
+@dataclass(slots=True)
+class FileRecord:
+    file_id: str
+    oss_key: str
+    kind: FileKind
+    size_bytes: int | None
+    created_at: str
+    expires_at: str | None
+
+
 class TaskStore:
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = Path(db_path).resolve()
@@ -82,6 +93,9 @@ class TaskStore:
                 CREATE TABLE IF NOT EXISTS files (
                   file_id TEXT PRIMARY KEY,
                   oss_key TEXT NOT NULL,
+                  kind TEXT NOT NULL DEFAULT 'asset',
+                  size_bytes INTEGER,
+                  expires_at TEXT,
                   created_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS pipelines (
@@ -111,6 +125,16 @@ class TaskStore:
                 self._db.execute("ALTER TABLE tasks ADD COLUMN last_error TEXT")
             if "last_error_at" not in columns:
                 self._db.execute("ALTER TABLE tasks ADD COLUMN last_error_at TEXT")
+            file_columns = {
+                str(row["name"])
+                for row in self._db.execute("PRAGMA table_info(files)").fetchall()
+            }
+            if "kind" not in file_columns:
+                self._db.execute("ALTER TABLE files ADD COLUMN kind TEXT NOT NULL DEFAULT 'asset'")
+            if "size_bytes" not in file_columns:
+                self._db.execute("ALTER TABLE files ADD COLUMN size_bytes INTEGER")
+            if "expires_at" not in file_columns:
+                self._db.execute("ALTER TABLE files ADD COLUMN expires_at TEXT")
             self._db.commit()
 
     def create(self, record: TaskRecord) -> TaskRecord:
@@ -326,11 +350,22 @@ class TaskStore:
             for row in rows
         ]
 
-    def save_file(self, file_id: str, oss_key: str) -> None:
+    def save_file(
+        self,
+        file_id: str,
+        oss_key: str,
+        *,
+        kind: FileKind = "asset",
+        size_bytes: int | None = None,
+        expires_at: str | None = None,
+    ) -> None:
         with self._lock:
             self._db.execute(
-                "INSERT OR REPLACE INTO files (file_id, oss_key, created_at) VALUES (?, ?, ?)",
-                (file_id, oss_key, datetime.now(UTC).isoformat()),
+                """
+                INSERT OR REPLACE INTO files (file_id, oss_key, kind, size_bytes, expires_at, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (file_id, oss_key, kind, size_bytes, expires_at, datetime.now(UTC).isoformat()),
             )
             self._db.commit()
 
@@ -339,9 +374,43 @@ class TaskStore:
             row = self._db.execute("SELECT oss_key FROM files WHERE file_id=?", (file_id,)).fetchone()
         return str(row["oss_key"]) if row else None
 
+    def get_file(self, file_id: str) -> FileRecord | None:
+        with self._lock:
+            row = self._db.execute("SELECT * FROM files WHERE file_id=?", (file_id,)).fetchone()
+        return self._row_to_file_record(row) if row else None
+
+    def cleanup_expired_files(self, now: datetime | None = None) -> list[FileRecord]:
+        cutoff = (now or datetime.now(UTC)).isoformat()
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM files WHERE expires_at IS NOT NULL AND expires_at < ?",
+                (cutoff,),
+            ).fetchall()
+            records = [self._row_to_file_record(row) for row in rows]
+            if records:
+                self._db.executemany(
+                    "DELETE FROM files WHERE file_id=?",
+                    [(record.file_id,) for record in records],
+                )
+                self._db.commit()
+        return records
+
     def close(self) -> None:
         with self._lock:
             self._db.close()
+
+    @staticmethod
+    def _row_to_file_record(row: sqlite3.Row) -> FileRecord:
+        kind_value = str(row["kind"]) if "kind" in row.keys() else "asset"
+        size_value = row["size_bytes"] if "size_bytes" in row.keys() else None
+        return FileRecord(
+            file_id=str(row["file_id"]),
+            oss_key=str(row["oss_key"]),
+            kind=kind_value if kind_value in {"asset", "user_audio"} else "asset",  # type: ignore[arg-type]
+            size_bytes=int(size_value) if size_value is not None else None,
+            created_at=str(row["created_at"]),
+            expires_at=row["expires_at"] if "expires_at" in row.keys() else None,
+        )
 
     @staticmethod
     def _row_to_record(row: sqlite3.Row) -> TaskRecord:

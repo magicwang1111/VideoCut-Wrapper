@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from videocut.queue.task_queue import TaskQueue, WorkerTask
-from videocut.queue.worker_process import _task_temp_dir
+from videocut.queue.worker_process import _download_user_bgm, _task_temp_dir
 from videocut.store import TaskRecord, TaskStore
 
 
@@ -60,3 +60,19 @@ def test_task_queue_dispatches_current_attempt(tmp_path) -> None:
 
 def test_worker_task_temp_dir_is_attempt_and_worker_unique(tmp_path) -> None:
     assert _task_temp_dir(tmp_path, "t_demo", 2, 7) == tmp_path / "t_demo_attempt2_worker7"
+
+
+def test_worker_downloads_user_bgm_to_task_temp_dir(tmp_path) -> None:
+    class FakeOss:
+        def download(self, oss_key, local_path) -> None:
+            assert oss_key == "GouMei-Video-Cut/user-audio/audio1.mp3"
+            local_path.write_text("audio", encoding="utf-8")
+
+    local_path = _download_user_bgm(
+        FakeOss(),  # type: ignore[arg-type]
+        {"user_bgm": {"ossKey": "GouMei-Video-Cut/user-audio/audio1.mp3"}},
+        tmp_path,
+    )
+
+    assert local_path == str(tmp_path / "user_audio.mp3")
+    assert (tmp_path / "user_audio.mp3").read_text(encoding="utf-8") == "audio"

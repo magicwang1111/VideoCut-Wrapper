@@ -52,6 +52,9 @@ class OssClient:
     def input_key(self, file_id: str, ext: str) -> str:
         return f"{self.prefix}/inputs/{file_id}{ext}"
 
+    def user_audio_key(self, file_id: str, ext: str) -> str:
+        return f"{self.prefix}/user-audio/{file_id}{ext}"
+
     def output_key(self, task_id: str, timestamp: datetime | None = None) -> str:
         output_time = _as_output_time(timestamp)
         date_dir = output_time.strftime("%Y%m%d")
@@ -78,6 +81,14 @@ class OssClient:
         if self.bucket is None:
             raise DependencyError("OSS bucket", "Bucket not initialized; set OSS credentials or OSS_LOCAL_ROOT.")
         self.bucket.get_object_to_file(oss_key, str(target_path))
+
+    def delete(self, oss_key: str) -> None:
+        if self.local_root:
+            (Path(self.local_root) / oss_key).unlink(missing_ok=True)
+            return
+        if self.bucket is None:
+            raise DependencyError("OSS bucket", "Bucket not initialized; set OSS credentials or OSS_LOCAL_ROOT.")
+        self.bucket.delete_object(oss_key)
 
     def presign_url(self, oss_key: str, expires_seconds: int = 3600) -> str:
         if self.local_root:

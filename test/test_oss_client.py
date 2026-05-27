@@ -27,3 +27,12 @@ def test_output_key_converts_aware_timestamp_to_beijing(monkeypatch, tmp_path) -
         oss.output_key("t_c31d81520a654c94", datetime(2026, 5, 20, 6, 30, 12, tzinfo=UTC))
         == "GouMei-Video-Cut/outputs/20260520/20260520_143012/t_c31d81520a654c94/final.mp4"
     )
+
+
+def test_user_audio_key_uses_dedicated_prefix(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("OSS_LOCAL_ROOT", str(tmp_path / "oss"))
+    monkeypatch.setenv("OSS_PREFIX", "GouMei-Video-Cut")
+
+    oss = OssClient()
+
+    assert oss.user_audio_key("abc123def456", ".mp3") == "GouMei-Video-Cut/user-audio/abc123def456.mp3"

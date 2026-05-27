@@ -203,7 +203,7 @@ videocut serve --host 0.0.0.0 --port 3000
 4. 初始化 `OssClient`。
 5. 启动 `TaskQueue` 和多个 worker 进程。
 6. 把上次异常退出时遗留的 `pending` / `rendering` 任务重新放回队列。
-7. 清理超过 `TASK_TTL_DAYS` 的历史已完成/失败任务。
+7. 清理超过 `TASK_TTL_DAYS` 的历史已完成/失败任务，以及过期的用户临时音频记录。
 
 代码入口见 [app.py](videocut/api/app.py)、[task_queue.py](videocut/queue/task_queue.py)、[task_store.py](videocut/store/task_store.py)。
 
@@ -234,11 +234,11 @@ X-Api-Key: goumee-music
 
 完整链路是：
 
-1. 客户端先调用 `/upload` 上传原始素材。
+1. 客户端先调用 `/upload` 上传原始素材；如果需要使用用户自带音乐，也用 `/upload` 上传音频。
 2. 服务端把上传文件写到临时目录，再上传到 OSS 或本地 OSS。
-3. 服务端把 `fileId -> ossKey` 的映射写入 SQLite 的 `files` 表。
-4. 如果需要指定某首 BGM，客户端先调用 `/bgm` 查询当前音乐清单。
-5. 客户端调用 `/render`，提交 pipeline 名称、素材列表、overrides。
+3. 服务端把 `fileId -> ossKey` 的映射和文件类型写入 SQLite 的 `files` 表。
+4. 如果需要指定曲库 BGM，客户端先调用 `/bgm` 查询当前音乐清单；如果使用用户上传音频，则跳过 `/bgm`。
+5. 客户端调用 `/render`，提交 pipeline 名称、素材列表、overrides；视频素材放 `clips`，用户音频放 `overrides.bgm.fileId`。
 6. `/render` 会把传入的 `fileId` 解析成真实 `ossKey`，生成 `taskId`，并把任务写入 SQLite 的 `tasks` 表，初始状态是 `pending`。
 7. `TaskQueue` 把任务投递给空闲 worker。
 8. worker 从 OSS 或本地 OSS 下载素材到 `temp/<taskId>/`。
@@ -315,14 +315,15 @@ videocut pipelines
 pipelines/*/config.json
 ```
 
-### 4. 上传素材 `POST /upload`
+### 4. 上传素材或用户音频 `POST /upload`
 
 请求要求：
 
 - `Content-Type` 必须是 `multipart/form-data`
 - 表单字段名固定是 `file`
 - 单文件大小上限 500 MB
-- 当前允许的扩展名：`mp4 mov avi mkv webm mp3 wav aac png jpg jpeg webp`
+- 当前允许的素材扩展名：`mp4 mov avi mkv webm png jpg jpeg webp`
+- 当前允许的用户音频扩展名：`mp3 wav aac ogg flac m4a`
 
 示例：
 
@@ -337,9 +338,31 @@ curl -X POST "http://127.0.0.1:3000/upload" \
 ```json
 {
   "fileId": "abc123def456",
-  "ossKey": "GouMei-Video-Cut/inputs/abc123def456.mp4"
+  "ossKey": "GouMei-Video-Cut/inputs/abc123def456.mp4",
+  "kind": "asset"
 }
 ```
+
+上传用户音频也使用同一个接口：
+
+```bash
+curl -X POST "http://127.0.0.1:3000/upload" \
+  -H "X-Api-Key: goumee-music" \
+  -F "file=@D:/input/Furious.mp3"
+```
+
+用户音频返回示例：
+
+```json
+{
+  "fileId": "audio123def45",
+  "ossKey": "GouMei-Video-Cut/user-audio/audio123def45.mp3",
+  "kind": "user_audio",
+  "expiresAt": "2026-06-03T12:00:00.000000"
+}
+```
+
+用户音频不会进入 `/bgm` 曲库，渲染时不要放进 `clips`。
 
 ### 5. 提交渲染 `POST /render`
 
@@ -347,7 +370,7 @@ curl -X POST "http://127.0.0.1:3000/upload" \
 
 - `Content-Type` 必须是 `application/json`
 - `pipeline` 是 pipeline ID（必填）
-- `clips` 是素材列表（必填），每项可以是 `fileId` 或直接的 `ossKey`
+- `clips` 是视频/图片素材列表（必填），每项可以是 `fileId` 或直接的 `ossKey`
 - `overrides` 是运行时覆盖参数（可选）
 
 请求体示例：
@@ -376,6 +399,23 @@ curl -X POST "http://127.0.0.1:3000/upload" \
 
 - 包含 `/` → 当成 `ossKey` 直接使用
 - 否则 → 当成 `fileId`，从 `files` 表查询真实 `ossKey`
+- 用户上传音频不能放进 `clips`，只能放在 `overrides.bgm.fileId`
+
+使用用户上传音频时：
+
+```json
+{
+  "pipeline": "bgm-concat",
+  "clips": ["videoFileId1", "videoFileId2"],
+  "overrides": {
+    "bgm": {
+      "fileId": "audio123def45"
+    }
+  }
+}
+```
+
+`overrides.bgm.fileId` 只接受音频 `fileId` 一个字段；不要同时传 `volume`、`fade_out`、`category` 或 `filename`。音量使用 pipeline 默认配置。
 
 示例：
 
@@ -566,11 +606,13 @@ videocut serve --port 3000
 
 这时：
 
-- `/upload` 会把文件复制到 `OSS_LOCAL_ROOT/GouMei-Video-Cut/inputs/...`
+- `/upload` 会把素材复制到 `OSS_LOCAL_ROOT/GouMei-Video-Cut/inputs/...`，把用户音频复制到 `OSS_LOCAL_ROOT/GouMei-Video-Cut/user-audio/...`
 - worker 会从这个本地目录把素材再下载到 `temp/<taskId>/`
 - 渲染结果会写到 `OSS_LOCAL_ROOT/GouMei-Video-Cut/outputs/<YYYYMMDD>/<YYYYMMDD_HHMMSS>/<taskId>/final.mp4`，时间戳使用北京时间（Asia/Shanghai）
 - `/tasks/{id}` 返回的 `outputUrl` 是本地绝对路径
 - `/tasks/{id}/download` 直接回传本地文件
+
+真实 OSS 模式下，用户临时音频写入当前 bucket 的 `GouMei-Video-Cut/user-audio/` 前缀。建议在 OSS 控制台给该前缀配置生命周期规则，到期自动删除，不需要新建 bucket。
 
 完整联调顺序建议是：
 
@@ -604,6 +646,7 @@ videocut serve --port 3000
 - `QUEUE_MAX`
 - `TASK_MAX_ATTEMPT`
 - `TASK_TTL_DAYS`
+- `UPLOAD_TTL_DAYS`: 用户临时音频记录保留天数，默认跟随 `TASK_TTL_DAYS` 或 `7`
 - `DB_PATH`
 - `TEMP_DIR`
 

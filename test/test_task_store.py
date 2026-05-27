@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from videocut.store import TaskRecord, TaskStore
 
@@ -80,4 +80,38 @@ def test_task_store_empty_summary_and_active_tasks(tmp_path) -> None:
         "failed": 0,
     }
     assert store.list_active_tasks() == []
+    store.close()
+
+
+def test_task_store_saves_file_metadata_and_cleans_expired_records(tmp_path) -> None:
+    store = TaskStore(tmp_path / "tasks.db")
+    now = datetime.now(UTC)
+    expired_at = (now - timedelta(seconds=1)).isoformat()
+    future_at = (now + timedelta(days=1)).isoformat()
+
+    store.save_file(
+        "audio1",
+        "GouMei-Video-Cut/user-audio/audio1.mp3",
+        kind="user_audio",
+        size_bytes=123,
+        expires_at=expired_at,
+    )
+    store.save_file(
+        "audio2",
+        "GouMei-Video-Cut/user-audio/audio2.mp3",
+        kind="user_audio",
+        size_bytes=456,
+        expires_at=future_at,
+    )
+
+    record = store.get_file("audio1")
+    assert record is not None
+    assert record.kind == "user_audio"
+    assert record.size_bytes == 123
+    assert record.expires_at == expired_at
+
+    cleaned = store.cleanup_expired_files(now)
+    assert [item.file_id for item in cleaned] == ["audio1"]
+    assert store.get_file("audio1") is None
+    assert store.get_file("audio2") is not None
     store.close()

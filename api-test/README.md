@@ -84,7 +84,7 @@ GouMei-Video-Cut/test-input/1/kling_20260329_作品_镜头固定_原地展示穿
 这是当前推荐的真实线上调用方式。
 
 
-### 上传素材 `/upload`
+### 上传素材或用户音频 `/upload`
 
 - 方法：`POST`
 - URL：`/upload`
@@ -104,7 +104,8 @@ curl -X POST "http://127.0.0.1:3000/upload" \
 ```json
 {
   "fileId": "abc123def456",
-  "ossKey": "GouMei-Video-Cut/inputs/abc123def456.mp4"
+  "ossKey": "GouMei-Video-Cut/inputs/abc123def456.mp4",
+  "kind": "asset"
 }
 ```
 
@@ -112,6 +113,42 @@ curl -X POST "http://127.0.0.1:3000/upload" \
 
 - `fileId`：后续 `/render` 可直接引用
 - `ossKey`：素材在 OSS 上的实际 key
+- `kind`：`asset` 表示视频/图片素材，`user_audio` 表示用户临时音频
+
+上传用户音频也使用 `/upload`：
+
+```bash
+curl -X POST "http://127.0.0.1:3000/upload" \
+  -H "X-Api-Key: your-api-key" \
+  -F "file=@//Rvstation/乌鸦的公共盘/音乐库/K-POP 热单/Furious.mp3"
+```
+
+用户音频返回示例：
+
+```json
+{
+  "fileId": "audio123def45",
+  "ossKey": "GouMei-Video-Cut/user-audio/audio123def45.mp3",
+  "kind": "user_audio",
+  "expiresAt": "2026-06-03T12:00:00.000000"
+}
+```
+
+提交渲染时，视频素材放 `clips`，用户音频只放 `overrides.bgm.fileId`：
+
+```json
+{
+  "pipeline": "bgm-concat",
+  "clips": ["videoFileId1", "videoFileId2"],
+  "overrides": {
+    "bgm": {
+      "fileId": "audio123def45"
+    }
+  }
+}
+```
+
+`overrides.bgm.fileId` 不开放 `volume`、`fade_out` 等额外参数，音量使用 pipeline 默认配置。用户音频不进入 `/bgm` 曲库，也不参与随机 BGM。
 
 常见错误：
 
@@ -220,6 +257,7 @@ pipeline 素材引用不合法：
 - `clips` 中如果元素不包含 `/`，服务端会把它当作 `fileId`
 - `clips` 中如果元素包含 `/`，服务端会把它当作 `ossKey`
 - 对工程端来说，直接传 `GouMei-Video-Cut/...` 形式的 OSS key 最稳定
+- 用户上传音频不能放进 `clips`，只能通过 `overrides.bgm.fileId` 指定
 
 ## 阶段 3：轮询任务状态 `/tasks/{id}`
 
