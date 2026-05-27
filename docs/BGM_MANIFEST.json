@@ -48,12 +48,6 @@
     {
       "category": "intense",
       "displayName": "激烈",
-      "filename": "4",
-      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/4.mp3"
-    },
-    {
-      "category": "intense",
-      "displayName": "激烈",
       "filename": "5",
       "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/5.mp3"
     },
@@ -74,6 +68,12 @@
       "displayName": "激烈",
       "filename": "测试2",
       "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/%E6%B5%8B%E8%AF%952.mp3"
+    },
+    {
+      "category": "intense",
+      "displayName": "激烈",
+      "filename": "测试4",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/%E6%B5%8B%E8%AF%954.mp3"
     }
   ]
 }
