@@ -182,7 +182,7 @@ X-Api-Key: goumee-music
 }
 ```
 
-`overrides.bgm.fileId` 只接受 `fileId` 一个字段，不能同时传 `category`、`filename`、`dir`、`volume`、`fade_out` 或其它 BGM 字段。音量使用 pipeline 默认配置。传了 `fileId` 后，服务端直接使用用户音频，不扫描 `/input/bgm`，最终视频不保留原声。
+`overrides.bgm.fileId` 只接受 `fileId` 一个字段，不能同时传 `category`、`filename`、`dir`、`volume`、`fade_out` 或其它 BGM 字段。音量使用 pipeline 默认配置。传了 `fileId` 后，服务端直接使用用户音频，不扫描 `/input/bgm`，最终视频不保留原声。字段名必须是驼峰 `fileId`，`file_id` 是非法字段。
 
 如果要指定某一首 BGM，先调用 `GET /bgm` 查询清单，再在 `overrides.bgm` 里传返回的 `category + filename`：
 
@@ -451,12 +451,12 @@ HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读
 | `422` | `1003` | JSON 字段类型校验失败 | 按字段类型修正 |
 | `404` | `1004` | 请求路径不存在 | 检查 URL path |
 | `400` | `2001` | `/render` 缺少 `pipeline` 或 `clips` | 修正请求体 |
-| `400` | `2001` | `overrides.bgm.fileId` 与其它 BGM 字段混传 | 只保留 `fileId` |
 | `400` | `2002` | `clips` 中存在本地路径、URL、非法 OSS key，或把用户音频当素材传入 | 改传合法素材 OSS key 或素材 `fileId` |
-| `400` | `2002` | `overrides.bgm.fileId` 指向非用户音频上传 | 重新上传音频并传音频 `fileId` |
 | `400` | `2003` | pipeline 不存在 | 使用已注册 pipeline |
 | `404` | `2004` | 查询的 `taskId` 不存在 | 检查 `taskId` |
-| `400/404` | `2006` | 上传引用的 `fileId` 不存在，或 BGM 目录不存在 | 重新上传、修正 `fileId` 或检查 `BGM_DIR` |
+| `400/404` | `2006` | `clips` 引用的上传 `fileId` 不存在，或 BGM 目录不存在 | 重新上传、修正素材 `fileId` 或检查 `BGM_DIR` |
+| `400` | `2007` | `overrides.bgm` 字段结构、未知字段或混传错误 | 修正 BGM 参数 |
+| `400` | `2008` | `overrides.bgm.fileId` 不存在或不是用户音频 | 重新上传音频并传音频 `fileId` |
 | `404` | `3001` | 下载时任务不存在、未完成或无输出 | 先轮询到 `completed` |
 | `503` | `3002` | 渲染队列已满 | 稍后重试 |
 | `500` | `9001` | 未预期服务端异常 | 记录日志并联系服务方 |
@@ -483,8 +483,8 @@ HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读
 
 ```json
 {
-  "error_code": 2001,
-  "message": "Invalid request body.",
+  "error_code": 2007,
+  "message": "Invalid BGM override.",
   "details": {
     "field": "overrides.bgm.fileId",
     "conflicts": ["volume"]
@@ -494,11 +494,34 @@ HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读
 
 ```json
 {
-  "error_code": 2002,
+  "error_code": 2007,
+  "message": "Invalid BGM override.",
+  "details": {
+    "field": "overrides.bgm.file_id",
+    "expected": "overrides.bgm.fileId",
+    "unknown": ["file_id"]
+  }
+}
+```
+
+```json
+{
+  "error_code": 2008,
+  "message": "BGM file reference not found.",
+  "details": {
+    "fileId": "audio123def45"
+  }
+}
+```
+
+```json
+{
+  "error_code": 2008,
   "message": "Invalid BGM file reference.",
   "details": {
     "fileId": "video123def45",
-    "kind": "asset"
+    "kind": "asset",
+    "expected": "user_audio"
   }
 }
 ```

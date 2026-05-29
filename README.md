@@ -415,7 +415,7 @@ curl -X POST "http://127.0.0.1:3000/upload" \
 }
 ```
 
-`overrides.bgm.fileId` 只接受音频 `fileId` 一个字段；不要同时传 `volume`、`fade_out`、`category` 或 `filename`。音量使用 pipeline 默认配置。
+`overrides.bgm.fileId` 只接受音频 `fileId` 一个字段；不要同时传 `volume`、`fade_out`、`category` 或 `filename`。音量使用 pipeline 默认配置。字段名必须是驼峰 `fileId`，`file_id` 是非法字段。
 
 示例：
 
@@ -449,6 +449,16 @@ curl -X POST "http://127.0.0.1:3000/render" \
   "taskId": "t_ab12cd34ef56ab78"
 }
 ```
+
+常见错误码：
+
+| HTTP | `error_code` | 场景 | 处理建议 |
+|---:|---:|---|---|
+| `400` | `2001` | `/render` 缺少 `pipeline` 或 `clips` | 修正请求体 |
+| `400` | `2002` | `clips` 中存在本地路径、URL、非法 OSS key，或把用户音频当素材传入 | 改传合法素材 OSS key 或素材 `fileId` |
+| `400` | `2007` | `overrides.bgm` 字段结构、未知字段或混传错误 | 修正 BGM 参数，用户音频字段必须是 `fileId` |
+| `400` | `2008` | `overrides.bgm.fileId` 不存在或不是用户音频 | 重新上传音频并传音频 `fileId` |
+| `503` | `3002` | 渲染队列已满 | 稍后重试 |
 
 注意：
 

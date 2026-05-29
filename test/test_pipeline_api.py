@@ -338,6 +338,44 @@ def test_render_endpoint_accepts_uploaded_user_audio_bgm(tmp_path, monkeypatch) 
         assert pipeline_task.payload["overrides"]["bgm"]["enabled"] is True
 
 
+def test_render_endpoint_accepts_bgm_catalog_overrides(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root)
+
+    with TestClient(api_app_module.create_app()) as client:
+        store = client.app.state.store
+        store.save_file("file1", "GouMei-Video-Cut/inputs/file1.mp4")
+        headers = {"X-Api-Key": "test-key", "Content-Type": "application/json"}
+
+        category_only = client.post(
+            "/render",
+            headers=headers,
+            json={
+                "pipeline": "trim-mixed-dissolve-v1",
+                "clips": ["file1"],
+                "overrides": {"bgm": {"category": "卡点"}},
+            },
+        )
+        assert category_only.status_code == 200
+
+        category_filename = client.post(
+            "/render",
+            headers=headers,
+            json={
+                "pipeline": "trim-mixed-dissolve-v1",
+                "clips": ["file1"],
+                "overrides": {"bgm": {"category": "卡点", "filename": "机械FUNK"}},
+            },
+        )
+        assert category_filename.status_code == 200
+        tasks = FakeTaskQueue.instances[-1].tasks
+        assert tasks[-2].payload["overrides"]["bgm"] == {"category": "卡点"}
+        assert tasks[-1].payload["overrides"]["bgm"] == {"category": "卡点", "filename": "机械FUNK"}
+        assert "user_bgm" not in tasks[-1].payload
+
+
 def test_render_endpoint_rejects_invalid_user_audio_bgm_refs(tmp_path, monkeypatch) -> None:
     FakeTaskQueue.instances.clear()
     pipelines_root = tmp_path / "pipelines"
@@ -366,7 +404,11 @@ def test_render_endpoint_rejects_invalid_user_audio_bgm_refs(tmp_path, monkeypat
             },
         )
         assert missing.status_code == 400
-        assert missing.json()["error_code"] == 2006
+        assert missing.json() == {
+            "error_code": 2008,
+            "message": "BGM file reference not found.",
+            "details": {"fileId": "missing"},
+        }
 
         wrong_kind = client.post(
             "/render",
@@ -378,7 +420,11 @@ def test_render_endpoint_rejects_invalid_user_audio_bgm_refs(tmp_path, monkeypat
             },
         )
         assert wrong_kind.status_code == 400
-        assert wrong_kind.json()["error_code"] == 2002
+        assert wrong_kind.json() == {
+            "error_code": 2008,
+            "message": "Invalid BGM file reference.",
+            "details": {"fileId": "video1", "kind": "asset", "expected": "user_audio"},
+        }
 
         mixed = client.post(
             "/render",
@@ -390,7 +436,92 @@ def test_render_endpoint_rejects_invalid_user_audio_bgm_refs(tmp_path, monkeypat
             },
         )
         assert mixed.status_code == 400
-        assert mixed.json()["error_code"] == 2001
+        assert mixed.json() == {
+            "error_code": 2007,
+            "message": "Invalid BGM override.",
+            "details": {"field": "overrides.bgm.fileId", "conflicts": ["volume"]},
+        }
+
+        empty_file_id = client.post(
+            "/render",
+            headers=headers,
+            json={
+                "pipeline": "trim-mixed-dissolve-v1",
+                "clips": ["file1"],
+                "overrides": {"bgm": {"fileId": ""}},
+            },
+        )
+        assert empty_file_id.status_code == 400
+        assert empty_file_id.json() == {
+            "error_code": 2007,
+            "message": "Invalid BGM override.",
+            "details": {"field": "overrides.bgm.fileId", "expected": "non-empty string"},
+        }
+
+        snake_case_file_id = client.post(
+            "/render",
+            headers=headers,
+            json={
+                "pipeline": "trim-mixed-dissolve-v1",
+                "clips": ["file1"],
+                "overrides": {"bgm": {"file_id": "audio1"}},
+            },
+        )
+        assert snake_case_file_id.status_code == 400
+        assert snake_case_file_id.json()["error_code"] == 2007
+        assert snake_case_file_id.json()["details"] == {
+            "field": "overrides.bgm.file_id",
+            "expected": "overrides.bgm.fileId",
+            "unknown": ["file_id"],
+        }
+
+        invalid_bgm_shape = client.post(
+            "/render",
+            headers=headers,
+            json={
+                "pipeline": "trim-mixed-dissolve-v1",
+                "clips": ["file1"],
+                "overrides": {"bgm": "audio1"},
+            },
+        )
+        assert invalid_bgm_shape.status_code == 400
+        assert invalid_bgm_shape.json() == {
+            "error_code": 2007,
+            "message": "Invalid BGM override.",
+            "details": {"field": "overrides.bgm", "expected": "object"},
+        }
+
+        unknown_bgm_field = client.post(
+            "/render",
+            headers=headers,
+            json={
+                "pipeline": "trim-mixed-dissolve-v1",
+                "clips": ["file1"],
+                "overrides": {"bgm": {"category": "卡点", "tempo": 120}},
+            },
+        )
+        assert unknown_bgm_field.status_code == 400
+        assert unknown_bgm_field.json() == {
+            "error_code": 2007,
+            "message": "Invalid BGM override.",
+            "details": {"field": "overrides.bgm", "unknown": ["tempo"]},
+        }
+
+        wrong_bgm_field_type = client.post(
+            "/render",
+            headers=headers,
+            json={
+                "pipeline": "trim-mixed-dissolve-v1",
+                "clips": ["file1"],
+                "overrides": {"bgm": {"category": 123}},
+            },
+        )
+        assert wrong_bgm_field_type.status_code == 400
+        assert wrong_bgm_field_type.json() == {
+            "error_code": 2007,
+            "message": "Invalid BGM override.",
+            "details": {"field": "overrides.bgm.category", "expected": "string"},
+        }
 
         audio_as_clip = client.post(
             "/render",
@@ -403,6 +534,7 @@ def test_render_endpoint_rejects_invalid_user_audio_bgm_refs(tmp_path, monkeypat
         )
         assert audio_as_clip.status_code == 400
         assert audio_as_clip.json()["error_code"] == 2002
+        assert FakeTaskQueue.instances[-1].tasks == []
 
 
 def test_cleanup_expired_user_audio_removes_local_oss_file(tmp_path, monkeypatch) -> None:

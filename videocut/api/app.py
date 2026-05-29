@@ -38,6 +38,9 @@ AUDIO_UPLOAD_EXTS = {".mp3", ".wav", ".aac", ".ogg", ".flac", ".m4a"}
 ASSET_UPLOAD_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".png", ".jpg", ".jpeg", ".webp"}
 ALLOWED_UPLOAD_EXTS = ASSET_UPLOAD_EXTS | AUDIO_UPLOAD_EXTS
 MAX_UPLOAD_BYTES = 500 * 1024 * 1024
+BGM_OVERRIDE_FIELDS = {"fileId", "enabled", "dir", "category", "filename", "volume", "fade_out"}
+
+
 class ApiErrorCode(IntEnum):
     UNAUTHORIZED = 1001
     UNSUPPORTED_CONTENT_TYPE = 1002
@@ -49,6 +52,8 @@ class ApiErrorCode(IntEnum):
     TASK_NOT_FOUND = 2004
     UNSUPPORTED_FORMAT = 2005
     FILE_NOT_FOUND = 2006
+    INVALID_BGM_OVERRIDE = 2007
+    INVALID_BGM_FILE_REFERENCE = 2008
     TASK_OUTPUT_NOT_READY = 3001
     QUEUE_FULL = 3002
     FILE_TOO_LARGE = 3003
@@ -218,42 +223,70 @@ def _cleanup_expired_uploads(store: TaskStore, oss: OssClient) -> int:
     return len(records)
 
 
+def _invalid_bgm_override(details: dict[str, Any]) -> HTTPException:
+    return api_http_exception(400, ApiErrorCode.INVALID_BGM_OVERRIDE, "Invalid BGM override.", details)
+
+
+def _validate_optional_bgm_field_types(bgm: dict[str, Any]) -> None:
+    for field in ("dir", "category", "filename"):
+        value = bgm.get(field)
+        if field in bgm and not isinstance(value, str):
+            raise _invalid_bgm_override({"field": f"overrides.bgm.{field}", "expected": "string"})
+
+    for field in ("volume", "fade_out"):
+        value = bgm.get(field)
+        if field in bgm and (not isinstance(value, (int, float)) or isinstance(value, bool)):
+            raise _invalid_bgm_override({"field": f"overrides.bgm.{field}", "expected": "number"})
+
+    enabled = bgm.get("enabled")
+    if "enabled" in bgm and not isinstance(enabled, bool):
+        raise _invalid_bgm_override({"field": "overrides.bgm.enabled", "expected": "boolean"})
+
+
 def _resolve_user_bgm(store: TaskStore, overrides: dict[str, Any]) -> dict[str, str] | None:
+    if "bgm" not in overrides:
+        return None
     bgm = overrides.get("bgm")
-    if not isinstance(bgm, dict) or "fileId" not in bgm:
+    if not isinstance(bgm, dict):
+        raise _invalid_bgm_override({"field": "overrides.bgm", "expected": "object"})
+
+    unknown_fields = sorted(field for field in bgm if field not in BGM_OVERRIDE_FIELDS)
+    if unknown_fields:
+        details: dict[str, Any] = {"field": "overrides.bgm", "unknown": unknown_fields}
+        if "file_id" in unknown_fields:
+            details = {
+                "field": "overrides.bgm.file_id",
+                "expected": "overrides.bgm.fileId",
+                "unknown": unknown_fields,
+            }
+        raise _invalid_bgm_override(details)
+
+    _validate_optional_bgm_field_types(bgm)
+
+    if "fileId" not in bgm:
         return None
     file_id = bgm.get("fileId")
     if not isinstance(file_id, str) or not file_id.strip():
-        raise api_http_exception(
-            400,
-            ApiErrorCode.INVALID_BODY,
-            "Invalid request body.",
-            {"field": "overrides.bgm.fileId"},
-        )
+        raise _invalid_bgm_override({"field": "overrides.bgm.fileId", "expected": "non-empty string"})
     conflicts = sorted(field for field in bgm if field != "fileId")
     if conflicts:
-        raise api_http_exception(
-            400,
-            ApiErrorCode.INVALID_BODY,
-            "Invalid request body.",
-            {"field": "overrides.bgm.fileId", "conflicts": conflicts},
-        )
+        raise _invalid_bgm_override({"field": "overrides.bgm.fileId", "conflicts": conflicts})
     if "enabled" not in bgm:
         bgm["enabled"] = True
     file_record = store.get_file(file_id.strip())
     if not file_record:
         raise api_http_exception(
             400,
-            ApiErrorCode.FILE_NOT_FOUND,
-            "File reference not found.",
+            ApiErrorCode.INVALID_BGM_FILE_REFERENCE,
+            "BGM file reference not found.",
             {"fileId": file_id.strip()},
         )
     if file_record.kind != "user_audio":
         raise api_http_exception(
             400,
-            ApiErrorCode.INVALID_CLIP_REFERENCE,
+            ApiErrorCode.INVALID_BGM_FILE_REFERENCE,
             "Invalid BGM file reference.",
-            {"fileId": file_id.strip(), "kind": file_record.kind},
+            {"fileId": file_id.strip(), "kind": file_record.kind, "expected": "user_audio"},
         )
     return {"fileId": file_record.file_id, "ossKey": file_record.oss_key}
 
