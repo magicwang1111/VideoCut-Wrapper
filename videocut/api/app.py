@@ -5,12 +5,11 @@ import re
 from copy import deepcopy
 from contextlib import asynccontextmanager
 from dataclasses import asdict
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from enum import IntEnum
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
@@ -29,6 +28,7 @@ from videocut.queue import TaskQueue, WorkerTask
 from videocut.render.task import generate_task_id
 from videocut.runtime_paths import resolve_runtime_path
 from videocut.store import PipelineRecord, TaskRecord, TaskStore
+from videocut.time_utils import BEIJING_TZ, now_beijing, now_beijing_iso
 
 load_project_env()
 
@@ -38,12 +38,6 @@ AUDIO_UPLOAD_EXTS = {".mp3", ".wav", ".aac", ".ogg", ".flac", ".m4a"}
 ASSET_UPLOAD_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".png", ".jpg", ".jpeg", ".webp"}
 ALLOWED_UPLOAD_EXTS = ASSET_UPLOAD_EXTS | AUDIO_UPLOAD_EXTS
 MAX_UPLOAD_BYTES = 500 * 1024 * 1024
-try:
-    BEIJING_TZ = ZoneInfo("Asia/Shanghai")
-except ZoneInfoNotFoundError:
-    BEIJING_TZ = timezone(timedelta(hours=8))
-
-
 class ApiErrorCode(IntEnum):
     UNAUTHORIZED = 1001
     UNSUPPORTED_CONTENT_TYPE = 1002
@@ -98,7 +92,7 @@ def format_api_time(value: str | datetime | None) -> str | None:
 
 
 def now_api_time() -> str:
-    return format_api_time(datetime.now(UTC)) or ""
+    return format_api_time(now_beijing()) or ""
 
 
 def active_task_payload(task: TaskRecord) -> dict[str, Any]:
@@ -154,7 +148,7 @@ def _create_store_record(task_id: str, task_kind: str, source_name: str, payload
         error=None,
         last_error=None,
         last_error_at=None,
-        created_at=datetime.now(UTC).isoformat(),
+        created_at=now_beijing_iso(),
         started_at=None,
         completed_at=None,
     )
@@ -209,7 +203,7 @@ def _upload_ttl_days() -> int:
 
 
 def _user_audio_expires_at() -> str:
-    return (datetime.now(UTC) + timedelta(days=_upload_ttl_days())).isoformat()
+    return (now_beijing() + timedelta(days=_upload_ttl_days())).isoformat()
 
 
 def _cleanup_expired_uploads(store: TaskStore, oss: OssClient) -> int:
@@ -275,7 +269,7 @@ async def lifespan(app: FastAPI):
     store = TaskStore(db_path)
     registry = PipelineRegistry(pipelines_dir)
     registry.scan()
-    now = datetime.now(UTC).isoformat()
+    now = now_beijing_iso()
     store.sync_pipelines(
         [
             PipelineRecord(

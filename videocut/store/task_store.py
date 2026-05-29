@@ -4,9 +4,11 @@ import json
 import sqlite3
 import threading
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
+
+from videocut.time_utils import now_beijing, now_beijing_iso, to_beijing_iso
 
 FileKind = Literal["asset", "user_audio"]
 TaskKind = Literal["template", "pipeline"]
@@ -135,7 +137,34 @@ class TaskStore:
                 self._db.execute("ALTER TABLE files ADD COLUMN size_bytes INTEGER")
             if "expires_at" not in file_columns:
                 self._db.execute("ALTER TABLE files ADD COLUMN expires_at TEXT")
+            self._normalize_existing_timestamps()
             self._db.commit()
+
+    def _normalize_existing_timestamps(self) -> None:
+        timestamp_columns = {
+            "tasks": ("last_error_at", "created_at", "started_at", "completed_at"),
+            "task_failures": ("created_at",),
+            "files": ("expires_at", "created_at"),
+            "pipelines": ("updated_at",),
+        }
+        for table, columns in timestamp_columns.items():
+            selected_columns = ", ".join(columns)
+            rows = self._db.execute(f"SELECT rowid, {selected_columns} FROM {table}").fetchall()
+            for row in rows:
+                updates: list[str] = []
+                values: list[Any] = []
+                for column in columns:
+                    original = row[column]
+                    normalized = to_beijing_iso(original)
+                    if normalized != original:
+                        updates.append(f"{column}=?")
+                        values.append(normalized)
+                if updates:
+                    values.append(row["rowid"])
+                    self._db.execute(
+                        f"UPDATE {table} SET {', '.join(updates)} WHERE rowid=?",
+                        values,
+                    )
 
     def create(self, record: TaskRecord) -> TaskRecord:
         with self._lock:
@@ -157,10 +186,10 @@ class TaskStore:
                     record.oss_key,
                     record.error,
                     record.last_error,
-                    record.last_error_at,
-                    record.created_at,
-                    record.started_at,
-                    record.completed_at,
+                    to_beijing_iso(record.last_error_at),
+                    to_beijing_iso(record.created_at),
+                    to_beijing_iso(record.started_at),
+                    to_beijing_iso(record.completed_at),
                 ),
             )
             self._db.commit()
@@ -175,7 +204,7 @@ class TaskStore:
         with self._lock:
             self._db.execute(
                 "UPDATE tasks SET status='rendering', progress=0, started_at=?, completed_at=NULL, error=NULL, attempt=attempt+1 WHERE id=?",
-                (datetime.now(UTC).isoformat(), task_id),
+                (now_beijing_iso(), task_id),
             )
             row = self._db.execute("SELECT attempt FROM tasks WHERE id = ?", (task_id,)).fetchone()
             self._db.commit()
@@ -190,7 +219,7 @@ class TaskStore:
         with self._lock:
             self._db.execute(
                 "UPDATE tasks SET status='completed', progress=100, oss_key=?, error=NULL, completed_at=? WHERE id=?",
-                (oss_key, datetime.now(UTC).isoformat(), task_id),
+                (oss_key, now_beijing_iso(), task_id),
             )
             self._db.commit()
 
@@ -199,7 +228,7 @@ class TaskStore:
         with self._lock:
             self._db.execute(
                 "UPDATE tasks SET status='failed', error=?, completed_at=? WHERE id=?",
-                (error, datetime.now(UTC).isoformat(), task_id),
+                (error, now_beijing_iso(), task_id),
             )
             self._db.commit()
 
@@ -237,7 +266,7 @@ class TaskStore:
         return [self._row_to_record(row) for row in rows]
 
     def cleanup_old_tasks(self, ttl_days: int) -> int:
-        cutoff = (datetime.now(UTC) - timedelta(days=ttl_days)).isoformat()
+        cutoff = to_beijing_iso(now_beijing() - timedelta(days=ttl_days))
         with self._lock:
             self._db.execute(
                 """
@@ -256,7 +285,7 @@ class TaskStore:
             return cursor.rowcount
 
     def record_failure(self, task_id: str, error: str) -> TaskFailureRecord | None:
-        created_at = datetime.now(UTC).isoformat()
+        created_at = now_beijing_iso()
         with self._lock:
             row = self._db.execute("SELECT attempt FROM tasks WHERE id = ?", (task_id,)).fetchone()
             if row is None:
@@ -311,7 +340,7 @@ class TaskStore:
                             item.name,
                             item.source_path,
                             json.dumps(item.config, ensure_ascii=False),
-                            item.updated_at,
+                            to_beijing_iso(item.updated_at),
                         )
                         for item in records
                     ],
@@ -365,7 +394,7 @@ class TaskStore:
                 INSERT OR REPLACE INTO files (file_id, oss_key, kind, size_bytes, expires_at, created_at)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (file_id, oss_key, kind, size_bytes, expires_at, datetime.now(UTC).isoformat()),
+                (file_id, oss_key, kind, size_bytes, to_beijing_iso(expires_at), now_beijing_iso()),
             )
             self._db.commit()
 
@@ -380,7 +409,7 @@ class TaskStore:
         return self._row_to_file_record(row) if row else None
 
     def cleanup_expired_files(self, now: datetime | None = None) -> list[FileRecord]:
-        cutoff = (now or datetime.now(UTC)).isoformat()
+        cutoff = to_beijing_iso(now) if now is not None else now_beijing_iso()
         with self._lock:
             rows = self._db.execute(
                 "SELECT * FROM files WHERE expires_at IS NOT NULL AND expires_at < ?",
