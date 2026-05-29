@@ -4,76 +4,481 @@
   "generatedFrom": "/mnt/d/VideoCut-Wrapper/input/bgm",
   "categories": [
     {
-      "name": "calm",
+      "name": "kpop",
+      "displayName": "kpop",
+      "count": 3
+    },
+    {
+      "name": "vlog",
+      "displayName": "vlog",
+      "count": 4
+    },
+    {
+      "name": "动感",
+      "displayName": "动感",
+      "count": 6
+    },
+    {
+      "name": "卡点",
+      "displayName": "卡点",
+      "count": 8
+    },
+    {
+      "name": "可爱",
+      "displayName": "可爱",
+      "count": 2
+    },
+    {
+      "name": "忧郁",
+      "displayName": "忧郁",
+      "count": 3
+    },
+    {
+      "name": "新中式",
+      "displayName": "新中式",
+      "count": 1
+    },
+    {
+      "name": "旅行",
+      "displayName": "旅行",
+      "count": 2
+    },
+    {
+      "name": "松弛",
+      "displayName": "松弛",
+      "count": 2
+    },
+    {
+      "name": "治愈",
+      "displayName": "治愈",
+      "count": 4
+    },
+    {
+      "name": "甜美",
+      "displayName": "甜美",
+      "count": 5
+    },
+    {
+      "name": "知性端庄",
+      "displayName": "知性端庄",
+      "count": 5
+    },
+    {
+      "name": "秀场走秀",
+      "displayName": "秀场走秀",
+      "count": 7
+    },
+    {
+      "name": "舒缓",
       "displayName": "舒缓",
       "count": 5
     },
     {
-      "name": "intense",
-      "displayName": "激烈",
-      "count": 5
+      "name": "轻奢",
+      "displayName": "轻奢",
+      "count": 4
+    },
+    {
+      "name": "轻快",
+      "displayName": "轻快",
+      "count": 2
+    },
+    {
+      "name": "轻柔",
+      "displayName": "轻柔",
+      "count": 2
     }
   ],
   "files": [
     {
-      "category": "calm",
+      "category": "kpop",
+      "displayName": "kpop",
+      "filename": "Hyperpop",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/kpop/Hyperpop.mp3"
+    },
+    {
+      "category": "kpop",
+      "displayName": "kpop",
+      "filename": "Summer Funk(1)",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/kpop/Summer%20Funk%281%29.mp3"
+    },
+    {
+      "category": "kpop",
+      "displayName": "kpop",
+      "filename": "Y2K K-Pop",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/kpop/Y2K%20K-Pop.mp3"
+    },
+    {
+      "category": "vlog",
+      "displayName": "vlog",
+      "filename": "syth次元",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/vlog/syth%E6%AC%A1%E5%85%83.mp3"
+    },
+    {
+      "category": "vlog",
+      "displayName": "vlog",
+      "filename": "吉他与公路",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/vlog/%E5%90%89%E4%BB%96%E4%B8%8E%E5%85%AC%E8%B7%AF.mp3"
+    },
+    {
+      "category": "vlog",
+      "displayName": "vlog",
+      "filename": "暮色随想",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/vlog/%E6%9A%AE%E8%89%B2%E9%9A%8F%E6%83%B3.mp3"
+    },
+    {
+      "category": "vlog",
+      "displayName": "vlog",
+      "filename": "法式 Vlog",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/vlog/%E6%B3%95%E5%BC%8F%20Vlog.mp3"
+    },
+    {
+      "category": "动感",
+      "displayName": "动感",
+      "filename": "Next Wave",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E5%8A%A8%E6%84%9F/Next%20Wave.mp3"
+    },
+    {
+      "category": "动感",
+      "displayName": "动感",
+      "filename": "Retro Chic",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E5%8A%A8%E6%84%9F/Retro%20Chic.mp3"
+    },
+    {
+      "category": "动感",
+      "displayName": "动感",
+      "filename": "Street Energy",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E5%8A%A8%E6%84%9F/Street%20Energy.mp3"
+    },
+    {
+      "category": "动感",
+      "displayName": "动感",
+      "filename": "东方 Chill",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E5%8A%A8%E6%84%9F/%E4%B8%9C%E6%96%B9%20Chill.mp3"
+    },
+    {
+      "category": "动感",
+      "displayName": "动感",
+      "filename": "俏皮复古风",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E5%8A%A8%E6%84%9F/%E4%BF%8F%E7%9A%AE%E5%A4%8D%E5%8F%A4%E9%A3%8E.mp3"
+    },
+    {
+      "category": "动感",
+      "displayName": "动感",
+      "filename": "性感 Afrobeat 穿搭风",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E5%8A%A8%E6%84%9F/%E6%80%A7%E6%84%9F%20Afrobeat%20%E7%A9%BF%E6%90%AD%E9%A3%8E.mp3"
+    },
+    {
+      "category": "卡点",
+      "displayName": "卡点",
+      "filename": "BOUNCE",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E5%8D%A1%E7%82%B9/BOUNCE.mp3"
+    },
+    {
+      "category": "卡点",
+      "displayName": "卡点",
+      "filename": "Dark Street",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E5%8D%A1%E7%82%B9/Dark%20Street.mp3"
+    },
+    {
+      "category": "卡点",
+      "displayName": "卡点",
+      "filename": "beauty and beat",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E5%8D%A1%E7%82%B9/beauty%20and%20beat.mp3"
+    },
+    {
+      "category": "卡点",
+      "displayName": "卡点",
+      "filename": "curious",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E5%8D%A1%E7%82%B9/curious.mp3"
+    },
+    {
+      "category": "卡点",
+      "displayName": "卡点",
+      "filename": "机械FUNK",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E5%8D%A1%E7%82%B9/%E6%9C%BA%E6%A2%B0FUNK.mp3"
+    },
+    {
+      "category": "卡点",
+      "displayName": "卡点",
+      "filename": "美式辣妹 Jersey Club 风",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E5%8D%A1%E7%82%B9/%E7%BE%8E%E5%BC%8F%E8%BE%A3%E5%A6%B9%20Jersey%20Club%20%E9%A3%8E.mp3"
+    },
+    {
+      "category": "卡点",
+      "displayName": "卡点",
+      "filename": "蔚蓝绮梦",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E5%8D%A1%E7%82%B9/%E8%94%9A%E8%93%9D%E7%BB%AE%E6%A2%A6.mp3"
+    },
+    {
+      "category": "卡点",
+      "displayName": "卡点",
+      "filename": "도레미파솔+Stupid",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E5%8D%A1%E7%82%B9/%EB%8F%84%EB%A0%88%EB%AF%B8%ED%8C%8C%EC%86%94%2BStupid.mp3"
+    },
+    {
+      "category": "可爱",
+      "displayName": "可爱",
+      "filename": "Cute Funk Pop",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E5%8F%AF%E7%88%B1/Cute%20Funk%20Pop.mp3"
+    },
+    {
+      "category": "可爱",
+      "displayName": "可爱",
+      "filename": "元气142拍",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E5%8F%AF%E7%88%B1/%E5%85%83%E6%B0%94142%E6%8B%8D.mp3"
+    },
+    {
+      "category": "忧郁",
+      "displayName": "忧郁",
+      "filename": "Melancholic Alt Pop",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E5%BF%A7%E9%83%81/Melancholic%20Alt%20Pop.mp3"
+    },
+    {
+      "category": "忧郁",
+      "displayName": "忧郁",
+      "filename": "Sad Piano Ballad",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E5%BF%A7%E9%83%81/Sad%20Piano%20Ballad.mp3"
+    },
+    {
+      "category": "忧郁",
+      "displayName": "忧郁",
+      "filename": "夜雨·空灵",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E5%BF%A7%E9%83%81/%E5%A4%9C%E9%9B%A8%C2%B7%E7%A9%BA%E7%81%B5.mp3"
+    },
+    {
+      "category": "新中式",
+      "displayName": "新中式",
+      "filename": "东方 Chill",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E6%96%B0%E4%B8%AD%E5%BC%8F/%E4%B8%9C%E6%96%B9%20Chill.mp3"
+    },
+    {
+      "category": "旅行",
+      "displayName": "旅行",
+      "filename": "City Pop",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E6%97%85%E8%A1%8C/City%20Pop.mp3"
+    },
+    {
+      "category": "旅行",
+      "displayName": "旅行",
+      "filename": "Desert Travel",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E6%97%85%E8%A1%8C/Desert%20Travel.mp3"
+    },
+    {
+      "category": "松弛",
+      "displayName": "松弛",
+      "filename": "Sleepy+Morning+Sunshine",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E6%9D%BE%E5%BC%9B/Sleepy%2BMorning%2BSunshine.mp3"
+    },
+    {
+      "category": "松弛",
+      "displayName": "松弛",
+      "filename": "松弛节奏",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E6%9D%BE%E5%BC%9B/%E6%9D%BE%E5%BC%9B%E8%8A%82%E5%A5%8F.mp3"
+    },
+    {
+      "category": "治愈",
+      "displayName": "治愈",
+      "filename": "Fairy Ambient Pop",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E6%B2%BB%E6%84%88/Fairy%20Ambient%20Pop.mp3"
+    },
+    {
+      "category": "治愈",
+      "displayName": "治愈",
+      "filename": "北欧清晨",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E6%B2%BB%E6%84%88/%E5%8C%97%E6%AC%A7%E6%B8%85%E6%99%A8.mp3"
+    },
+    {
+      "category": "治愈",
+      "displayName": "治愈",
+      "filename": "烟雨",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E6%B2%BB%E6%84%88/%E7%83%9F%E9%9B%A8.mp3"
+    },
+    {
+      "category": "治愈",
+      "displayName": "治愈",
+      "filename": "自由",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E6%B2%BB%E6%84%88/%E8%87%AA%E7%94%B1.mp3"
+    },
+    {
+      "category": "甜美",
+      "displayName": "甜美",
+      "filename": "Cute EDM",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E7%94%9C%E7%BE%8E/Cute%20EDM.mp3"
+    },
+    {
+      "category": "甜美",
+      "displayName": "甜美",
+      "filename": "Dreamy Bedroom Pop",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E7%94%9C%E7%BE%8E/Dreamy%20Bedroom%20Pop.mp3"
+    },
+    {
+      "category": "甜美",
+      "displayName": "甜美",
+      "filename": "Kawaii Future Bass",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E7%94%9C%E7%BE%8E/Kawaii%20Future%20Bass.mp3"
+    },
+    {
+      "category": "甜美",
+      "displayName": "甜美",
+      "filename": "Sweet City Pop",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E7%94%9C%E7%BE%8E/Sweet%20City%20Pop.mp3"
+    },
+    {
+      "category": "甜美",
+      "displayName": "甜美",
+      "filename": "shades of blue",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E7%94%9C%E7%BE%8E/shades%20of%20blue.mp3"
+    },
+    {
+      "category": "知性端庄",
+      "displayName": "知性端庄",
+      "filename": "冷淡知性美学风",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E7%9F%A5%E6%80%A7%E7%AB%AF%E5%BA%84/%E5%86%B7%E6%B7%A1%E7%9F%A5%E6%80%A7%E7%BE%8E%E5%AD%A6%E9%A3%8E.mp3"
+    },
+    {
+      "category": "知性端庄",
+      "displayName": "知性端庄",
+      "filename": "星芒轨迹",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E7%9F%A5%E6%80%A7%E7%AB%AF%E5%BA%84/%E6%98%9F%E8%8A%92%E8%BD%A8%E8%BF%B9.mp3"
+    },
+    {
+      "category": "知性端庄",
+      "displayName": "知性端庄",
+      "filename": "极简高级 Ambient",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E7%9F%A5%E6%80%A7%E7%AB%AF%E5%BA%84/%E6%9E%81%E7%AE%80%E9%AB%98%E7%BA%A7%20Ambient.mp3"
+    },
+    {
+      "category": "知性端庄",
+      "displayName": "知性端庄",
+      "filename": "柔和环境 Pad",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E7%9F%A5%E6%80%A7%E7%AB%AF%E5%BA%84/%E6%9F%94%E5%92%8C%E7%8E%AF%E5%A2%83%20Pad.mp3"
+    },
+    {
+      "category": "知性端庄",
+      "displayName": "知性端庄",
+      "filename": "知途",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E7%9F%A5%E6%80%A7%E7%AB%AF%E5%BA%84/%E7%9F%A5%E9%80%94.mp3"
+    },
+    {
+      "category": "秀场走秀",
+      "displayName": "秀场走秀",
+      "filename": "Dark Fashion Pop",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E7%A7%80%E5%9C%BA%E8%B5%B0%E7%A7%80/Dark%20Fashion%20Pop.mp3"
+    },
+    {
+      "category": "秀场走秀",
+      "displayName": "秀场走秀",
+      "filename": "Fashion Lives Here",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E7%A7%80%E5%9C%BA%E8%B5%B0%E7%A7%80/Fashion%20Lives%20Here.mp3"
+    },
+    {
+      "category": "秀场走秀",
+      "displayName": "秀场走秀",
+      "filename": "TikTok Edit",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E7%A7%80%E5%9C%BA%E8%B5%B0%E7%A7%80/TikTok%20Edit.mp3"
+    },
+    {
+      "category": "秀场走秀",
+      "displayName": "秀场走秀",
+      "filename": "Y2K辣妹Style",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E7%A7%80%E5%9C%BA%E8%B5%B0%E7%A7%80/Y2K%E8%BE%A3%E5%A6%B9Style.mp3"
+    },
+    {
+      "category": "秀场走秀",
+      "displayName": "秀场走秀",
+      "filename": "蔚蓝绮梦2",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E7%A7%80%E5%9C%BA%E8%B5%B0%E7%A7%80/%E8%94%9A%E8%93%9D%E7%BB%AE%E6%A2%A62.mp3"
+    },
+    {
+      "category": "秀场走秀",
+      "displayName": "秀场走秀",
+      "filename": "超模 Techno 秀场",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E7%A7%80%E5%9C%BA%E8%B5%B0%E7%A7%80/%E8%B6%85%E6%A8%A1%20Techno%20%E7%A7%80%E5%9C%BA.mp3"
+    },
+    {
+      "category": "秀场走秀",
+      "displayName": "秀场走秀",
+      "filename": "高级品牌秀场",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E7%A7%80%E5%9C%BA%E8%B5%B0%E7%A7%80/%E9%AB%98%E7%BA%A7%E5%93%81%E7%89%8C%E7%A7%80%E5%9C%BA.mp3"
+    },
+    {
+      "category": "舒缓",
       "displayName": "舒缓",
-      "filename": "10",
-      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/10.mp3"
+      "filename": "Chapter of the Star Diamond",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E8%88%92%E7%BC%93/Chapter%20of%20the%20Star%20Diamond.mp3"
     },
     {
-      "category": "calm",
+      "category": "舒缓",
       "displayName": "舒缓",
-      "filename": "6",
-      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/6.mp3"
+      "filename": "Gentle Breeze",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E8%88%92%E7%BC%93/Gentle%20Breeze.mp3"
     },
     {
-      "category": "calm",
+      "category": "舒缓",
       "displayName": "舒缓",
-      "filename": "8",
-      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/8.mp3"
+      "filename": "Oriental Emotional Pop",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E8%88%92%E7%BC%93/Oriental%20Emotional%20Pop.mp3"
     },
     {
-      "category": "calm",
+      "category": "舒缓",
       "displayName": "舒缓",
-      "filename": "测试1",
-      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/%E6%B5%8B%E8%AF%951.mp3"
+      "filename": "回响",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E8%88%92%E7%BC%93/%E5%9B%9E%E5%93%8D.mp3"
     },
     {
-      "category": "calm",
+      "category": "舒缓",
       "displayName": "舒缓",
-      "filename": "测试3",
-      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/calm/%E6%B5%8B%E8%AF%953.mp3"
+      "filename": "颗粒雨夜",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E8%88%92%E7%BC%93/%E9%A2%97%E7%B2%92%E9%9B%A8%E5%A4%9C.mp3"
     },
     {
-      "category": "intense",
-      "displayName": "激烈",
-      "filename": "5",
-      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/5.mp3"
+      "category": "轻奢",
+      "displayName": "轻奢",
+      "filename": "French Lounge",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E8%BD%BB%E5%A5%A2/French%20Lounge.mp3"
     },
     {
-      "category": "intense",
-      "displayName": "激烈",
-      "filename": "7",
-      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/7.mp3"
+      "category": "轻奢",
+      "displayName": "轻奢",
+      "filename": "Luxury Fashion",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E8%BD%BB%E5%A5%A2/Luxury%20Fashion.mp3"
     },
     {
-      "category": "intense",
-      "displayName": "激烈",
-      "filename": "9",
-      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/9.mp3"
+      "category": "轻奢",
+      "displayName": "轻奢",
+      "filename": "afro",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E8%BD%BB%E5%A5%A2/afro.mp3"
     },
     {
-      "category": "intense",
-      "displayName": "激烈",
-      "filename": "测试2",
-      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/%E6%B5%8B%E8%AF%952.mp3"
+      "category": "轻奢",
+      "displayName": "轻奢",
+      "filename": "海岛轻奢风",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E8%BD%BB%E5%A5%A2/%E6%B5%B7%E5%B2%9B%E8%BD%BB%E5%A5%A2%E9%A3%8E.mp3"
     },
     {
-      "category": "intense",
-      "displayName": "激烈",
-      "filename": "测试4",
-      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/intense/%E6%B5%8B%E8%AF%954.mp3"
+      "category": "轻快",
+      "displayName": "轻快",
+      "filename": "Clean Girl 穿搭风",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E8%BD%BB%E5%BF%AB/Clean%20Girl%20%E7%A9%BF%E6%90%AD%E9%A3%8E.mp3"
+    },
+    {
+      "category": "轻快",
+      "displayName": "轻快",
+      "filename": "Soft Morning Vibes",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E8%BD%BB%E5%BF%AB/Soft%20Morning%20Vibes.mp3"
+    },
+    {
+      "category": "轻柔",
+      "displayName": "轻柔",
+      "filename": "Folk Healing",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E8%BD%BB%E6%9F%94/Folk%20Healing.mp3"
+    },
+    {
+      "category": "轻柔",
+      "displayName": "轻柔",
+      "filename": "Korean Acoustic Pop",
+      "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/%E8%BD%BB%E6%9F%94/Korean%20Acoustic%20Pop.mp3"
     }
   ]
 }
