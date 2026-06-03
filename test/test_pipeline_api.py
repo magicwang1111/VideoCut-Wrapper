@@ -187,6 +187,36 @@ def test_build_pipeline_context_applies_binding_and_overrides(tmp_path) -> None:
     ]
 
 
+def test_build_pipeline_context_reuses_source_indexes_for_fixed_segments(tmp_path) -> None:
+    payload = {
+        "name": "segment-5-6-then-3-5-concat",
+        "mode": "pipeline",
+        "clips": [
+            {"source_index": 0, "trim_start": 5, "trim_duration": 1},
+            {"source_index": 1, "trim_start": 5, "trim_duration": 1},
+            {"source_index": 2, "trim_start": 5, "trim_duration": 1},
+            {"source_index": 3, "trim_start": 5, "trim_duration": 1},
+            {"source_index": 4, "trim_start": 5, "trim_duration": 1},
+            {"source_index": 0, "trim_start": 3, "trim_duration": 2},
+            {"source_index": 1, "trim_start": 3, "trim_duration": 2},
+            {"source_index": 2, "trim_start": 3, "trim_duration": 2},
+            {"source_index": 3, "trim_start": 3, "trim_duration": 2},
+            {"source_index": 4, "trim_start": 3, "trim_duration": 2},
+        ],
+        "default_transition": {"type": "cut", "duration": 0},
+    }
+    config = parse_pipeline_config(payload, tmp_path / "config.json", require_name=True)
+    input_clips = [f"/tmp/clip_{index}.mp4" for index in range(5)]
+
+    ctx = build_pipeline_context(config, input_clips, tmp_path / "config.json")
+
+    assert ctx.resolved_srcs == input_clips + input_clips
+    assert [clip.source_index for clip in ctx.config.clips] == [0, 1, 2, 3, 4, 0, 1, 2, 3, 4]
+    assert [clip.trim_start for clip in ctx.config.clips] == [5, 5, 5, 5, 5, 3, 3, 3, 3, 3]
+    assert [clip.trim_duration for clip in ctx.config.clips] == [1, 1, 1, 1, 1, 2, 2, 2, 2, 2]
+    assert [(item.type, item.duration) for item in ctx.junctions] == [("cut", 0)] * 9
+
+
 def test_render_endpoint_pipeline_mode(tmp_path, monkeypatch) -> None:
     FakeTaskQueue.instances.clear()
     pipelines_root = tmp_path / "pipelines"

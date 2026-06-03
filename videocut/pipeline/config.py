@@ -181,10 +181,24 @@ def _parse_clip_config(raw: object, location: str, require_src: bool) -> Pipelin
         src = src_raw.strip()
     elif require_src:
         raise VideoCutError(f"{location}.src must be a non-empty string.")
+    source_index_raw = raw.get("source_index")
+    source_index: int | None = None
+    if source_index_raw is not None:
+        if not isinstance(source_index_raw, int) or source_index_raw < 0:
+            raise VideoCutError(f"{location}.source_index must be a non-negative integer.")
+        source_index = source_index_raw
+    trim_duration_raw = raw.get("trim_duration")
+    trim_duration: float | None = None
+    if trim_duration_raw is not None:
+        if not isinstance(trim_duration_raw, (int, float)) or float(trim_duration_raw) <= 0:
+            raise VideoCutError(f"{location}.trim_duration must be a positive number.")
+        trim_duration = float(trim_duration_raw)
     return PipelineClipConfig(
         src=src,
+        source_index=source_index,
         trim_start=float(raw.get("trim_start")) if isinstance(raw.get("trim_start"), (int, float)) else 0.0,
         trim_end=float(raw.get("trim_end")) if isinstance(raw.get("trim_end"), (int, float)) else 0.0,
+        trim_duration=trim_duration,
     )
 
 
@@ -322,18 +336,18 @@ def _parse_override_index(raw: object, location: str) -> int:
     return raw
 
 
-def _parse_clip_override_map(raw: object) -> dict[int, dict[str, float]]:
+def _parse_clip_override_map(raw: object) -> dict[int, dict[str, float | None]]:
     if raw is None:
         return {}
     if not isinstance(raw, list):
         raise VideoCutError("overrides.clip_overrides must be an array.")
-    overrides: dict[int, dict[str, float]] = {}
+    overrides: dict[int, dict[str, float | None]] = {}
     for index, item in enumerate(raw):
         location = f"overrides.clip_overrides[{index}]"
         if not isinstance(item, dict):
             raise VideoCutError(f"{location} must be an object.")
         override_index = _parse_override_index(item.get("index"), location)
-        values: dict[str, float] = {}
+        values: dict[str, float | None] = {}
         if "trim_start" in item:
             if not isinstance(item.get("trim_start"), (int, float)):
                 raise VideoCutError(f"{location}.trim_start must be a number.")
@@ -342,6 +356,11 @@ def _parse_clip_override_map(raw: object) -> dict[int, dict[str, float]]:
             if not isinstance(item.get("trim_end"), (int, float)):
                 raise VideoCutError(f"{location}.trim_end must be a number.")
             values["trim_end"] = float(item["trim_end"])
+        if "trim_duration" in item:
+            duration_raw = item.get("trim_duration")
+            if duration_raw is not None and (not isinstance(duration_raw, (int, float)) or float(duration_raw) <= 0):
+                raise VideoCutError(f"{location}.trim_duration must be a positive number or null.")
+            values["trim_duration"] = float(duration_raw) if duration_raw is not None else None
         overrides[override_index] = values
     return overrides
 
@@ -383,9 +402,11 @@ def bind_pipeline_config(
     overrides = overrides or {}
     clip_override_map = _parse_clip_override_map(overrides.get("clip_overrides"))
     transition_override_map = _parse_transition_override_map(overrides.get("transition_overrides"))
-    transition_count = max(clip_count - 1, 0)
+    uses_source_index = any(clip.source_index is not None for clip in config.clips)
+    bound_clip_count = len(config.clips) if uses_source_index else clip_count
+    transition_count = max(bound_clip_count - 1, 0)
 
-    invalid_clip_indexes = sorted(index for index in clip_override_map if index >= clip_count)
+    invalid_clip_indexes = sorted(index for index in clip_override_map if index >= bound_clip_count)
     if invalid_clip_indexes:
         raise VideoCutError(f"clip_overrides index out of range: {invalid_clip_indexes}")
     invalid_transition_indexes = sorted(index for index in transition_override_map if index >= transition_count)
@@ -409,9 +430,18 @@ def bind_pipeline_config(
         bgm = parse_bgm_config(overrides.get("bgm"), base=bgm)
 
     bound_clips: list[PipelineClipConfig] = []
-    for index in range(clip_count):
+    for index in range(bound_clip_count):
         source = config.clips[index] if index < len(config.clips) else PipelineClipConfig()
-        clip = PipelineClipConfig(trim_start=source.trim_start, trim_end=source.trim_end)
+        clip = PipelineClipConfig(
+            source_index=source.source_index if source.source_index is not None else index,
+            trim_start=source.trim_start,
+            trim_end=source.trim_end,
+            trim_duration=source.trim_duration,
+        )
+        if clip.source_index >= clip_count:
+            raise VideoCutError(
+                f"clips[{index}].source_index {clip.source_index} is out of range for {clip_count} input clips."
+            )
         for key, value in clip_override_map.get(index, {}).items():
             setattr(clip, key, value)
         bound_clips.append(clip)
@@ -461,11 +491,15 @@ def build_pipeline_context(
 ) -> ParsedPipelineContext:
     abs_config_path = Path(config_path).resolve()
     bound = bind_pipeline_config(config, len(resolved_srcs), overrides)
+    bound_srcs = [
+        resolved_srcs[clip.source_index if clip.source_index is not None else index]
+        for index, clip in enumerate(bound.clips)
+    ]
     return ParsedPipelineContext(
         config=bound,
         project_dir=abs_config_path.parent,
         config_path=abs_config_path,
-        resolved_srcs=list(resolved_srcs),
+        resolved_srcs=bound_srcs,
         junctions=resolve_junctions(len(bound.clips), bound.transitions, bound.default_transition),
         user_bgm_path=user_bgm_path,
     )

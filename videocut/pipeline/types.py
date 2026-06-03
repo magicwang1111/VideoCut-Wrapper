@@ -9,8 +9,10 @@ PipelineJunctionType = Literal["flash-black", "dissolve", "cut", "zoom-dissolve"
 @dataclass(slots=True)
 class PipelineClipConfig:
     src: str | None = None
+    source_index: int | None = None
     trim_start: float = 0.0
     trim_end: float = 0.0
+    trim_duration: float | None = None
 
 
 @dataclass(slots=True)
@@ -64,7 +66,9 @@ class PipelineConfig:
 class ResolvedPipelineClip:
     key: str
     src: str
+    source_index: int
     probed_duration: float
     trim_start: float
     trim_end: float
+    trim_duration: float | None
     effective_duration: float

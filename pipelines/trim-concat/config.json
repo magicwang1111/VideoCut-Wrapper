@@ -3,6 +3,12 @@
   "mode": "pipeline",
   "preset": "douyin_vertical",
   "quality": "high",
+  "bgm": {
+    "enabled": true,
+    "dir": "input/bgm",
+    "volume": 1,
+    "fade_out": 0
+  },
   "clips": [
     { "trim_start": 2, "trim_end": 0 },
     { "trim_start": 2, "trim_end": 0 },

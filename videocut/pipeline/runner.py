@@ -78,7 +78,7 @@ def ffmpeg_pipeline_concat(
     for clip in clips:
         if clip.trim_start > 0:
             input_args.extend(["-ss", str(clip.trim_start)])
-        if clip.trim_end > 0:
+        if clip.trim_duration is not None or clip.trim_end > 0:
             input_args.extend(["-t", str(clip.effective_duration)])
         input_args.extend(["-i", clip.src])
 
@@ -280,16 +280,26 @@ class PipelineRunner:
                 clip_cfg = config.clips[index]
                 trim_start = clip_cfg.trim_start
                 trim_end = clip_cfg.trim_end
+                trim_duration = clip_cfg.trim_duration
                 probed = probe_single_video(ffprobe_path, src)
-                effective_duration = max(0.0, float(probed["duration"]) - trim_start - trim_end)
+                source_duration = float(probed["duration"])
+                if trim_duration is not None:
+                    effective_duration = trim_duration
+                    if trim_start + trim_duration > source_duration:
+                        raise RenderError(
+                            f"clips[{index}] ({Path(src).name}) is too short for trim_duration: "
+                            f"source={source_duration:.2f}s trim_start={trim_start}s trim_duration={trim_duration}s"
+                        )
+                else:
+                    effective_duration = max(0.0, source_duration - trim_start - trim_end)
                 if effective_duration <= 0:
                     raise RenderError(
                         f"clips[{index}] ({Path(src).name}) has non-positive duration after trim: "
-                        f"source={probed['duration']:.2f}s trim_start={trim_start}s trim_end={trim_end}s"
+                        f"source={source_duration:.2f}s trim_start={trim_start}s trim_end={trim_end}s"
                     )
                 logger.info(
                     "  clip_%d: %s (source %.2fs, effective %.2fs)",
-                    index + 1, Path(src).name, probed["duration"], effective_duration,
+                    index + 1, Path(src).name, source_duration, effective_duration,
                 )
                 if index == 0 and preset == AUTO_PRESET and probed["width"] and probed["height"]:
                     res_preset = ResolutionPreset(
@@ -303,9 +313,11 @@ class PipelineRunner:
                     ResolvedPipelineClip(
                         key=f"clip_{index + 1}",
                         src=src,
-                        probed_duration=float(probed["duration"]),
+                        source_index=clip_cfg.source_index if clip_cfg.source_index is not None else index,
+                        probed_duration=source_duration,
                         trim_start=trim_start,
                         trim_end=trim_end,
+                        trim_duration=trim_duration,
                         effective_duration=effective_duration,
                     )
                 )
@@ -339,9 +351,11 @@ class PipelineRunner:
                 ResolvedPipelineClip(
                     key=resolved_clips[index].key,
                     src=normalized_clips[index].src,
+                    source_index=resolved_clips[index].source_index,
                     probed_duration=resolved_clips[index].probed_duration,
                     trim_start=resolved_clips[index].trim_start,
                     trim_end=resolved_clips[index].trim_end,
+                    trim_duration=resolved_clips[index].trim_duration,
                     effective_duration=resolved_clips[index].effective_duration,
                 )
                 for index in range(len(resolved_clips))
@@ -393,8 +407,10 @@ class PipelineRunner:
                 "clips": [
                     {
                         "src": clip.src,
+                        "sourceIndex": clip.source_index,
                         "trimStart": clip.trim_start,
                         "trimEnd": clip.trim_end,
+                        "trimDuration": clip.trim_duration,
                         "effectiveDuration": clip.effective_duration,
                     }
                     for clip in resolved_clips
