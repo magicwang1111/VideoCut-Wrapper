@@ -49,8 +49,8 @@ OSS_TEST_URI = os.getenv(
 )
 CLIP_COUNT = int(os.getenv("CLIP_COUNT", "5"))
 DOWNLOAD = os.getenv("DOWNLOAD", "1") != "0"
-BGM_CATEGORY = "kpop"
-BGM_FILENAME = "Hyperpop"
+BGM_CATEGORY = os.getenv("BGM_CATEGORY", "kpop").strip() or None
+BGM_FILENAME = os.getenv("BGM_FILENAME", "Hyperpop").strip() or None
 BGM_VOLUME = 1
 BGM_FADE_OUT = 0
 REQUEST_TIMEOUT_SECONDS = int(os.getenv("REQUEST_TIMEOUT_SECONDS", "60"))

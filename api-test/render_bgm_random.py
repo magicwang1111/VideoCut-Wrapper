@@ -12,13 +12,13 @@ from pathlib import Path
 
 from test_runner import make_tester
 
-API_BASE_URL = "http://127.0.0.1:3000"
+API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:3000").rstrip("/")
 API_KEY = os.getenv("API_KEY") or os.getenv("VIDEOCUT_API_KEY") or "change-me"
 DOWNLOAD_DIR = Path(__file__).resolve().parent / "downloads"
 
 PIPELINE = "bgm-concat"
 GROUP_IDS = [1]
-BGM_CATEGORY = "舒缓"
+BGM_CATEGORY: str | None = None
 BGM_FILENAME: str | None = None
 DOWNLOAD = True
 

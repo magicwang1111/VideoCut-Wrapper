@@ -13,6 +13,7 @@
 - [render_bgm_random.py](D:/VideoCut-Wrapper/api-test/render_bgm_random.py)
 - [render_groups_1_5.py](D:/VideoCut-Wrapper/api-test/render_groups_1_5.py)
 - [render_groups_1_16.py](D:/VideoCut-Wrapper/api-test/render_groups_1_16.py)
+- [render_single_video_stress.py](D:/VideoCut-Wrapper/api-test/render_single_video_stress.py)
 - [render_trim_mixed.py](D:/VideoCut-Wrapper/api-test/render_trim_mixed.py)
 - [render_zoom_dissolve.py](D:/VideoCut-Wrapper/api-test/render_zoom_dissolve.py)
 
@@ -448,8 +449,8 @@ payload = {
     ],
     "overrides": {
         "bgm": {
-            "category": "舒缓",
-            "filename": "1",
+            "category": "kpop",
+            "filename": "Hyperpop",
         },
     },
 }
@@ -499,8 +500,8 @@ curl -X POST "http://127.0.0.1:3000/render" \
     ],
     "overrides": {
       "bgm": {
-        "category": "舒缓",
-        "filename": "1"
+        "category": "kpop",
+        "filename": "Hyperpop"
       }
     }
   }'
@@ -530,7 +531,7 @@ oss://goumee-coze/GouMei-Video-Cut/test-input/
 # 健康检查
 python api-test/check_health.py
 
-# 指定某一首 BGM，默认使用 舒缓/1.mp3
+# 指定某一首 BGM，默认使用 kpop/Hyperpop.mp3
 python api-test/render_bgm_file.py
 
 # 随机 BGM
@@ -542,6 +543,9 @@ python api-test/render_groups_1_5.py
 # 批量测试 1-16 组，不下载结果
 python api-test/render_groups_1_16.py
 
+# 单视频并发压测，不依赖 group，默认 16 请求 / 8 并发 / 不下载结果
+python api-test/render_single_video_stress.py
+
 # 换 pipeline 测试
 python api-test/render_trim_mixed.py
 python api-test/render_zoom_dissolve.py
@@ -549,8 +553,8 @@ python api-test/render_zoom_dissolve.py
 
 说明：
 
-- `render_bgm_file.py` 顶部的 `BGM_CATEGORY = "舒缓"`、`BGM_FILENAME = "1"` 可以直接改成清单里的其他值；`BGM_FILENAME` 使用不带扩展名的歌曲 ID。
+- `render_bgm_file.py` 默认使用 `BGM_CATEGORY = "kpop"`、`BGM_FILENAME = "Hyperpop"`；也可以通过环境变量覆盖，`BGM_FILENAME` 使用不带扩展名的歌曲 ID。
 - 可选 BGM 清单见 [../docs/BGM_MANIFEST.json](../docs/BGM_MANIFEST.json)。
 - `render_groups_1_5.py` / `render_groups_1_16.py` 顶部的 `GROUP_IDS` 控制并发组。
 - `render_trim_mixed.py` / `render_zoom_dissolve.py` 顶部的 `PIPELINE` 控制要测的 pipeline。
-- 每个脚本顶部都有自己的 `API_BASE_URL`、`PIPELINE`、`GROUP_IDS`、`BGM_CATEGORY`、`BGM_FILENAME`、`DOWNLOAD`。
+- 每个脚本顶部都有自己的 `API_BASE_URL`、`PIPELINE`、`GROUP_IDS`、`BGM_CATEGORY`、`BGM_FILENAME`、`DOWNLOAD`；单视频压测脚本使用 `SINGLE_VIDEO_OSS_KEY`、`REQUEST_COUNT`、`CONCURRENCY`。

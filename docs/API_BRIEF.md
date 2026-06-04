@@ -26,6 +26,11 @@ API_KEYS=goumee-music
 GET /health
 ```
 
+请求示例：
+```bash
+curl "http://127.0.0.1:3000/health"
+```
+
 响应：
 
 ```json
@@ -33,7 +38,7 @@ GET /health
   "ok": true,
   "workers": 4,
   "queueSize": 0,
-  "pipelines": 8
+  "pipelines": 9
 }
 ```
 
@@ -714,6 +719,7 @@ curl -L "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78/download" \
 | Pipeline ID | 含义 |
 |---|---|
 | `bgm-concat` | 多段素材直接拼接，不做转场，最后混入 BGM；单个视频时用于给单视频添加 BGM |
+| `segment-5-6-then-3-5-concat` | 固定使用 5 个输入视频，先取每段 5-6 秒，再取每段 3-5 秒，按顺序直切拼接并混入 BGM |
 | `flash-black-concat` | 多段素材直接拼接，片段之间使用闪黑转场 |
 | `trim-concat` | 每段素材先裁掉开头固定时长，再直切拼接 |
 | `trim-mixed-concat` | 每段素材先裁掉开头固定时长，再按固定顺序混合闪黑和溶解转场 |
