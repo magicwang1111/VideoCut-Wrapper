@@ -8,24 +8,32 @@ _ENV_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _LOADED_ENV_FILES: set[Path] = set()
 
 
-def load_project_env(root_dir: str | Path | None = None) -> None:
-    """Load project .env values without overriding real environment variables."""
-    base_dir = Path(root_dir).resolve() if root_dir is not None else Path(__file__).resolve().parents[1]
-    env_path = base_dir / ".env"
-    if not env_path.is_file():
-        return
-    resolved_path = env_path.resolve()
+def load_env_file(env_path: str | Path | None) -> bool:
+    """Load one env file without overriding existing environment variables."""
+    if not env_path:
+        return False
+    path = Path(env_path).expanduser()
+    if not path.is_file():
+        return False
+    resolved_path = path.resolve()
     if resolved_path in _LOADED_ENV_FILES:
-        return
+        return True
     _LOADED_ENV_FILES.add(resolved_path)
 
     try:
         from dotenv import load_dotenv
     except ImportError:
         _load_simple_env(resolved_path)
-        return
+        return True
 
     load_dotenv(resolved_path, override=False)
+    return True
+
+
+def load_project_env(root_dir: str | Path | None = None) -> None:
+    """Load project .env values without overriding real environment variables."""
+    base_dir = Path(root_dir).resolve() if root_dir is not None else Path(__file__).resolve().parents[1]
+    load_env_file(base_dir / ".env")
 
 
 def _load_simple_env(env_path: Path) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import multiprocessing as mp
+import os
 import shutil
 from pathlib import Path
 
@@ -45,6 +46,7 @@ def worker_main(
 ) -> None:
     oss = OssClient()
     pipeline_runner = PipelineRunner(root_dir)
+    keep_failed_task_temp = os.getenv("KEEP_FAILED_TASK_TEMP", "0") == "1"
 
     event_queue.put({"type": "worker_ready", "worker_id": worker_id})
 
@@ -57,6 +59,12 @@ def worker_main(
         attempt = int(message.get("attempt") or 0)
         payload = dict(message["payload"])
         task_temp_dir = _task_temp_dir(temp_dir, task_id, attempt, worker_id)
+        failed = False
+
+        def failure_message(error: str) -> str:
+            if keep_failed_task_temp:
+                return f"{error}\n  Task temp dir retained: {task_temp_dir}"
+            return error
 
         try:
             try:
@@ -89,12 +97,13 @@ def worker_main(
             result = pipeline_runner.run(ctx, ffmpeg_path, ffprobe_path, {}, task_id=task_id)
 
             if result.status == "failed" or not result.output_path:
+                failed = True
                 event_queue.put(
                     {
                         "type": "task_failed",
                         "worker_id": worker_id,
                         "task_id": task_id,
-                        "error": result.error or "unknown error",
+                        "error": failure_message(result.error or "unknown error"),
                     }
                 )
                 continue
@@ -106,8 +115,10 @@ def worker_main(
                 {"type": "task_done", "worker_id": worker_id, "task_id": task_id, "oss_key": oss_key}
             )
         except Exception as exc:
+            failed = True
             event_queue.put(
-                {"type": "task_failed", "worker_id": worker_id, "task_id": task_id, "error": str(exc)}
+                {"type": "task_failed", "worker_id": worker_id, "task_id": task_id, "error": failure_message(str(exc))}
             )
         finally:
-            shutil.rmtree(task_temp_dir, ignore_errors=True)
+            if not (failed and keep_failed_task_temp):
+                shutil.rmtree(task_temp_dir, ignore_errors=True)

@@ -33,13 +33,34 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from videocut.env import load_project_env  # noqa: E402
+from videocut.env import load_env_file, load_project_env  # noqa: E402
 from videocut.runtime_paths import resolve_runtime_path  # noqa: E402
 
+DEFAULT_SERVER_ENV_FILE = "/data/env/videocut.env"
+
+LOADED_ENV_FILES = [
+    env_path
+    for env_path in (
+        os.getenv("VIDEOCUT_ENV_FILE"),
+        DEFAULT_SERVER_ENV_FILE,
+    )
+    if env_path and load_env_file(env_path)
+]
 load_project_env(REPO_ROOT)
 
+
+def first_csv_value(value: str | None) -> str | None:
+    if not value:
+        return None
+    for item in value.split(","):
+        item = item.strip()
+        if item:
+            return item
+    return None
+
+
 API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:3000").rstrip("/")
-API_KEY = os.getenv("API_KEY") or os.getenv("VIDEOCUT_API_KEY") or "change-me"
+API_KEY = os.getenv("API_KEY") or os.getenv("VIDEOCUT_API_KEY") or first_csv_value(os.getenv("API_KEYS")) or "change-me"
 DOWNLOAD_DIR = Path(__file__).resolve().parent / "downloads"
 
 PIPELINE = "segment-5-6-then-3-5-concat"
@@ -104,7 +125,10 @@ def list_remote_oss_keys(bucket_name: str, prefix: str) -> list[str]:
     access_key_secret = os.getenv("OSS_ACCESS_KEY_SECRET")
     sts_token = os.getenv("OSS_STS_TOKEN")
     if not access_key_id or not access_key_secret:
-        raise RuntimeError("Set OSS_ACCESS_KEY_ID and OSS_ACCESS_KEY_SECRET, or set OSS_LOCAL_ROOT for local testing.")
+        raise RuntimeError(
+            "Set OSS_ACCESS_KEY_ID and OSS_ACCESS_KEY_SECRET, set OSS_LOCAL_ROOT for local testing, "
+            f"or put credentials in VIDEOCUT_ENV_FILE/default env file {DEFAULT_SERVER_ENV_FILE}."
+        )
 
     auth = (
         oss2.StsAuth(access_key_id, access_key_secret, sts_token)
@@ -252,10 +276,13 @@ def download_task(task_id: str) -> Path:
 
 
 def main() -> int:
+    print(f"[config] loaded_env_files={LOADED_ENV_FILES or '<none>'}")
     print(f"[config] API_BASE_URL={API_BASE_URL}")
     print(f"[config] API_KEY_SET={bool(API_KEY and API_KEY != 'change-me')}")
     print(f"[config] pipeline={PIPELINE}")
     print(f"[config] oss_uri={OSS_TEST_URI}")
+    print(f"[config] oss_credentials_set={bool(os.getenv('OSS_ACCESS_KEY_ID') and os.getenv('OSS_ACCESS_KEY_SECRET'))}")
+    print(f"[config] oss_local_root={os.getenv('OSS_LOCAL_ROOT') or '<none>'}")
     print(f"[config] clip_count={CLIP_COUNT}, download={DOWNLOAD}")
     print(f"[config] bgm_category={BGM_CATEGORY or '<random>'}, bgm_filename={BGM_FILENAME or '<random>'}")
     print(f"[config] bgm_volume={BGM_VOLUME}, bgm_fade_out={BGM_FADE_OUT}")

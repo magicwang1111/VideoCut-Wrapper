@@ -22,7 +22,7 @@ from videocut.pipeline.config import ParsedPipelineContext
 from videocut.pipeline.types import PipelineTransitionConfig, ResolvedPipelineClip
 from videocut.presets import AUTO_PRESET, QualityPreset, ResolutionPreset, get_quality_preset, get_resolution_preset
 from videocut.render.task import complete_task, create_task, fail_task, start_task, update_progress
-from videocut.render.transitions.shared import normalize_clips
+from videocut.render.transitions.shared import normalize_clips, run_ffmpeg_checked
 from videocut.render.types import RenderResult, VideoClip
 
 
@@ -83,7 +83,7 @@ def ffmpeg_pipeline_concat(
         input_args.extend(["-i", clip.src])
 
     if clip_count == 1:
-        subprocess.run(
+        run_ffmpeg_checked(
             [
                 ffmpeg_path,
                 *video_settings.input_args(),
@@ -97,8 +97,8 @@ def ffmpeg_pipeline_concat(
                 "-y",
                 output_path,
             ],
-            check=True,
             timeout=600,
+            label="pipeline single clip concat",
         )
         update_progress(task, 1.0)
         return
@@ -210,7 +210,7 @@ def ffmpeg_pipeline_concat(
         raise RenderError("No usable video segments after pipeline transition building.")
 
     filter_parts.append(f"{''.join(segment_labels)}concat=n={len(segment_labels)}:v=1:a=0[vout]")
-    subprocess.run(
+    run_ffmpeg_checked(
         [
             ffmpeg_path,
             *video_settings.input_args(),
@@ -224,8 +224,8 @@ def ffmpeg_pipeline_concat(
             "-y",
             output_path,
         ],
-        check=True,
         timeout=600,
+        label="pipeline transition concat",
     )
     update_progress(task, 1.0)
 

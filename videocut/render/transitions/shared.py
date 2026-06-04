@@ -12,6 +12,24 @@ from videocut.presets import QualityPreset, ResolutionPreset
 from videocut.render.types import VideoClip
 
 logger = get_logger(__name__)
+_FFMPEG_ERROR_TAIL_CHARS = 4000
+
+
+def _tail_text(value: str | None) -> str:
+    if not value:
+        return ""
+    text = value.strip()
+    if len(text) <= _FFMPEG_ERROR_TAIL_CHARS:
+        return text
+    return "...\n" + text[-_FFMPEG_ERROR_TAIL_CHARS:]
+
+
+def _format_ffmpeg_failure(label: str, returncode: int, stderr: str | None) -> str:
+    detail = f"{label}: FFmpeg exited with code {returncode}."
+    stderr_tail = _tail_text(stderr)
+    if stderr_tail:
+        detail += f"\n  stderr tail:\n{stderr_tail}"
+    return detail
 
 
 def build_normalize_video_filter(res_preset: ResolutionPreset) -> str:
@@ -29,13 +47,32 @@ def build_normalize_video_filter(res_preset: ResolutionPreset) -> str:
     )
 
 
-def _run_ffmpeg(args: list[str], timeout: int) -> None:
+def run_ffmpeg_checked(args: list[str], timeout: int, *, label: str = "ffmpeg") -> None:
     try:
-        subprocess.run(args, check=True, timeout=timeout)
+        result = subprocess.run(
+            args,
+            check=False,
+            timeout=timeout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
     except subprocess.CalledProcessError as exc:
-        raise RenderError(f"FFmpeg exited with code {exc.returncode}.") from exc
+        raise RenderError(_format_ffmpeg_failure(label, exc.returncode, exc.stderr)) from exc
     except subprocess.TimeoutExpired as exc:
-        raise RenderError(f"FFmpeg timed out after {timeout} seconds.") from exc
+        stderr_tail = _tail_text(exc.stderr.decode("utf-8", errors="replace") if isinstance(exc.stderr, bytes) else exc.stderr)
+        detail = f"{label}: FFmpeg timed out after {timeout} seconds."
+        if stderr_tail:
+            detail += f"\n  stderr tail:\n{stderr_tail}"
+        raise RenderError(detail) from exc
+    if result.returncode != 0:
+        raise RenderError(_format_ffmpeg_failure(label, result.returncode, result.stderr))
+
+
+def _run_ffmpeg(args: list[str], timeout: int) -> None:
+    run_ffmpeg_checked(args, timeout)
 
 
 def normalize_clips(
@@ -68,7 +105,7 @@ def normalize_clips(
         for index, clip in enumerate(clips):
             temp_file = temp_dir / f"normalized_{session_id}_{index}.mp4"
             temp_files.append(temp_file)
-            _run_ffmpeg(
+            run_ffmpeg_checked(
                 [
                     ffmpeg_path,
                     *video_settings.input_args(),
@@ -82,6 +119,7 @@ def normalize_clips(
                     str(temp_file),
                 ],
                 timeout=600,
+                label=f"normalize clip {index + 1} ({Path(clip.src).name})",
             )
             normalized.append(VideoClip(key=clip.key, src=str(temp_file), duration=clip.duration))
         return normalized, cleanup
