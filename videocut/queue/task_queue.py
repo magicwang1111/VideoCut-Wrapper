@@ -5,6 +5,7 @@ import os
 import queue
 import threading
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -20,6 +21,8 @@ load_project_env()
 
 TASK_MAX_ATTEMPT = int(os.getenv("TASK_MAX_ATTEMPT", "3"))
 QUEUE_MAX = int(os.getenv("QUEUE_MAX", "200"))
+UPLOAD_MAX_ATTEMPT = int(os.getenv("UPLOAD_MAX_ATTEMPT", "3"))
+UPLOAD_WORKER_COUNT = int(os.getenv("UPLOAD_WORKER_COUNT", "2"))
 
 TaskEventHandler = Callable[[dict[str, Any]], None]
 
@@ -106,7 +109,7 @@ class WorkerPool:
                 worker.ready = True
             elif message["type"] == "lease_start":
                 worker.current_task_id = message["task_id"]
-            elif message["type"] in {"task_done", "task_failed"}:
+            elif message["type"] in {"task_done", "task_failed", "task_rendered"}:
                 worker.current_task_id = None
             self.on_message(message)
 
@@ -171,6 +174,7 @@ class TaskQueue:
         self.progress_throttle: dict[str, float] = {}
         self._lock = threading.RLock()
         self.pool = WorkerPool(worker_count, Path(root_dir).resolve(), self._handle_message, self._handle_worker_dead)
+        self.upload_executor = ThreadPoolExecutor(max_workers=max(1, UPLOAD_WORKER_COUNT), thread_name_prefix="videocut-upload")
 
     def start(self) -> None:
         self.pool.start()
@@ -179,6 +183,7 @@ class TaskQueue:
 
     def stop(self) -> None:
         self.pool.stop()
+        self.upload_executor.shutdown(wait=True)
 
     def _replay_from_store(self) -> None:
         stalled = self.store.get_pending_and_stalled()
@@ -243,6 +248,20 @@ class TaskQueue:
             self._drain()
             return
 
+        if message_type == "task_rendered":
+            output_path = message.get("output_path")
+            if not isinstance(output_path, str) or not output_path:
+                self.store.mark_failed(task_id, "Worker rendered task without output_path.")
+                self.on_event({"type": "failed", "taskId": task_id, "error": "Worker rendered task without output_path."})
+                self._drain()
+                return
+            self.store.update_progress(task_id, 95)
+            self.on_event({"type": "progress", "taskId": task_id, "progress": 95})
+            future = self.upload_executor.submit(self._upload_output, task_id, output_path)
+            future.add_done_callback(lambda item, task_id=task_id: self._handle_upload_done(task_id, item))
+            self._drain()
+            return
+
         if message_type == "task_failed":
             record = self.store.get(task_id)
             if record and record.attempt < TASK_MAX_ATTEMPT:
@@ -270,6 +289,32 @@ class TaskQueue:
                 self.progress_throttle[task_id] = now
                 self.store.update_progress(task_id, int(message["progress"]))
                 self.on_event({"type": "progress", "taskId": task_id, "progress": int(message["progress"])})
+
+    def _upload_output(self, task_id: str, output_path: str) -> str:
+        oss_key = self.oss.output_key(task_id)
+        last_error: Exception | None = None
+        for attempt in range(1, max(1, UPLOAD_MAX_ATTEMPT) + 1):
+            try:
+                self.oss.upload(output_path, oss_key)
+                return oss_key
+            except Exception as exc:
+                last_error = exc
+                if attempt >= max(1, UPLOAD_MAX_ATTEMPT):
+                    break
+                logger.warning("upload failed for %s attempt %d/%d", task_id, attempt, UPLOAD_MAX_ATTEMPT, exc_info=True)
+                time.sleep(min(10.0, 2.0 * attempt))
+        raise RuntimeError(f"Output upload failed after {max(1, UPLOAD_MAX_ATTEMPT)} attempt(s): {last_error}")
+
+    def _handle_upload_done(self, task_id: str, future: Future[str]) -> None:
+        try:
+            oss_key = future.result()
+        except Exception as exc:
+            error = str(exc)
+            self.store.mark_failed(task_id, error)
+            self.on_event({"type": "failed", "taskId": task_id, "error": error})
+            return
+        self.store.mark_completed(task_id, oss_key)
+        self.on_event({"type": "completed", "taskId": task_id, "ossKey": oss_key})
 
     def _handle_worker_dead(self, worker_id: int, task_id: str | None) -> None:
         if not task_id:

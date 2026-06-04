@@ -109,10 +109,13 @@ def worker_main(
                 continue
 
             event_queue.put({"type": "progress", "worker_id": worker_id, "task_id": task_id, "progress": 90})
-            oss_key = oss.output_key(task_id)
-            oss.upload(result.output_path, oss_key)
             event_queue.put(
-                {"type": "task_done", "worker_id": worker_id, "task_id": task_id, "oss_key": oss_key}
+                {
+                    "type": "task_rendered",
+                    "worker_id": worker_id,
+                    "task_id": task_id,
+                    "output_path": result.output_path,
+                }
             )
         except Exception as exc:
             failed = True

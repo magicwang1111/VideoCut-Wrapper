@@ -29,6 +29,13 @@ COPY docker/entrypoint.sh /usr/local/bin/videocut-entrypoint
 
 RUN sed -i 's/\r$//' /usr/local/bin/videocut-entrypoint \
     && chmod +x /usr/local/bin/videocut-entrypoint \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && mv /usr/local/bin/ffmpeg /usr/local/bin/ffmpeg-n7.1.1 \
+    && mv /usr/local/bin/ffprobe /usr/local/bin/ffprobe-n7.1.1 \
+    && ln -sf /usr/bin/ffmpeg /usr/local/bin/ffmpeg \
+    && ln -sf /usr/bin/ffprobe /usr/local/bin/ffprobe \
+    && rm -rf /var/lib/apt/lists/* \
     && python -m pip install --upgrade pip \
     && python -m pip install . \
     && mkdir -p /app/input/bgm /app/output /srv/videocut/data /srv/videocut/temp /srv/videocut/oss-local

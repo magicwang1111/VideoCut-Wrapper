@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from datetime import UTC, datetime
 
 from videocut.queue.task_queue import TaskQueue, WorkerTask
@@ -55,6 +56,46 @@ def test_task_queue_dispatches_current_attempt(tmp_path) -> None:
     task = store.get("t_demo")
     assert task is not None
     assert task.attempt == 2
+    queue.upload_executor.shutdown(wait=True)
+    store.close()
+
+
+def test_task_queue_dispatches_next_render_before_output_upload_finishes(tmp_path) -> None:
+    store = TaskStore(tmp_path / "tasks.db")
+    store.create(_make_task("t_rendered"))
+    store.create(_make_task("t_next"))
+    store.mark_rendering("t_rendered")
+
+    queue = TaskQueue(store, object(), 1, lambda event: None, tmp_path)
+    pool = RecordingPool()
+    queue.pool = pool  # type: ignore[assignment]
+    queue.queue.append(WorkerTask("t_next", "pipeline", "bgm-concat", {"clips": ["next.mp4"]}))
+
+    upload_can_finish = threading.Event()
+
+    def fake_upload_output(task_id: str, output_path: str) -> str:
+        assert task_id == "t_rendered"
+        assert output_path == "/tmp/final.mp4"
+        assert upload_can_finish.wait(timeout=5)
+        return "GouMei-Video-Cut/outputs/t_rendered/final.mp4"
+
+    queue._upload_output = fake_upload_output  # type: ignore[method-assign]
+
+    queue._handle_message({"type": "task_rendered", "task_id": "t_rendered", "output_path": "/tmp/final.mp4"})
+
+    assert [task.task_id for task in pool.dispatched] == ["t_next"]
+    rendered = store.get("t_rendered")
+    assert rendered is not None
+    assert rendered.status == "rendering"
+    assert rendered.progress == 95
+
+    upload_can_finish.set()
+    queue.upload_executor.shutdown(wait=True)
+
+    completed = store.get("t_rendered")
+    assert completed is not None
+    assert completed.status == "completed"
+    assert completed.oss_key == "GouMei-Video-Cut/outputs/t_rendered/final.mp4"
     store.close()
 
 
