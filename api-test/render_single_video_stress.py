@@ -141,6 +141,7 @@ def poll_submitted_tasks(submitted: list[dict[str, Any]]) -> list[dict[str, Any]
     deadline = time.time() + POLL_TIMEOUT_SECONDS
     remaining = {str(item["taskId"]): item for item in submitted}
     results: list[dict[str, Any]] = []
+    reached_95_at: dict[str, float] = {}
 
     print(
         f"[poll] tasks={len(remaining)}, timeout={POLL_TIMEOUT_SECONDS}s, "
@@ -157,8 +158,11 @@ def poll_submitted_tasks(submitted: list[dict[str, Any]]) -> list[dict[str, Any]
                 continue
 
             status = task.get("status")
+            progress = task.get("progress")
+            if isinstance(progress, int) and progress >= 95 and task_id not in reached_95_at:
+                reached_95_at[task_id] = time.time()
             print(
-                f"[{label}][poll] status={status}, progress={task.get('progress')}, "
+                f"[{label}][poll] status={status}, progress={progress}, "
                 f"attempt={task.get('attempt')}, error={task.get('error')}"
             )
             if status == "completed":
@@ -170,11 +174,18 @@ def poll_submitted_tasks(submitted: list[dict[str, Any]]) -> list[dict[str, Any]
                     except Exception as exc:
                         download_error = str(exc)
                 elapsed = time.time() - float(item["submittedAt"])
+                render_to_95 = None
+                upload_after_95 = None
+                if task_id in reached_95_at:
+                    render_to_95 = reached_95_at[task_id] - float(item["submittedAt"])
+                    upload_after_95 = time.time() - reached_95_at[task_id]
                 summary = {
                     "label": label,
                     "taskId": task_id,
                     "status": status,
                     "elapsedSeconds": round(elapsed, 2),
+                    "renderTo95Seconds": round(render_to_95, 2) if render_to_95 is not None else None,
+                    "uploadAfter95Seconds": round(upload_after_95, 2) if upload_after_95 is not None else None,
                     "outputUrl": task.get("outputUrl"),
                     "outputPath": output_path,
                 }

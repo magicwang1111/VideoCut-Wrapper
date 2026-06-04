@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import shutil
+import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -27,18 +29,23 @@ def _as_output_time(timestamp: datetime | None = None) -> datetime:
 
 class OssClient:
     def __init__(self) -> None:
-        import os
-
         self.bucket_name = os.getenv("OSS_BUCKET", "goumee-coze")
         self.prefix = os.getenv("OSS_PREFIX", "GouMei-Video-Cut")
         endpoint = os.getenv("OSS_ENDPOINT", "oss-cn-hangzhou.aliyuncs.com")
         access_key_id = os.getenv("OSS_ACCESS_KEY_ID")
         access_key_secret = os.getenv("OSS_ACCESS_KEY_SECRET")
+        sts_token = os.getenv("OSS_STS_TOKEN")
+        self.upload_backend = (os.getenv("OSS_UPLOAD_BACKEND", "ossutil").strip().lower() or "ossutil")
+        self.ossutil_path = os.getenv("OSSUTIL_PATH", "ossutil64").strip() or "ossutil64"
+        self.ossutil_timeout_seconds = int(os.getenv("OSSUTIL_TIMEOUT_SECONDS", "600"))
         self.local_root = os.getenv("OSS_LOCAL_ROOT")
         if self.local_root:
             self.local_root = str(resolve_runtime_path(self.local_root, project_root() / "oss-local"))
             self.bucket = None
             self.endpoint = endpoint
+            self.access_key_id = access_key_id
+            self.access_key_secret = access_key_secret
+            self.sts_token = sts_token
             return
         if not access_key_id or not access_key_secret:
             raise DependencyError(
@@ -48,6 +55,9 @@ class OssClient:
         auth = oss2.Auth(access_key_id, access_key_secret)
         self.bucket = oss2.Bucket(auth, endpoint, self.bucket_name)
         self.endpoint = endpoint
+        self.access_key_id = access_key_id
+        self.access_key_secret = access_key_secret
+        self.sts_token = sts_token
 
     def input_key(self, file_id: str, ext: str) -> str:
         return f"{self.prefix}/inputs/{file_id}{ext}"
@@ -69,7 +79,58 @@ class OssClient:
             return
         if self.bucket is None:
             raise DependencyError("OSS bucket", "Bucket not initialized; set OSS credentials or OSS_LOCAL_ROOT.")
+        if self.upload_backend == "ossutil":
+            self._upload_with_ossutil(local_path, oss_key)
+            return
+        if self.upload_backend != "oss2":
+            raise DependencyError("OSS upload backend", f"Unsupported OSS_UPLOAD_BACKEND: {self.upload_backend}")
         self.bucket.put_object_from_file(oss_key, str(local_path))
+
+    def _resolve_ossutil_path(self) -> str:
+        resolved = shutil.which(self.ossutil_path)
+        if resolved:
+            return resolved
+        candidate = Path(self.ossutil_path)
+        if candidate.is_file():
+            return str(candidate)
+        raise DependencyError("ossutil", f"OSSUTIL_PATH is not executable or not found: {self.ossutil_path}")
+
+    def _upload_with_ossutil(self, local_path: str | Path, oss_key: str) -> None:
+        if not self.access_key_id or not self.access_key_secret:
+            raise DependencyError("OSS credentials", "ossutil upload requires OSS_ACCESS_KEY_ID and OSS_ACCESS_KEY_SECRET.")
+        command = [
+            self._resolve_ossutil_path(),
+            "cp",
+            str(local_path),
+            f"oss://{self.bucket_name}/{oss_key}",
+            "-e",
+            self.endpoint,
+            "-i",
+            self.access_key_id,
+            "-k",
+            self.access_key_secret,
+            "-f",
+        ]
+        if self.sts_token:
+            command.extend(["-t", self.sts_token])
+        try:
+            result = subprocess.run(
+                command,
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=self.ossutil_timeout_seconds,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"ossutil upload timed out after {self.ossutil_timeout_seconds} seconds.") from exc
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()
+            if len(detail) > 2000:
+                detail = "...\n" + detail[-2000:]
+            raise RuntimeError(f"ossutil upload failed with code {result.returncode}: {detail}")
 
     def download(self, oss_key: str, local_path: str | Path) -> None:
         target_path = Path(local_path)

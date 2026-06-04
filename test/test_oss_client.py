@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import subprocess
 from datetime import UTC, datetime
 
+import videocut.oss.client as oss_client_module
 from videocut.oss.client import OssClient
 
 
@@ -36,3 +38,47 @@ def test_user_audio_key_uses_dedicated_prefix(monkeypatch, tmp_path) -> None:
     oss = OssClient()
 
     assert oss.user_audio_key("abc123def456", ".mp3") == "GouMei-Video-Cut/user-audio/abc123def456.mp3"
+
+
+def test_upload_defaults_to_ossutil64(monkeypatch, tmp_path) -> None:
+    monkeypatch.delenv("OSS_LOCAL_ROOT", raising=False)
+    monkeypatch.delenv("OSS_UPLOAD_BACKEND", raising=False)
+    monkeypatch.delenv("OSSUTIL_PATH", raising=False)
+    monkeypatch.delenv("OSS_STS_TOKEN", raising=False)
+    monkeypatch.setenv("OSS_ENDPOINT", "oss-cn-hangzhou.aliyuncs.com")
+    monkeypatch.setenv("OSS_ACCESS_KEY_ID", "test-id")
+    monkeypatch.setenv("OSS_ACCESS_KEY_SECRET", "test-secret")
+    monkeypatch.setenv("OSS_BUCKET", "goumee-coze")
+
+    calls: list[tuple[list[str], int]] = []
+    monkeypatch.setattr(oss_client_module.shutil, "which", lambda command: "/usr/local/bin/ossutil64" if command == "ossutil64" else None)
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs["timeout"]))
+        return subprocess.CompletedProcess(command, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(oss_client_module.subprocess, "run", fake_run)
+
+    source = tmp_path / "final.mp4"
+    source.write_bytes(b"video")
+    oss = OssClient()
+    oss.upload(source, "GouMei-Video-Cut/outputs/t_demo/final.mp4")
+
+    assert calls == [
+        (
+            [
+                "/usr/local/bin/ossutil64",
+                "cp",
+                str(source),
+                "oss://goumee-coze/GouMei-Video-Cut/outputs/t_demo/final.mp4",
+                "-e",
+                "oss-cn-hangzhou.aliyuncs.com",
+                "-i",
+                "test-id",
+                "-k",
+                "test-secret",
+                "-f",
+            ],
+            600,
+        )
+    ]

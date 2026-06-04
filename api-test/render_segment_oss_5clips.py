@@ -233,16 +233,32 @@ def get_task(task_id: str) -> dict[str, Any]:
     return response.json()
 
 
-def poll_task(task_id: str) -> dict[str, Any]:
+def timing_summary(submitted_at: float, reached_95_at: float | None, completed_at: float | None = None) -> dict[str, float | None]:
+    end = completed_at or time.time()
+    render_to_95 = (reached_95_at - submitted_at) if reached_95_at is not None else None
+    upload_after_95 = (end - reached_95_at) if reached_95_at is not None else None
+    return {
+        "elapsedSeconds": round(end - submitted_at, 2),
+        "renderTo95Seconds": round(render_to_95, 2) if render_to_95 is not None else None,
+        "uploadAfter95Seconds": round(upload_after_95, 2) if upload_after_95 is not None else None,
+    }
+
+
+def poll_task(task_id: str, *, submitted_at: float) -> dict[str, Any]:
     deadline = time.time() + POLL_TIMEOUT_SECONDS
+    reached_95_at: float | None = None
     print(f"[poll] taskId={task_id}, timeout={POLL_TIMEOUT_SECONDS}s")
     while True:
         task = get_task(task_id)
+        progress = task.get("progress")
+        if isinstance(progress, int) and progress >= 95 and reached_95_at is None:
+            reached_95_at = time.time()
         print(
-            f"[poll] status={task.get('status')}, progress={task.get('progress')}, "
+            f"[poll] status={task.get('status')}, progress={progress}, "
             f"attempt={task.get('attempt')}, outputUrl={task.get('outputUrl')}, error={task.get('error')}"
         )
         if task.get("status") == "completed":
+            task["_clientTiming"] = timing_summary(submitted_at, reached_95_at)
             print("[poll] final task response:")
             print(pretty(task))
             return task
@@ -296,9 +312,11 @@ def main() -> int:
     print(pretty(selected))
 
     test_health()
+    submitted_at = time.time()
     task_id = create_render_task(selected)
-    task = poll_task(task_id)
+    task = poll_task(task_id, submitted_at=submitted_at)
     output_path = str(download_task(task_id)) if DOWNLOAD else None
+    timing = task.get("_clientTiming") if isinstance(task.get("_clientTiming"), dict) else {}
     print("[summary]")
     print(
         pretty(
@@ -307,6 +325,7 @@ def main() -> int:
                 "status": task.get("status"),
                 "outputUrl": task.get("outputUrl"),
                 "outputPath": output_path,
+                **timing,
             }
         )
     )

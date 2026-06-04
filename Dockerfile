@@ -29,6 +29,7 @@ COPY docker/entrypoint.sh /usr/local/bin/videocut-entrypoint
 
 RUN sed -i 's/\r$//' /usr/local/bin/videocut-entrypoint \
     && chmod +x /usr/local/bin/videocut-entrypoint \
+    && if command -v ossutil >/dev/null 2>&1 && ! command -v ossutil64 >/dev/null 2>&1; then ln -sf "$(command -v ossutil)" /usr/local/bin/ossutil64; fi \
     && apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
     && mv /usr/local/bin/ffmpeg /usr/local/bin/ffmpeg-n7.1.1 \

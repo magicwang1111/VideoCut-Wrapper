@@ -31,6 +31,23 @@ def prefix(label: str | None) -> str:
     return f"[{label}] " if label else ""
 
 
+def elapsed_summary(submitted_at: float | None, reached_95_at: float | None, completed_at: float | None = None) -> dict[str, float | None]:
+    if submitted_at is None:
+        return {
+            "elapsedSeconds": None,
+            "renderTo95Seconds": None,
+            "uploadAfter95Seconds": None,
+        }
+    end = completed_at or time.time()
+    render_to_95 = (reached_95_at - submitted_at) if reached_95_at is not None else None
+    upload_after_95 = (end - reached_95_at) if reached_95_at is not None else None
+    return {
+        "elapsedSeconds": round(end - submitted_at, 2),
+        "renderTo95Seconds": round(render_to_95, 2) if render_to_95 is not None else None,
+        "uploadAfter95Seconds": round(upload_after_95, 2) if upload_after_95 is not None else None,
+    }
+
+
 class VideoCutHttpTester:
     def __init__(
         self,
@@ -154,14 +171,17 @@ class VideoCutHttpTester:
         self.raise_for_error(response, "get_task")
         return response.json()
 
-    def poll_task(self, task_id: str, *, label: str | None = None) -> dict[str, Any]:
+    def poll_task(self, task_id: str, *, label: str | None = None, submitted_at: float | None = None) -> dict[str, Any]:
         deadline = time.time() + self.poll_timeout_seconds
+        reached_95_at: float | None = None
         print(f"{prefix(label)}[poll] taskId={task_id}, timeout={self.poll_timeout_seconds}s")
 
         while True:
             task = self.get_task(task_id)
             status = task.get("status")
             progress = task.get("progress")
+            if isinstance(progress, int) and progress >= 95 and reached_95_at is None:
+                reached_95_at = time.time()
             attempt = task.get("attempt")
             output_url = task.get("outputUrl")
             error = task.get("error")
@@ -171,6 +191,7 @@ class VideoCutHttpTester:
             )
 
             if status == "completed":
+                task["_clientTiming"] = elapsed_summary(submitted_at, reached_95_at)
                 print(f"{prefix(label)}[poll] final task response:")
                 print(pretty(task))
                 return task
@@ -214,6 +235,7 @@ class VideoCutHttpTester:
         error: str | None = None,
         output_path: str | None = None,
         download_error: str | None = None,
+        timing: dict[str, float | None] | None = None,
     ) -> dict[str, Any]:
         summary: dict[str, Any] = {
             "label": f"group{group_id}",
@@ -223,6 +245,8 @@ class VideoCutHttpTester:
             "outputUrl": task.get("outputUrl") if task else None,
             "outputPath": output_path,
         }
+        if timing:
+            summary.update(timing)
         if error:
             summary["error"] = error
         if download_error:
@@ -244,13 +268,15 @@ class VideoCutHttpTester:
             task=task,
             output_path=output_path,
             download_error=download_error,
+            timing=task.get("_clientTiming") if isinstance(task.get("_clientTiming"), dict) else None,
         )
 
     def run_one(self, group_id: int) -> dict[str, Any]:
         label = f"group{group_id}"
+        submitted_at = time.time()
         task_id = self.create_render_task(group_id, label=label)
         try:
-            task = self.poll_task(task_id, label=label)
+            task = self.poll_task(task_id, label=label, submitted_at=submitted_at)
         except TimeoutError as exc:
             task = None
             try:
@@ -290,7 +316,7 @@ class VideoCutHttpTester:
                         }
                     )
                     continue
-                submitted.append({"label": label, "group": group_id, "taskId": task_id})
+                submitted.append({"label": label, "group": group_id, "taskId": task_id, "submittedAt": time.time()})
 
         if submitted:
             results.extend(self.poll_submitted_tasks(submitted))
@@ -300,6 +326,7 @@ class VideoCutHttpTester:
         deadline = time.time() + self.poll_timeout_seconds
         remaining = {str(item["taskId"]): item for item in submitted}
         results: list[dict[str, Any]] = []
+        reached_95_at: dict[str, float] = {}
         print(
             f"[batch][poll] tasks={len(remaining)}, timeout={self.poll_timeout_seconds}s, "
             f"interval={self.poll_interval_seconds}s"
@@ -326,6 +353,8 @@ class VideoCutHttpTester:
 
                 status = task.get("status")
                 progress = task.get("progress")
+                if isinstance(progress, int) and progress >= 95 and task_id not in reached_95_at:
+                    reached_95_at[task_id] = time.time()
                 attempt = task.get("attempt")
                 output_url = task.get("outputUrl")
                 error = task.get("error")
@@ -337,6 +366,11 @@ class VideoCutHttpTester:
                 if status == "completed":
                     print(f"{prefix(label)}[poll] final task response:")
                     print(pretty(task))
+                    timing = elapsed_summary(
+                        float(item["submittedAt"]) if "submittedAt" in item else None,
+                        reached_95_at.get(task_id),
+                    )
+                    task["_clientTiming"] = timing
                     results.append(self.complete_summary(group_id, task_id, task))
                     remaining.pop(task_id, None)
                 elif status == "failed":
