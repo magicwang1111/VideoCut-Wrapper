@@ -16,6 +16,7 @@ from videocut.oss import OssClient
 from videocut.queue.worker_process import worker_main
 from videocut.runtime_paths import resolve_runtime_path
 from videocut.store import TaskStore
+from videocut.time_utils import now_beijing_iso
 
 load_project_env()
 
@@ -46,6 +47,10 @@ class WorkerState:
 
 
 logger = get_logger(__name__)
+
+
+def _round_elapsed(seconds: float | None) -> float | None:
+    return round(seconds, 3) if seconds is not None else None
 
 
 class WorkerPool:
@@ -172,9 +177,11 @@ class TaskQueue:
         self.on_event = on_event
         self.queue: list[WorkerTask] = []
         self.progress_throttle: dict[str, float] = {}
+        self.upload_diagnostics: dict[str, dict[str, Any]] = {}
         self._lock = threading.RLock()
         self.pool = WorkerPool(worker_count, Path(root_dir).resolve(), self._handle_message, self._handle_worker_dead)
-        self.upload_executor = ThreadPoolExecutor(max_workers=max(1, UPLOAD_WORKER_COUNT), thread_name_prefix="videocut-upload")
+        self.upload_worker_count = max(1, UPLOAD_WORKER_COUNT)
+        self.upload_executor = ThreadPoolExecutor(max_workers=self.upload_worker_count, thread_name_prefix="videocut-upload")
 
     def start(self) -> None:
         self.pool.start()
@@ -219,6 +226,23 @@ class TaskQueue:
         with self._lock:
             return len(self.queue)
 
+    def get_upload_diagnostics(self, task_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            diagnostics = self.upload_diagnostics.get(task_id)
+            if diagnostics is None:
+                return None
+            return {key: value for key, value in diagnostics.items() if not key.startswith("_")}
+
+    def _get_raw_upload_diagnostics(self, task_id: str) -> dict[str, Any]:
+        with self._lock:
+            return dict(self.upload_diagnostics.get(task_id, {}))
+
+    def _update_upload_diagnostics(self, task_id: str, **updates: Any) -> dict[str, Any]:
+        with self._lock:
+            diagnostics = self.upload_diagnostics.setdefault(task_id, {})
+            diagnostics.update(updates)
+            return dict(diagnostics)
+
     def _drain(self) -> None:
         with self._lock:
             while self.queue and self.pool.idle_count > 0:
@@ -255,8 +279,25 @@ class TaskQueue:
                 self.on_event({"type": "failed", "taskId": task_id, "error": "Worker rendered task without output_path."})
                 self._drain()
                 return
+            progress95_at = now_beijing_iso()
+            queued_monotonic = time.monotonic()
             self.store.update_progress(task_id, 95)
             self.on_event({"type": "progress", "taskId": task_id, "progress": 95})
+            self._update_upload_diagnostics(
+                task_id,
+                progress95At=progress95_at,
+                uploadQueuedAt=progress95_at,
+                uploadStartedAt=None,
+                uploadFinishedAt=None,
+                uploadQueueWaitSeconds=None,
+                uploadRunSeconds=None,
+                outputSizeBytes=None,
+                uploadBackend=getattr(self.oss, "upload_backend", None),
+                endpoint=getattr(self.oss, "endpoint", None),
+                ossutilPath=getattr(self.oss, "ossutil_path", None),
+                _uploadQueuedMonotonic=queued_monotonic,
+            )
+            logger.info("task %s reached 95%%; output upload queued: %s", task_id, output_path)
             future = self.upload_executor.submit(self._upload_output, task_id, output_path)
             future.add_done_callback(lambda item, task_id=task_id: self._handle_upload_done(task_id, item))
             self._drain()
@@ -291,18 +332,65 @@ class TaskQueue:
                 self.on_event({"type": "progress", "taskId": task_id, "progress": int(message["progress"])})
 
     def _upload_output(self, task_id: str, output_path: str) -> str:
+        started_monotonic = time.monotonic()
+        output_file = Path(output_path)
+        try:
+            output_size_bytes = output_file.stat().st_size
+        except OSError:
+            output_size_bytes = None
+        queued_monotonic = self._get_raw_upload_diagnostics(task_id).get("_uploadQueuedMonotonic")
+        queue_wait_seconds = None
+        if isinstance(queued_monotonic, float):
+            queue_wait_seconds = started_monotonic - queued_monotonic
+        self._update_upload_diagnostics(
+            task_id,
+            uploadStartedAt=now_beijing_iso(),
+            uploadQueueWaitSeconds=_round_elapsed(queue_wait_seconds),
+            outputSizeBytes=output_size_bytes,
+        )
         oss_key = self.oss.output_key(task_id)
         last_error: Exception | None = None
         for attempt in range(1, max(1, UPLOAD_MAX_ATTEMPT) + 1):
+            self._update_upload_diagnostics(task_id, uploadAttempt=attempt, ossKey=oss_key)
             try:
                 self.oss.upload(output_path, oss_key)
+                upload_run_seconds = time.monotonic() - started_monotonic
+                self._update_upload_diagnostics(
+                    task_id,
+                    uploadFinishedAt=now_beijing_iso(),
+                    uploadRunSeconds=_round_elapsed(upload_run_seconds),
+                    uploadError=None,
+                )
+                logger.info(
+                    "task %s output upload finished: size=%s bytes wait=%.3fs run=%.3fs backend=%s endpoint=%s",
+                    task_id,
+                    output_size_bytes,
+                    queue_wait_seconds or 0.0,
+                    upload_run_seconds,
+                    getattr(self.oss, "upload_backend", None),
+                    getattr(self.oss, "endpoint", None),
+                )
                 return oss_key
             except Exception as exc:
                 last_error = exc
+                self._update_upload_diagnostics(task_id, uploadError=str(exc))
                 if attempt >= max(1, UPLOAD_MAX_ATTEMPT):
                     break
                 logger.warning("upload failed for %s attempt %d/%d", task_id, attempt, UPLOAD_MAX_ATTEMPT, exc_info=True)
                 time.sleep(min(10.0, 2.0 * attempt))
+        upload_run_seconds = time.monotonic() - started_monotonic
+        self._update_upload_diagnostics(
+            task_id,
+            uploadFinishedAt=now_beijing_iso(),
+            uploadRunSeconds=_round_elapsed(upload_run_seconds),
+            uploadError=str(last_error) if last_error else "unknown upload error",
+        )
+        logger.error(
+            "task %s output upload failed after %.3fs: %s",
+            task_id,
+            upload_run_seconds,
+            last_error,
+        )
         raise RuntimeError(f"Output upload failed after {max(1, UPLOAD_MAX_ATTEMPT)} attempt(s): {last_error}")
 
     def _handle_upload_done(self, task_id: str, future: Future[str]) -> None:

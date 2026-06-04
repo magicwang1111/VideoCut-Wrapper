@@ -27,6 +27,7 @@ class FakeTaskQueue:
         self.on_event = on_event
         self.root_dir = root_dir
         self.tasks = []
+        self.upload_worker_count = 2
         FakeTaskQueue.instances.append(self)
 
     def start(self) -> None:
@@ -38,6 +39,9 @@ class FakeTaskQueue:
     def enqueue(self, task) -> bool:
         self.tasks.append(task)
         return True
+
+    def get_upload_diagnostics(self, task_id: str):
+        return None
 
     @property
     def queue_size(self) -> int:
@@ -82,6 +86,7 @@ def _make_pipeline_payload(name: str = "trim-mixed-dissolve-v1") -> dict:
 def _configure_api_env(tmp_path, monkeypatch, pipelines_root: Path, *, bgm_dir: Path | None = None) -> None:
     monkeypatch.setenv("API_KEYS", "test-key")
     monkeypatch.setenv("OSS_LOCAL_ROOT", str(tmp_path / "oss"))
+    monkeypatch.setenv("OSS_PREFIX", "GouMei-Video-Cut")
     monkeypatch.setenv("DB_PATH", str(tmp_path / "tasks.db"))
     monkeypatch.setenv("TEMP_DIR", str(tmp_path / "temp"))
     monkeypatch.setenv("PIPELINES_DIR", str(pipelines_root))
@@ -223,6 +228,7 @@ def test_render_endpoint_pipeline_mode(tmp_path, monkeypatch) -> None:
     _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
     monkeypatch.setenv("API_KEYS", "test-key")
     monkeypatch.setenv("OSS_LOCAL_ROOT", str(tmp_path / "oss"))
+    monkeypatch.setenv("OSS_PREFIX", "GouMei-Video-Cut")
     monkeypatch.setenv("DB_PATH", str(tmp_path / "tasks.db"))
     monkeypatch.setenv("TEMP_DIR", str(tmp_path / "temp"))
     monkeypatch.setenv("PIPELINES_DIR", str(pipelines_root))
@@ -820,6 +826,7 @@ def test_pipeline_render_rejects_local_paths(tmp_path, monkeypatch) -> None:
     _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
     monkeypatch.setenv("API_KEYS", "test-key")
     monkeypatch.setenv("OSS_LOCAL_ROOT", str(tmp_path / "oss"))
+    monkeypatch.setenv("OSS_PREFIX", "GouMei-Video-Cut")
     monkeypatch.setenv("DB_PATH", str(tmp_path / "tasks.db"))
     monkeypatch.setenv("TEMP_DIR", str(tmp_path / "temp"))
     monkeypatch.setenv("PIPELINES_DIR", str(pipelines_root))
@@ -848,6 +855,7 @@ def test_api_error_codes_for_auth_pipeline_task_and_download(tmp_path, monkeypat
     _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
     monkeypatch.setenv("API_KEYS", "test-key")
     monkeypatch.setenv("OSS_LOCAL_ROOT", str(tmp_path / "oss"))
+    monkeypatch.setenv("OSS_PREFIX", "GouMei-Video-Cut")
     monkeypatch.setenv("DB_PATH", str(tmp_path / "tasks.db"))
     monkeypatch.setenv("TEMP_DIR", str(tmp_path / "temp"))
     monkeypatch.setenv("PIPELINES_DIR", str(pipelines_root))
@@ -936,6 +944,7 @@ def test_task_summary_and_active_routes_return_overall_status(tmp_path, monkeypa
         summary_body = summary.json()
         assert "+00:00" not in summary_body["generatedAt"]
         assert summary_body["workers"] >= 1
+        assert summary_body["uploadWorkers"] == 2
         assert summary_body["queueSize"] == 0
         assert summary_body["counts"] == {
             "total": 4,
@@ -979,6 +988,7 @@ def test_render_queue_full_returns_error_code(tmp_path, monkeypatch) -> None:
     _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
     monkeypatch.setenv("API_KEYS", "test-key")
     monkeypatch.setenv("OSS_LOCAL_ROOT", str(tmp_path / "oss"))
+    monkeypatch.setenv("OSS_PREFIX", "GouMei-Video-Cut")
     monkeypatch.setenv("DB_PATH", str(tmp_path / "tasks.db"))
     monkeypatch.setenv("TEMP_DIR", str(tmp_path / "temp"))
     monkeypatch.setenv("PIPELINES_DIR", str(pipelines_root))
@@ -1007,6 +1017,7 @@ def test_get_task_returns_failure_history(tmp_path, monkeypatch) -> None:
     _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
     monkeypatch.setenv("API_KEYS", "test-key")
     monkeypatch.setenv("OSS_LOCAL_ROOT", str(tmp_path / "oss"))
+    monkeypatch.setenv("OSS_PREFIX", "GouMei-Video-Cut")
     monkeypatch.setenv("DB_PATH", str(tmp_path / "tasks.db"))
     monkeypatch.setenv("TEMP_DIR", str(tmp_path / "temp"))
     monkeypatch.setenv("PIPELINES_DIR", str(pipelines_root))

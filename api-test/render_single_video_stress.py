@@ -159,11 +159,13 @@ def poll_submitted_tasks(submitted: list[dict[str, Any]]) -> list[dict[str, Any]
 
             status = task.get("status")
             progress = task.get("progress")
+            upload_diagnostics = task.get("uploadDiagnostics")
             if isinstance(progress, int) and progress >= 95 and task_id not in reached_95_at:
                 reached_95_at[task_id] = time.time()
             print(
                 f"[{label}][poll] status={status}, progress={progress}, "
-                f"attempt={task.get('attempt')}, error={task.get('error')}"
+                f"attempt={task.get('attempt')}, uploadDiagnostics={upload_diagnostics}, "
+                f"error={task.get('error')}"
             )
             if status == "completed":
                 output_path = None
@@ -185,7 +187,8 @@ def poll_submitted_tasks(submitted: list[dict[str, Any]]) -> list[dict[str, Any]
                     "status": status,
                     "elapsedSeconds": round(elapsed, 2),
                     "renderTo95Seconds": round(render_to_95, 2) if render_to_95 is not None else None,
-                    "uploadAfter95Seconds": round(upload_after_95, 2) if upload_after_95 is not None else None,
+                    "after95ObservedSeconds": round(upload_after_95, 2) if upload_after_95 is not None else None,
+                    "uploadDiagnostics": upload_diagnostics,
                     "outputUrl": task.get("outputUrl"),
                     "outputPath": output_path,
                 }
@@ -201,6 +204,7 @@ def poll_submitted_tasks(submitted: list[dict[str, Any]]) -> list[dict[str, Any]
                         "status": status,
                         "error": task.get("error"),
                         "lastError": task.get("lastError"),
+                        "uploadDiagnostics": upload_diagnostics,
                     }
                 )
                 remaining.pop(task_id, None)

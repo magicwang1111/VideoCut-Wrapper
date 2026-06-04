@@ -21,6 +21,19 @@ class RecordingPool:
         return True
 
 
+class FakeOss:
+    upload_backend = "fake"
+    endpoint = "oss-test"
+    ossutil_path = "ossutil64"
+
+    def output_key(self, task_id: str) -> str:
+        return f"GouMei-Video-Cut/outputs/{task_id}/final.mp4"
+
+    def upload(self, local_path, oss_key) -> None:
+        assert oss_key.startswith("GouMei-Video-Cut/outputs/")
+        assert local_path
+
+
 def _make_task(task_id: str = "t_demo") -> TaskRecord:
     return TaskRecord(
         id=task_id,
@@ -96,6 +109,37 @@ def test_task_queue_dispatches_next_render_before_output_upload_finishes(tmp_pat
     assert completed is not None
     assert completed.status == "completed"
     assert completed.oss_key == "GouMei-Video-Cut/outputs/t_rendered/final.mp4"
+    store.close()
+
+
+def test_task_queue_records_output_upload_diagnostics(tmp_path) -> None:
+    store = TaskStore(tmp_path / "tasks.db")
+    store.create(_make_task("t_rendered"))
+    store.mark_rendering("t_rendered")
+    output_path = tmp_path / "final.mp4"
+    output_path.write_bytes(b"video-data")
+
+    queue = TaskQueue(store, FakeOss(), 1, lambda event: None, tmp_path)
+    queue.pool = RecordingPool()  # type: ignore[assignment]
+    queue._handle_message({"type": "task_rendered", "task_id": "t_rendered", "output_path": str(output_path)})
+    queue.upload_executor.shutdown(wait=True)
+
+    diagnostics = queue.get_upload_diagnostics("t_rendered")
+    assert diagnostics is not None
+    assert diagnostics["progress95At"]
+    assert diagnostics["uploadQueuedAt"]
+    assert diagnostics["uploadStartedAt"]
+    assert diagnostics["uploadFinishedAt"]
+    assert diagnostics["uploadQueueWaitSeconds"] >= 0
+    assert diagnostics["uploadRunSeconds"] >= 0
+    assert diagnostics["outputSizeBytes"] == len(b"video-data")
+    assert diagnostics["uploadBackend"] == "fake"
+    assert diagnostics["endpoint"] == "oss-test"
+    assert diagnostics["ossKey"] == "GouMei-Video-Cut/outputs/t_rendered/final.mp4"
+
+    completed = store.get("t_rendered")
+    assert completed is not None
+    assert completed.status == "completed"
     store.close()
 
 

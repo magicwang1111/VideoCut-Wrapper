@@ -513,6 +513,7 @@ def create_app() -> FastAPI:
         return {
             "generatedAt": now_api_time(),
             "workers": app.state.worker_count,
+            "uploadWorkers": queue_obj.upload_worker_count,
             "queueSize": queue_obj.queue_size,
             "counts": store.count_tasks_by_status(),
         }
@@ -520,9 +521,17 @@ def create_app() -> FastAPI:
     @app.get("/tasks/active", dependencies=[Depends(auth_guard)])
     async def active_tasks() -> dict[str, Any]:
         store: TaskStore = app.state.store
+        queue_obj: TaskQueue = app.state.task_queue
+        tasks = []
+        for task in store.list_active_tasks():
+            payload = active_task_payload(task)
+            upload_diagnostics = queue_obj.get_upload_diagnostics(task.id)
+            if upload_diagnostics:
+                payload["uploadDiagnostics"] = upload_diagnostics
+            tasks.append(payload)
         return {
             "generatedAt": now_api_time(),
-            "tasks": [active_task_payload(task) for task in store.list_active_tasks()],
+            "tasks": tasks,
         }
 
     @app.get("/tasks/{task_id}", dependencies=[Depends(auth_guard)])
@@ -533,8 +542,9 @@ def create_app() -> FastAPI:
             raise api_http_exception(404, ApiErrorCode.TASK_NOT_FOUND, "Task not found.")
         failures = store.list_failures(task_id)
         oss: OssClient = app.state.oss
+        queue_obj: TaskQueue = app.state.task_queue
         output_url = oss.presign_url(task.oss_key, 3600) if task.status == "completed" and task.oss_key else None
-        return {
+        payload = {
             "taskId": task.id,
             "status": task.status,
             "progress": task.progress,
@@ -557,6 +567,10 @@ def create_app() -> FastAPI:
             "taskKind": task.task_kind,
             "sourceName": task.source_name,
         }
+        upload_diagnostics = queue_obj.get_upload_diagnostics(task.id)
+        if upload_diagnostics:
+            payload["uploadDiagnostics"] = upload_diagnostics
+        return payload
 
     @app.get("/tasks/{task_id}/download", dependencies=[Depends(auth_guard)])
     async def download_task(task_id: str):
