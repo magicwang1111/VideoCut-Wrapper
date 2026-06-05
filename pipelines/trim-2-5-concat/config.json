@@ -1,0 +1,21 @@
+{
+  "name": "trim-2-5-concat",
+  "mode": "pipeline",
+  "required_clip_count": 5,
+  "preset": "douyin_vertical",
+  "quality": "high",
+  "bgm": {
+    "enabled": true,
+    "dir": "input/bgm",
+    "volume": 1,
+    "fade_out": 0
+  },
+  "clips": [
+    { "source_index": 0, "trim_start": 2, "trim_end": 5 },
+    { "source_index": 1, "trim_start": 2, "trim_end": 5 },
+    { "source_index": 2, "trim_start": 2, "trim_end": 5 },
+    { "source_index": 3, "trim_start": 2, "trim_end": 5 },
+    { "source_index": 4, "trim_start": 2, "trim_end": 5 }
+  ],
+  "default_transition": { "type": "cut", "duration": 0 }
+}

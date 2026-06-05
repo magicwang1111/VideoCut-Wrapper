@@ -291,6 +291,26 @@ def _resolve_user_bgm(store: TaskStore, overrides: dict[str, Any]) -> dict[str, 
     return {"fileId": file_record.file_id, "ossKey": file_record.oss_key}
 
 
+def _validate_pipeline_clip_count(pipeline_config: dict[str, Any], clip_count: int) -> None:
+    required_clip_count = pipeline_config.get("required_clip_count")
+    if required_clip_count is None:
+        return
+    if not isinstance(required_clip_count, int) or required_clip_count <= 0:
+        raise api_http_exception(
+            400,
+            ApiErrorCode.INVALID_BODY,
+            "Invalid pipeline required_clip_count.",
+            {"requiredClipCount": required_clip_count},
+        )
+    if clip_count != required_clip_count:
+        raise api_http_exception(
+            400,
+            ApiErrorCode.INVALID_BODY,
+            f"Pipeline requires exactly {required_clip_count} input clips, got {clip_count}.",
+            {"requiredClipCount": required_clip_count, "clipCount": clip_count},
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
@@ -475,13 +495,15 @@ def create_app() -> FastAPI:
         store: TaskStore = app.state.store
         oss: OssClient = app.state.oss
 
-        resolved_keys = _resolve_clip_refs(store, oss, body.clips, strict_pipeline=True)
-        overrides = deepcopy(body.overrides)
-        user_bgm = _resolve_user_bgm(store, overrides)
         pipeline_name = body.pipeline
         pipeline_record = store.get_pipeline(pipeline_name)
         if pipeline_record is None:
             raise PipelineNotFoundError(pipeline_name, [item.name for item in store.list_pipelines()])
+        _validate_pipeline_clip_count(pipeline_record.config, len(body.clips))
+
+        resolved_keys = _resolve_clip_refs(store, oss, body.clips, strict_pipeline=True)
+        overrides = deepcopy(body.overrides)
+        user_bgm = _resolve_user_bgm(store, overrides)
         payload = {
             "clips": resolved_keys,
             "pipeline_config": pipeline_record.config,

@@ -223,6 +223,13 @@ def parse_pipeline_config(
         raise VideoCutError('Pipeline config requires a non-empty "clips" array.')
     clips = [_parse_clip_config(item, f"clips[{index}]", require_clip_src) for index, item in enumerate(clips_raw)]
 
+    required_clip_count_raw = raw.get("required_clip_count")
+    required_clip_count: int | None = None
+    if required_clip_count_raw is not None:
+        if not isinstance(required_clip_count_raw, int) or required_clip_count_raw <= 0:
+            raise VideoCutError("required_clip_count must be a positive integer.")
+        required_clip_count = required_clip_count_raw
+
     transitions = None
     if isinstance(raw.get("transitions"), list):
         transitions = [
@@ -243,6 +250,7 @@ def parse_pipeline_config(
     return PipelineConfig(
         mode="pipeline",
         name=name,
+        required_clip_count=required_clip_count,
         preset=raw.get("preset") if isinstance(raw.get("preset"), str) else "auto",
         quality=raw.get("quality") if isinstance(raw.get("quality"), str) else "high",
         output=parse_output_config(raw.get("output")),
@@ -398,6 +406,10 @@ def bind_pipeline_config(
 ) -> PipelineConfig:
     if clip_count <= 0:
         raise VideoCutError("Pipeline render requires at least one clip.")
+    if config.required_clip_count is not None and clip_count != config.required_clip_count:
+        raise VideoCutError(
+            f"Pipeline requires exactly {config.required_clip_count} input clips, got {clip_count}."
+        )
 
     overrides = overrides or {}
     clip_override_map = _parse_clip_override_map(overrides.get("clip_overrides"))
@@ -469,6 +481,7 @@ def bind_pipeline_config(
     return PipelineConfig(
         mode="pipeline",
         name=config.name,
+        required_clip_count=config.required_clip_count,
         preset=preset,
         quality=quality,
         output=output,

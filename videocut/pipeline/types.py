@@ -52,6 +52,7 @@ class PipelineConfig:
     mode: Literal["pipeline"]
     clips: list[PipelineClipConfig]
     name: str | None = None
+    required_clip_count: int | None = None
     preset: str = "auto"
     quality: str = "high"
     output: PipelineOutputConfig | None = None

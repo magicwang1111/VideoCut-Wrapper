@@ -1,6 +1,7 @@
 {
   "name": "segment-5-6-then-3-5-concat",
   "mode": "pipeline",
+  "required_clip_count": 5,
   "preset": "auto",
   "quality": "high",
   "bgm": {

@@ -222,6 +222,33 @@ def test_build_pipeline_context_reuses_source_indexes_for_fixed_segments(tmp_pat
     assert [(item.type, item.duration) for item in ctx.junctions] == [("cut", 0)] * 9
 
 
+def test_build_pipeline_context_enforces_required_clip_count(tmp_path) -> None:
+    payload = {
+        "name": "trim-2-5-concat",
+        "mode": "pipeline",
+        "required_clip_count": 5,
+        "clips": [
+            {"source_index": 0, "trim_start": 2, "trim_end": 5},
+            {"source_index": 1, "trim_start": 2, "trim_end": 5},
+            {"source_index": 2, "trim_start": 2, "trim_end": 5},
+            {"source_index": 3, "trim_start": 2, "trim_end": 5},
+            {"source_index": 4, "trim_start": 2, "trim_end": 5},
+        ],
+        "default_transition": {"type": "cut", "duration": 0},
+    }
+    config = parse_pipeline_config(payload, tmp_path / "config.json", require_name=True)
+
+    ctx = build_pipeline_context(config, [f"/tmp/clip_{index}.mp4" for index in range(5)], tmp_path / "config.json")
+
+    assert [clip.source_index for clip in ctx.config.clips] == [0, 1, 2, 3, 4]
+    assert [clip.trim_start for clip in ctx.config.clips] == [2, 2, 2, 2, 2]
+    assert [clip.trim_end for clip in ctx.config.clips] == [5, 5, 5, 5, 5]
+    with pytest.raises(VideoCutError, match="exactly 5"):
+        build_pipeline_context(config, [f"/tmp/clip_{index}.mp4" for index in range(4)], tmp_path / "config.json")
+    with pytest.raises(VideoCutError, match="exactly 5"):
+        build_pipeline_context(config, [f"/tmp/clip_{index}.mp4" for index in range(6)], tmp_path / "config.json")
+
+
 def test_render_endpoint_pipeline_mode(tmp_path, monkeypatch) -> None:
     FakeTaskQueue.instances.clear()
     pipelines_root = tmp_path / "pipelines"
@@ -283,6 +310,45 @@ def test_render_endpoint_pipeline_mode(tmp_path, monkeypatch) -> None:
         )
         assert bad_response.status_code == 422
         assert bad_response.json()["error_code"] == 1003
+
+
+def test_render_endpoint_rejects_wrong_required_clip_count(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    payload = _make_pipeline_payload("trim-2-5-concat")
+    payload["required_clip_count"] = 5
+    _write_pipeline_config(pipelines_root, "trim-2-5-concat", payload)
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root)
+
+    with TestClient(api_app_module.create_app()) as client:
+        headers = {"X-Api-Key": "test-key", "Content-Type": "application/json"}
+        too_few = client.post(
+            "/render",
+            headers=headers,
+            json={"pipeline": "trim-2-5-concat", "clips": ["file1", "file2", "file3", "file4"]},
+        )
+        too_many = client.post(
+            "/render",
+            headers=headers,
+            json={
+                "pipeline": "trim-2-5-concat",
+                "clips": ["file1", "file2", "file3", "file4", "file5", "file6"],
+            },
+        )
+
+        assert too_few.status_code == 400
+        assert too_few.json() == {
+            "error_code": 2001,
+            "message": "Pipeline requires exactly 5 input clips, got 4.",
+            "details": {"requiredClipCount": 5, "clipCount": 4},
+        }
+        assert too_many.status_code == 400
+        assert too_many.json() == {
+            "error_code": 2001,
+            "message": "Pipeline requires exactly 5 input clips, got 6.",
+            "details": {"requiredClipCount": 5, "clipCount": 6},
+        }
+        assert FakeTaskQueue.instances[-1].tasks == []
 
 
 def test_upload_audio_uses_user_audio_prefix_and_is_not_bgm_catalog(tmp_path, monkeypatch) -> None:
