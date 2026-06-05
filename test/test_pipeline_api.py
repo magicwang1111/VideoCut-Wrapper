@@ -228,11 +228,11 @@ def test_build_pipeline_context_enforces_required_clip_count(tmp_path) -> None:
         "mode": "pipeline",
         "required_clip_count": 5,
         "clips": [
-            {"source_index": 0, "trim_start": 2, "trim_end": 5},
-            {"source_index": 1, "trim_start": 2, "trim_end": 5},
-            {"source_index": 2, "trim_start": 2, "trim_end": 5},
-            {"source_index": 3, "trim_start": 2, "trim_end": 5},
-            {"source_index": 4, "trim_start": 2, "trim_end": 5},
+            {"source_index": 0, "trim_start": 2, "trim_duration": 3},
+            {"source_index": 1, "trim_start": 2, "trim_duration": 3},
+            {"source_index": 2, "trim_start": 2, "trim_duration": 3},
+            {"source_index": 3, "trim_start": 2, "trim_duration": 3},
+            {"source_index": 4, "trim_start": 2, "trim_duration": 3},
         ],
         "default_transition": {"type": "cut", "duration": 0},
     }
@@ -242,7 +242,7 @@ def test_build_pipeline_context_enforces_required_clip_count(tmp_path) -> None:
 
     assert [clip.source_index for clip in ctx.config.clips] == [0, 1, 2, 3, 4]
     assert [clip.trim_start for clip in ctx.config.clips] == [2, 2, 2, 2, 2]
-    assert [clip.trim_end for clip in ctx.config.clips] == [5, 5, 5, 5, 5]
+    assert [clip.trim_duration for clip in ctx.config.clips] == [3, 3, 3, 3, 3]
     with pytest.raises(VideoCutError, match="exactly 5"):
         build_pipeline_context(config, [f"/tmp/clip_{index}.mp4" for index in range(4)], tmp_path / "config.json")
     with pytest.raises(VideoCutError, match="exactly 5"):
