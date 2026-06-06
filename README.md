@@ -568,7 +568,7 @@ curl -L "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78/download" \
 
 - 如果任务不存在、未完成、或者没有输出文件，返回 HTTP `404`，响应体 `error_code=3001`
 - 如果启用了 `OSS_LOCAL_ROOT`，直接返回本地文件内容
-- 如果使用真实 OSS，返回 `302` 跳转到预签名 URL
+- 如果使用真实 OSS，返回 `302` 跳转到 `OSS_PUBLIC_ENDPOINT` 拼接的公网对象 URL
 
 因此客户端最好：
 
@@ -646,7 +646,7 @@ videocut serve --port 3000
 - `FFMPEG_HWACCEL`: 可选，需要时手动指定 `cuda` 等硬件解码参数
 - `PIPELINES_DIR`: 可选，pipeline 配置目录，默认 `pipelines/`
 - `OSS_ENDPOINT`
-- `OSS_PUBLIC_ENDPOINT`: 可选，`GET /bgm` 返回可下载 `ossUrl` 时使用的公网 endpoint
+- `OSS_PUBLIC_ENDPOINT`: 可选，`GET /bgm` 的 `ossUrl` 和任务完成后的 `outputUrl` 使用的公网 endpoint
 - `OSS_ACCESS_KEY_ID`
 - `OSS_ACCESS_KEY_SECRET`
 - `OSS_BUCKET`

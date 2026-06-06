@@ -978,6 +978,106 @@ def test_api_error_codes_for_auth_pipeline_task_and_download(tmp_path, monkeypat
         }
 
 
+def test_completed_task_routes_return_public_output_url(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    monkeypatch.setenv("API_KEYS", "test-key")
+    monkeypatch.delenv("OSS_LOCAL_ROOT", raising=False)
+    monkeypatch.setenv("OSS_ENDPOINT", "oss-cn-hangzhou-internal.aliyuncs.com")
+    monkeypatch.setenv("OSS_PUBLIC_ENDPOINT", "oss-cn-hangzhou.aliyuncs.com")
+    monkeypatch.setenv("OSS_ACCESS_KEY_ID", "test-id")
+    monkeypatch.setenv("OSS_ACCESS_KEY_SECRET", "test-secret")
+    monkeypatch.setenv("OSS_BUCKET", "goumee-coze")
+    monkeypatch.setenv("OSS_PREFIX", "GouMei-Video-Cut")
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "tasks.db"))
+    monkeypatch.setenv("TEMP_DIR", str(tmp_path / "temp"))
+    monkeypatch.setenv("PIPELINES_DIR", str(pipelines_root))
+    monkeypatch.setattr(api_app_module, "TaskQueue", FakeTaskQueue)
+
+    with TestClient(api_app_module.create_app()) as client:
+        task_id = "t_public_url"
+        store = client.app.state.store
+        store.create(
+            api_app_module._create_store_record(
+                task_id,
+                "pipeline",
+                "trim-mixed-dissolve-v1",
+                {"clips": ["GouMei-Video-Cut/inputs/file1.mp4"]},
+            )
+        )
+        store.mark_rendering(task_id)
+        store.mark_completed(
+            task_id,
+            "GouMei-Video-Cut/outputs/20260606/20260606_104858/t_public_url/final video 中文.mp4",
+        )
+        expected_url = (
+            "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/"
+            "GouMei-Video-Cut/outputs/20260606/20260606_104858/t_public_url/"
+            "final%20video%20%E4%B8%AD%E6%96%87.mp4"
+        )
+
+        task_response = client.get(f"/tasks/{task_id}", headers={"X-Api-Key": "test-key"})
+        assert task_response.status_code == 200
+        assert task_response.json()["outputUrl"] == expected_url
+        assert "%2F" not in task_response.json()["outputUrl"]
+
+        download_response = client.get(
+            f"/tasks/{task_id}/download",
+            headers={"X-Api-Key": "test-key"},
+            follow_redirects=False,
+        )
+        assert download_response.status_code == 302
+        assert download_response.headers["location"] == expected_url
+
+
+def test_completed_task_routes_reject_internal_public_output_url(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    monkeypatch.setenv("API_KEYS", "test-key")
+    monkeypatch.delenv("OSS_LOCAL_ROOT", raising=False)
+    monkeypatch.setenv("OSS_ENDPOINT", "oss-cn-hangzhou-internal.aliyuncs.com")
+    monkeypatch.setenv("OSS_PUBLIC_ENDPOINT", "oss-cn-hangzhou-internal.aliyuncs.com")
+    monkeypatch.setenv("OSS_ACCESS_KEY_ID", "test-id")
+    monkeypatch.setenv("OSS_ACCESS_KEY_SECRET", "test-secret")
+    monkeypatch.setenv("OSS_BUCKET", "goumee-coze")
+    monkeypatch.setenv("OSS_PREFIX", "GouMei-Video-Cut")
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "tasks.db"))
+    monkeypatch.setenv("TEMP_DIR", str(tmp_path / "temp"))
+    monkeypatch.setenv("PIPELINES_DIR", str(pipelines_root))
+    monkeypatch.setattr(api_app_module, "TaskQueue", FakeTaskQueue)
+
+    with TestClient(api_app_module.create_app()) as client:
+        task_id = "t_bad_output_url"
+        store = client.app.state.store
+        store.create(
+            api_app_module._create_store_record(
+                task_id,
+                "pipeline",
+                "trim-mixed-dissolve-v1",
+                {"clips": ["GouMei-Video-Cut/inputs/file1.mp4"]},
+            )
+        )
+        store.mark_rendering(task_id)
+        store.mark_completed(task_id, "GouMei-Video-Cut/outputs/20260606/20260606_104858/t_bad_output_url/final.mp4")
+
+        task_response = client.get(f"/tasks/{task_id}", headers={"X-Api-Key": "test-key"})
+        assert task_response.status_code == 500
+        assert task_response.json()["error_code"] == 3004
+        assert task_response.json()["details"]["reason"] == "internal_endpoint"
+        assert task_response.json()["details"]["outputUrlHost"] == "goumee-coze.oss-cn-hangzhou-internal.aliyuncs.com"
+
+        download_response = client.get(
+            f"/tasks/{task_id}/download",
+            headers={"X-Api-Key": "test-key"},
+            follow_redirects=False,
+        )
+        assert download_response.status_code == 500
+        assert download_response.json()["error_code"] == 3004
+        assert download_response.json()["details"]["reason"] == "internal_endpoint"
+
+
 def test_task_summary_and_active_routes_return_overall_status(tmp_path, monkeypatch) -> None:
     FakeTaskQueue.instances.clear()
     pipelines_root = tmp_path / "pipelines"

@@ -5,6 +5,7 @@ import shutil
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import oss2
@@ -18,6 +19,8 @@ try:
 except ZoneInfoNotFoundError:
     BEIJING_TZ = timezone(timedelta(hours=8))
 
+_DEFAULT_PUBLIC_ENDPOINT = "oss-cn-hangzhou.aliyuncs.com"
+
 
 def _as_output_time(timestamp: datetime | None = None) -> datetime:
     if timestamp is None:
@@ -25,6 +28,12 @@ def _as_output_time(timestamp: datetime | None = None) -> datetime:
     if timestamp.tzinfo is None:
         return timestamp
     return timestamp.astimezone(BEIJING_TZ)
+
+
+def _normalize_public_endpoint(raw_endpoint: str | None) -> str:
+    endpoint = (raw_endpoint or _DEFAULT_PUBLIC_ENDPOINT).strip()
+    endpoint = endpoint.removeprefix("https://").removeprefix("http://").strip("/")
+    return endpoint or _DEFAULT_PUBLIC_ENDPOINT
 
 
 class OssClient:
@@ -38,6 +47,7 @@ class OssClient:
         self.upload_backend = (os.getenv("OSS_UPLOAD_BACKEND", "ossutil").strip().lower() or "ossutil")
         self.ossutil_path = os.getenv("OSSUTIL_PATH", "ossutil64").strip() or "ossutil64"
         self.ossutil_timeout_seconds = int(os.getenv("OSSUTIL_TIMEOUT_SECONDS", "600"))
+        self.public_endpoint = _normalize_public_endpoint(os.getenv("OSS_PUBLIC_ENDPOINT"))
         self.local_root = os.getenv("OSS_LOCAL_ROOT")
         if self.local_root:
             self.local_root = str(resolve_runtime_path(self.local_root, project_root() / "oss-local"))
@@ -151,9 +161,8 @@ class OssClient:
             raise DependencyError("OSS bucket", "Bucket not initialized; set OSS credentials or OSS_LOCAL_ROOT.")
         self.bucket.delete_object(oss_key)
 
-    def presign_url(self, oss_key: str, expires_seconds: int = 3600) -> str:
+    def public_url(self, oss_key: str) -> str:
         if self.local_root:
             return str((Path(self.local_root) / oss_key).resolve())
-        if self.bucket is None:
-            raise DependencyError("OSS bucket", "Bucket not initialized; set OSS credentials or OSS_LOCAL_ROOT.")
-        return self.bucket.sign_url("GET", oss_key, expires_seconds)
+        encoded_key = quote(oss_key, safe="/")
+        return f"https://{self.bucket_name}.{self.public_endpoint}/{encoded_key}"

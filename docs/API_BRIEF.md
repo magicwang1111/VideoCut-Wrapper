@@ -389,7 +389,7 @@ X-Api-Key: goumee-music
 | `createdAt` | `string` | 创建时间，北京时间 |
 | `startedAt` | `string|null` | 最近一次开始执行时间，北京时间 |
 | `completedAt` | `string|null` | 完成或最终失败时间，北京时间 |
-| `outputUrl` | `string|null` | 完成后返回结果地址 |
+| `outputUrl` | `string|null` | 完成后返回结果地址。真实 OSS 模式下为 `OSS_PUBLIC_ENDPOINT` 拼接的公网对象 URL，路径里的 `/` 不应被编码成 `%2F` |
 | `error` | `string|null` | 最终失败原因 |
 | `lastError` | `string|null` | 最近一次失败原因 |
 | `lastErrorAt` | `string|null` | 最近一次失败时间，北京时间 |
@@ -413,6 +413,8 @@ X-Api-Key: goumee-music
 成功时返回视频文件。
 
 真实 OSS 模式下接口可能返回 `302` 跳转，客户端需要允许 redirect。
+
+真实 OSS 模式下跳转地址必须是 `OSS_PUBLIC_ENDPOINT` 拼接的公网对象 URL。如果服务端检测到跳转地址仍是 `*-internal.aliyuncs.com` 或路径里包含 `%2F`，会返回 `500` 和 `error_code=3004`，用于定位结果 URL 配置问题。
 
 curl 示例：
 
@@ -464,6 +466,7 @@ HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读
 | `400` | `2008` | `overrides.bgm.fileId` 不存在或不是用户音频 | 重新上传音频并传音频 `fileId` |
 | `404` | `3001` | 下载时任务不存在、未完成或无输出 | 先轮询到 `completed` |
 | `503` | `3002` | 渲染队列已满 | 稍后重试 |
+| `500` | `3004` | 任务结果 URL 配置异常，例如 `OSS_PUBLIC_ENDPOINT` 误配为 internal endpoint，或路径分隔符被编码成 `%2F` | 检查 `OSS_PUBLIC_ENDPOINT` 和服务端日志里的 `outputUrlHost`、`outputUrlPath`、`ossKey` |
 | `500` | `9001` | 未预期服务端异常 | 记录日志并联系服务方 |
 
 错误示例：
@@ -565,6 +568,20 @@ HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读
   "message": "Queue is full.",
   "details": {
     "queueSize": 200
+  }
+}
+```
+
+```json
+{
+  "error_code": 3004,
+  "message": "Task output URL is invalid.",
+  "details": {
+    "taskId": "t_ab12cd34ef56ab78",
+    "reason": "internal_endpoint",
+    "outputUrlHost": "goumee-coze.oss-cn-hangzhou-internal.aliyuncs.com",
+    "outputUrlPath": "/GouMei-Video-Cut/outputs/20260606/20260606_104858/t_ab12cd34ef56ab78/final.mp4",
+    "ossKey": "GouMei-Video-Cut/outputs/20260606/20260606_104858/t_ab12cd34ef56ab78/final.mp4"
   }
 }
 ```

@@ -40,6 +40,25 @@ def test_user_audio_key_uses_dedicated_prefix(monkeypatch, tmp_path) -> None:
     assert oss.user_audio_key("abc123def456", ".mp3") == "GouMei-Video-Cut/user-audio/abc123def456.mp3"
 
 
+def test_public_url_uses_public_endpoint_and_preserves_path_slashes(monkeypatch) -> None:
+    monkeypatch.delenv("OSS_LOCAL_ROOT", raising=False)
+    monkeypatch.setenv("OSS_ENDPOINT", "oss-cn-hangzhou-internal.aliyuncs.com")
+    monkeypatch.setenv("OSS_PUBLIC_ENDPOINT", "https://oss-cn-hangzhou.aliyuncs.com/")
+    monkeypatch.setenv("OSS_ACCESS_KEY_ID", "test-id")
+    monkeypatch.setenv("OSS_ACCESS_KEY_SECRET", "test-secret")
+    monkeypatch.setenv("OSS_BUCKET", "goumee-coze")
+
+    oss = OssClient()
+
+    url = oss.public_url("GouMei-Video-Cut/outputs/20260606/final video 中文.mp4")
+
+    assert url == (
+        "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/"
+        "GouMei-Video-Cut/outputs/20260606/final%20video%20%E4%B8%AD%E6%96%87.mp4"
+    )
+    assert "%2F" not in url
+
+
 def test_upload_defaults_to_ossutil64(monkeypatch, tmp_path) -> None:
     monkeypatch.delenv("OSS_LOCAL_ROOT", raising=False)
     monkeypatch.delenv("OSS_UPLOAD_BACKEND", raising=False)

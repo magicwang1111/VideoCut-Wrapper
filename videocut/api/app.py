@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from enum import IntEnum
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
@@ -57,6 +58,7 @@ class ApiErrorCode(IntEnum):
     TASK_OUTPUT_NOT_READY = 3001
     QUEUE_FULL = 3002
     FILE_TOO_LARGE = 3003
+    TASK_OUTPUT_URL_INVALID = 3004
     INTERNAL_ERROR = 9001
 
 
@@ -113,6 +115,39 @@ def active_task_payload(task: TaskRecord) -> dict[str, Any]:
         "taskKind": task.task_kind,
         "sourceName": task.source_name,
     }
+
+
+def task_output_url(oss: OssClient, task: TaskRecord) -> str | None:
+    if task.status != "completed" or not task.oss_key:
+        return None
+    output_url = oss.public_url(task.oss_key)
+    if oss.local_root:
+        return output_url
+
+    parsed = urlparse(output_url)
+    reason = None
+    if parsed.scheme != "https":
+        reason = "non_https_scheme"
+    elif not parsed.netloc:
+        reason = "missing_host"
+    elif "-internal." in parsed.netloc:
+        reason = "internal_endpoint"
+    elif "%2f" in parsed.path.lower():
+        reason = "encoded_path_separator"
+
+    if reason is None:
+        return output_url
+
+    details = {
+        "taskId": task.id,
+        "reason": reason,
+        "outputUrlScheme": parsed.scheme,
+        "outputUrlHost": parsed.netloc,
+        "outputUrlPath": parsed.path,
+        "ossKey": task.oss_key,
+    }
+    logger.error("Invalid task output URL generated: %s", details)
+    raise api_http_exception(500, ApiErrorCode.TASK_OUTPUT_URL_INVALID, "Task output URL is invalid.", details)
 
 
 def auth_guard(request: Request) -> None:
@@ -565,7 +600,7 @@ def create_app() -> FastAPI:
         failures = store.list_failures(task_id)
         oss: OssClient = app.state.oss
         queue_obj: TaskQueue = app.state.task_queue
-        output_url = oss.presign_url(task.oss_key, 3600) if task.status == "completed" and task.oss_key else None
+        output_url = task_output_url(oss, task)
         payload = {
             "taskId": task.id,
             "status": task.status,
@@ -603,7 +638,7 @@ def create_app() -> FastAPI:
         oss: OssClient = app.state.oss
         if oss.local_root:
             return FileResponse(Path(oss.local_root) / task.oss_key, filename="final.mp4")
-        return RedirectResponse(oss.presign_url(task.oss_key, 3600), status_code=302)
+        return RedirectResponse(task_output_url(oss, task), status_code=302)
 
     return app
 

@@ -105,6 +105,7 @@ HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读
 | `404` | `3001` | 下载时任务不存在、未完成或无输出 | 先轮询到 `completed` |
 | `503` | `3002` | 渲染队列已满 | 稍后重试 |
 | `413` | `3003` | 上传文件过大 | 压缩或拆分文件 |
+| `500` | `3004` | 任务结果 URL 配置异常，例如 `OSS_PUBLIC_ENDPOINT` 误配为 internal endpoint，或路径分隔符被编码成 `%2F` | 检查 `OSS_PUBLIC_ENDPOINT` 和服务端日志里的 `outputUrlHost`、`outputUrlPath`、`ossKey` |
 | `500` | `9001` | 未预期服务端异常 | 记录日志并联系服务方 |
 
 ## 3. 推荐对接流程
@@ -784,7 +785,7 @@ curl "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78" \
 | `createdAt` | `string` | 任务创建时间，北京时间 |
 | `startedAt` | `string|null` | 最近一次开始执行时间，北京时间 |
 | `completedAt` | `string|null` | 完成或最终失败时间，北京时间 |
-| `outputUrl` | `string|null` | 仅任务完成且有输出时返回。真实 OSS 模式下为 1 小时预签名 URL |
+| `outputUrl` | `string|null` | 仅任务完成且有输出时返回。真实 OSS 模式下为 `OSS_PUBLIC_ENDPOINT` 拼接的公网对象 URL |
 | `error` | `string|null` | 最终失败原因。任务成功时为 `null` |
 | `lastError` | `string|null` | 最近一次失败原因，任务最终成功后仍可能保留 |
 | `lastErrorAt` | `string|null` | 最近一次失败时间，北京时间 |
@@ -846,10 +847,11 @@ curl -L "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78/download" \
 
 真实 OSS 模式：
 
-- 接口返回 `302` 跳转到 OSS 预签名 URL。
+- 接口返回 `302` 跳转到 `OSS_PUBLIC_ENDPOINT` 拼接的公网对象 URL。
 - 客户端需要允许 redirect。
 - `curl` 使用 `-L`。
 - Python `requests` 使用 `allow_redirects=True`。
+- 如果服务端检测到跳转地址仍是 `*-internal.aliyuncs.com` 或路径里包含 `%2F`，会返回 `500` 和 `error_code=3004`，用于定位结果 URL 配置问题。
 
 本地 OSS 模式：
 
@@ -867,6 +869,24 @@ curl -L "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78/download" \
 ```
 
 HTTP 状态码为 `404`。
+
+任务结果 URL 配置异常：
+
+```json
+{
+  "error_code": 3004,
+  "message": "Task output URL is invalid.",
+  "details": {
+    "taskId": "t_ab12cd34ef56ab78",
+    "reason": "internal_endpoint",
+    "outputUrlHost": "goumee-coze.oss-cn-hangzhou-internal.aliyuncs.com",
+    "outputUrlPath": "/GouMei-Video-Cut/outputs/20260606/20260606_104858/t_ab12cd34ef56ab78/final.mp4",
+    "ossKey": "GouMei-Video-Cut/outputs/20260606/20260606_104858/t_ab12cd34ef56ab78/final.mp4"
+  }
+}
+```
+
+HTTP 状态码为 `500`。检查 `OSS_PUBLIC_ENDPOINT`，真实 OSS 结果 URL 不应使用 internal endpoint，路径分隔符也不应显示为 `%2F`。
 
 ## 12. 当前 pipeline 列表
 
@@ -913,7 +933,7 @@ OSS 配置：
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `OSS_ENDPOINT` | `oss-cn-hangzhou.aliyuncs.com` | 阿里云 OSS endpoint |
-| `OSS_PUBLIC_ENDPOINT` | `oss-cn-hangzhou.aliyuncs.com` | `GET /bgm` 返回可下载 `ossUrl` 时使用的公网 endpoint |
+| `OSS_PUBLIC_ENDPOINT` | `oss-cn-hangzhou.aliyuncs.com` | `GET /bgm` 的 `ossUrl` 和任务完成后的 `outputUrl` 使用的公网 endpoint |
 | `OSS_BUCKET` | `goumee-coze` | OSS bucket |
 | `OSS_PREFIX` | `GouMei-Video-Cut` | 输入和输出 key 前缀 |
 | `OSS_ACCESS_KEY_ID` | 空 | 真实 OSS 模式必填 |
@@ -1060,7 +1080,7 @@ $env:API_KEY = "goumee-music"
 
 - 线上建议在服务前面放 HTTPS 网关或反向代理，API 服务本身只做 `X-Api-Key` 校验。
 - 渲染是 CPU/GPU 和 IO 密集任务，调用方应设置较长轮询超时，例如 30 分钟。
-- `outputUrl` 在真实 OSS 模式下是 1 小时预签名 URL。长期保存请转存或重新调用 `/tasks/{taskId}/download`。
+- `outputUrl` 在真实 OSS 模式下是公网对象 URL，由 `OSS_PUBLIC_ENDPOINT` 拼接生成。长期保存请转存或重新调用 `/tasks/{taskId}/download`。
 - `clips` 建议传 OSS key 或 `fileId`，不要传本地路径或公网 URL。
 - 如果启用了带 BGM 的 pipeline，确认 `BGM_DIR` 存在并包含音频文件；否则 worker 会失败。
 - 对接方遇到 HTTP 非 2xx 时，统一读取 JSON `error_code` 判断具体错误。`3002` 可以延迟重试，`2002` 这类参数错误不建议重试。
