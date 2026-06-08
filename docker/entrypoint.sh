@@ -40,29 +40,20 @@ load_env_file() {
   done < "${ENV_FILE}"
 }
 
-sync_bgm_from_oss() {
-  if [ "${SYNC_BGM_ON_STARTUP:-1}" != "1" ]; then
-    echo "[entrypoint] skip BGM sync because SYNC_BGM_ON_STARTUP=${SYNC_BGM_ON_STARTUP:-0}"
+sync_bgm_prefix() {
+  SYNC_URI="$1"
+  SYNC_DIR="$2"
+  SYNC_LABEL="$3"
+
+  if [ -z "${SYNC_URI}" ]; then
+    echo "[entrypoint] skip ${SYNC_LABEL} sync because URI is empty"
     return
   fi
 
-  BGM_DIR="${BGM_DIR:-/app/input/bgm}"
-  BGM_OSS_URI="${BGM_OSS_URI:-oss://goumee-coze/GouMei-Video-Cut/bgm/}"
+  mkdir -p "${SYNC_DIR}"
+  echo "[entrypoint] syncing ${SYNC_LABEL} from ${SYNC_URI} to ${SYNC_DIR}"
 
-  if ! command -v ossutil >/dev/null 2>&1; then
-    echo "[entrypoint] ossutil not found, cannot sync BGM." >&2
-    exit 1
-  fi
-
-  if [ -z "${OSS_ENDPOINT:-}" ] || [ -z "${OSS_ACCESS_KEY_ID:-}" ] || [ -z "${OSS_ACCESS_KEY_SECRET:-}" ]; then
-    echo "[entrypoint] OSS_ENDPOINT / OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET are required for BGM sync." >&2
-    exit 1
-  fi
-
-  mkdir -p "${BGM_DIR}"
-  echo "[entrypoint] syncing BGM from ${BGM_OSS_URI} to ${BGM_DIR}"
-
-  set -- ossutil sync "${BGM_OSS_URI}" "${BGM_DIR}/" \
+  set -- ossutil sync "${SYNC_URI}" "${SYNC_DIR}/" \
     -e "${OSS_ENDPOINT}" \
     -i "${OSS_ACCESS_KEY_ID}" \
     -k "${OSS_ACCESS_KEY_SECRET}" \
@@ -74,6 +65,33 @@ sync_bgm_from_oss() {
   fi
 
   "$@"
+}
+
+sync_bgm_from_oss() {
+  if [ "${SYNC_BGM_ON_STARTUP:-1}" != "1" ]; then
+    echo "[entrypoint] skip BGM sync because SYNC_BGM_ON_STARTUP=${SYNC_BGM_ON_STARTUP:-0}"
+    return
+  fi
+
+  BGM_DIR="${BGM_DIR:-/app/input/bgm}"
+  BGM_OSS_URI="${BGM_OSS_URI:-oss://goumee-coze/GouMei-Video-Cut/bgm/}"
+  BGM_BACKUP_DIR="${BGM_BACKUP_DIR:-/app/input/bgm-backup}"
+  if [ -z "${BGM_BACKUP_OSS_URI+x}" ]; then
+    BGM_BACKUP_OSS_URI="oss://goumee-coze/GouMei-Video-Cut/bgm-backup/"
+  fi
+
+  if ! command -v ossutil >/dev/null 2>&1; then
+    echo "[entrypoint] ossutil not found, cannot sync BGM." >&2
+    exit 1
+  fi
+
+  if [ -z "${OSS_ENDPOINT:-}" ] || [ -z "${OSS_ACCESS_KEY_ID:-}" ] || [ -z "${OSS_ACCESS_KEY_SECRET:-}" ]; then
+    echo "[entrypoint] OSS_ENDPOINT / OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET are required for BGM sync." >&2
+    exit 1
+  fi
+
+  sync_bgm_prefix "${BGM_OSS_URI}" "${BGM_DIR}" "BGM"
+  sync_bgm_prefix "${BGM_BACKUP_OSS_URI}" "${BGM_BACKUP_DIR}" "BGM backup"
 }
 
 load_env_file

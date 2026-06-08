@@ -183,7 +183,7 @@ videocut serve --host 0.0.0.0 --port 3000
 }
 ```
 
-`GET /bgm` 用来查询实时音乐清单；`overrides.bgm.category + filename` 用来指定某一首 BGM，其中 `filename` 是不带扩展名的歌曲 ID。只指定 `category` 时，会在该分类目录下随机选择一首；都不传时保持全目录随机选择。
+`GET /bgm` 用来查询实时音乐清单，只展示 `BGM_DIR` 的当前歌曲，不展示 `BGM_BACKUP_DIR` 的归档歌曲；`overrides.bgm.category + filename` 用来指定某一首 BGM，其中 `filename` 是不带扩展名的歌曲 ID。只指定 `category` 时，会在该分类目录下随机选择一首；都不传时保持全目录随机选择。
 
 ## API
 
@@ -805,6 +805,7 @@ docker compose logs -f videocut
 - `./data -> /srv/videocut/data`
 - `./temp -> /srv/videocut/temp`
 - `./input/bgm -> /app/input/bgm`
+- `./input/bgm-backup -> /app/input/bgm-backup`
 - `./output -> /app/output`
 - `./fonts -> /app/fonts`
 - `./oss-local -> /srv/videocut/oss-local`

@@ -9,6 +9,7 @@ import videocut.bgm as bgm_module
 from videocut.bgm import apply_bgm
 from videocut.bgm import build_bgm_manifest
 from videocut.bgm import list_bgm_catalog
+from videocut.bgm import resolve_bgm_backup_dir
 from videocut.bgm import resolve_bgm_category_file
 from videocut.bgm import resolve_bgm_dir
 from videocut.bgm import scan_bgm_category_files
@@ -33,6 +34,18 @@ def test_resolve_bgm_dir_uses_configured_relative_path_without_env(tmp_path, mon
     monkeypatch.delenv("BGM_DIR", raising=False)
     result = resolve_bgm_dir(tmp_path, "custom/bgm")
     assert result == tmp_path / "custom" / "bgm"
+
+
+def test_resolve_bgm_backup_dir_defaults_to_repo_input_bgm_backup(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("BGM_BACKUP_DIR", raising=False)
+    result = resolve_bgm_backup_dir(tmp_path)
+    assert result == tmp_path / "input" / "bgm-backup"
+
+
+def test_resolve_bgm_backup_dir_prefers_env_and_resolves_relative_to_root(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("BGM_BACKUP_DIR", "runtime/bgm-backup")
+    result = resolve_bgm_backup_dir(tmp_path)
+    assert result == tmp_path / "runtime" / "bgm-backup"
 
 
 def test_scan_bgm_files_recurses_category_directories(tmp_path) -> None:
@@ -239,6 +252,40 @@ def test_resolve_bgm_category_file_accepts_category_and_filename(tmp_path) -> No
     target.write_text("music", encoding="utf-8")
 
     assert resolve_bgm_category_file(bgm_dir, "舒缓", "1") == target
+
+
+def test_resolve_bgm_category_file_falls_back_to_backup_dir(tmp_path) -> None:
+    bgm_dir = tmp_path / "input" / "bgm"
+    backup_dir = tmp_path / "input" / "bgm-backup"
+    target = backup_dir / "legacy" / "1.mp3"
+    bgm_dir.mkdir(parents=True)
+    target.parent.mkdir(parents=True)
+    target.write_text("music", encoding="utf-8")
+
+    assert resolve_bgm_category_file(bgm_dir, "legacy", "1", backup_bgm_dir=backup_dir) == target
+
+
+def test_resolve_bgm_category_file_prefers_current_dir_over_backup_dir(tmp_path) -> None:
+    bgm_dir = tmp_path / "input" / "bgm"
+    backup_dir = tmp_path / "input" / "bgm-backup"
+    current = bgm_dir / "legacy" / "1.mp3"
+    backup = backup_dir / "legacy" / "1.mp3"
+    current.parent.mkdir(parents=True)
+    backup.parent.mkdir(parents=True)
+    current.write_text("current", encoding="utf-8")
+    backup.write_text("backup", encoding="utf-8")
+
+    assert resolve_bgm_category_file(bgm_dir, "legacy", "1", backup_bgm_dir=backup_dir) == current
+
+
+def test_resolve_bgm_category_file_reports_primary_and_backup_paths_when_missing(tmp_path) -> None:
+    bgm_dir = tmp_path / "input" / "bgm"
+    backup_dir = tmp_path / "input" / "bgm-backup"
+    bgm_dir.mkdir(parents=True)
+    backup_dir.mkdir(parents=True)
+
+    with pytest.raises(RenderError, match="backup checked"):
+        resolve_bgm_category_file(bgm_dir, "legacy", "1", backup_bgm_dir=backup_dir)
 
 
 @pytest.mark.parametrize("filename", ["/tmp/1", "D:\\tmp\\1", "../1", "./1", ".", "nested/1", "1.mp3"])

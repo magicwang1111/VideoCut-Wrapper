@@ -34,6 +34,15 @@ def resolve_bgm_dir(root_dir: str | Path, configured_dir: str | None = None) -> 
     return (Path(root_dir).resolve() / path_obj).resolve()
 
 
+def resolve_bgm_backup_dir(root_dir: str | Path) -> Path:
+    env_dir = os.getenv("BGM_BACKUP_DIR")
+    raw_dir = env_dir.strip() if env_dir and env_dir.strip() else "input/bgm-backup"
+    path_obj = Path(raw_dir).expanduser()
+    if path_obj.is_absolute():
+        return path_obj.resolve()
+    return (Path(root_dir).resolve() / path_obj).resolve()
+
+
 def scan_bgm_files(bgm_dir: Path) -> list[Path]:
     if not bgm_dir.is_dir():
         raise RenderError(f"BGM directory does not exist: {bgm_dir}")
@@ -170,7 +179,7 @@ def write_bgm_manifest(
     return manifest
 
 
-def resolve_bgm_category_dir(bgm_dir: Path, configured_category: str) -> Path:
+def _resolve_bgm_category_dir(bgm_dir: Path, configured_category: str, *, require_exists: bool) -> Path:
     raw_category = configured_category.strip().replace("\\", "/")
     if not raw_category:
         raise RenderError("BGM category must not be empty.")
@@ -194,19 +203,27 @@ def resolve_bgm_category_dir(bgm_dir: Path, configured_category: str) -> Path:
         category_dir.relative_to(base_dir)
     except ValueError as exc:
         raise RenderError(f"BGM category must stay under BGM directory: {configured_category}") from exc
-    if not category_dir.is_dir():
+    if require_exists and not category_dir.is_dir():
         raise RenderError(f"BGM category directory not found: {category_dir}")
     return category_dir
+
+
+def resolve_bgm_category_dir(bgm_dir: Path, configured_category: str) -> Path:
+    return _resolve_bgm_category_dir(bgm_dir, configured_category, require_exists=True)
 
 
 def scan_bgm_category_files(bgm_dir: Path, configured_category: str) -> list[Path]:
     return scan_bgm_files(resolve_bgm_category_dir(bgm_dir, configured_category))
 
 
-def resolve_bgm_category_file(bgm_dir: Path, configured_category: str, configured_filename: str) -> Path:
-    category_dir = resolve_bgm_category_dir(bgm_dir, configured_category)
-    raw_filename = _normalize_bgm_filename_stem(configured_filename)
-
+def _find_bgm_category_file(
+    category_dir: Path,
+    configured_category: str,
+    configured_filename: str,
+    raw_filename: str,
+) -> Path | None:
+    if not category_dir.is_dir():
+        return None
     candidates = sorted(
         p
         for p in category_dir.iterdir()
@@ -216,8 +233,35 @@ def resolve_bgm_category_file(bgm_dir: Path, configured_category: str, configure
         names = ", ".join(p.name for p in candidates)
         raise RenderError(f"Duplicate BGM filename stem in category {configured_category}: {configured_filename} ({names})")
     if not candidates:
-        raise RenderError(f"BGM file not found for filename stem: {category_dir / raw_filename}")
+        return None
     return candidates[0].resolve()
+
+
+def resolve_bgm_category_file(
+    bgm_dir: Path,
+    configured_category: str,
+    configured_filename: str,
+    *,
+    backup_bgm_dir: Path | None = None,
+) -> Path:
+    category_dir = _resolve_bgm_category_dir(bgm_dir, configured_category, require_exists=False)
+    raw_filename = _normalize_bgm_filename_stem(configured_filename)
+
+    primary = _find_bgm_category_file(category_dir, configured_category, configured_filename, raw_filename)
+    if primary is not None:
+        return primary
+
+    backup_category_dir = None
+    if backup_bgm_dir is not None:
+        backup_category_dir = _resolve_bgm_category_dir(backup_bgm_dir, configured_category, require_exists=False)
+        backup = _find_bgm_category_file(backup_category_dir, configured_category, configured_filename, raw_filename)
+        if backup is not None:
+            return backup
+
+    message = f"BGM file not found for filename stem: {category_dir / raw_filename}"
+    if backup_category_dir is not None:
+        message += f" (backup checked: {backup_category_dir / raw_filename})"
+    raise RenderError(message)
 
 
 def apply_bgm(

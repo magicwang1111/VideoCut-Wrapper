@@ -18,6 +18,7 @@ services:
       - ./data:/srv/videocut/data
       - ./temp:/srv/videocut/temp
       - ./input/bgm:/app/input/bgm
+      - ./input/bgm-backup:/app/input/bgm-backup
       - ./output:/app/output
       - ./pipelines:/app/pipelines:ro
       - ./fonts:/app/fonts:ro

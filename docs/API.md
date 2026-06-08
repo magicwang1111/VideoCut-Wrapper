@@ -187,7 +187,7 @@ curl "http://127.0.0.1:3000/health"
 
 ## 5. `GET /bgm`
 
-查询当前运行环境下可用的 BGM 分类和文件清单。接口每次请求都会动态扫描 `BGM_DIR`，返回值里的 `category + filename` 可以直接用于 `/render` 的 `overrides.bgm`，其中 `filename` 是不带扩展名的歌曲 ID。
+查询当前运行环境下可展示的 BGM 分类和文件清单。接口每次请求都会动态扫描 `BGM_DIR`，不会返回 `BGM_BACKUP_DIR` 里的归档歌曲。返回值里的 `category + filename` 可以直接用于 `/render` 的 `overrides.bgm`，其中 `filename` 是不带扩展名的歌曲 ID。
 
 请求：
 
@@ -512,7 +512,7 @@ BGM 指定规则：
 - 支持按类型放子目录；不传 `category` 时，服务端会递归扫描 `/app/input/bgm` 并随机选择一首。
 - `filename` 不允许包含扩展名、`.`、`/`、`\`、绝对路径或 `..` 路径穿越；同一分类下不允许同时存在 `1.mp3` 和 `1.wav` 这类同名 stem 文件。
 - 指定文件或分类目录不存在时任务失败，不会回退随机音乐。
-- BGM 文件仍由容器启动同步逻辑从 `BGM_OSS_URI` 同步到 `/app/input/bgm`，`/render` 不按 OSS key 单独下载音乐。
+- BGM 文件仍由容器启动同步逻辑从 `BGM_OSS_URI` 同步到 `/app/input/bgm`，从 `BGM_BACKUP_OSS_URI` 同步归档歌曲到 `/app/input/bgm-backup`；`/render` 精确指定歌曲时先查当前目录，找不到再查 backup，不按 OSS key 单独下载音乐。
 
 使用用户上传音频：
 
@@ -956,8 +956,10 @@ BGM 配置：
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `BGM_DIR` | `input/bgm` | BGM 文件目录。设置后优先级高于 pipeline 配置里的 `bgm.dir` |
+| `BGM_BACKUP_DIR` | `input/bgm-backup` | 归档 BGM 文件目录。`GET /bgm` 不展示，只在精确指定歌曲找不到当前文件时兜底 |
 | `SYNC_BGM_ON_STARTUP` | `1` | Docker entrypoint 是否启动时同步 BGM |
 | `BGM_OSS_URI` | `oss://goumee-coze/GouMei-Video-Cut/bgm/` | BGM 同步源 |
+| `BGM_BACKUP_OSS_URI` | `oss://goumee-coze/GouMei-Video-Cut/bgm-backup/` | 归档 BGM 同步源，目录结构需和当前 BGM 一致 |
 
 ## 14. 本地联调配置
 

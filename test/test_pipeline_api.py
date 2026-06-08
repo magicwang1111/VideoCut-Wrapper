@@ -83,7 +83,14 @@ def _make_pipeline_payload(name: str = "trim-mixed-dissolve-v1") -> dict:
     }
 
 
-def _configure_api_env(tmp_path, monkeypatch, pipelines_root: Path, *, bgm_dir: Path | None = None) -> None:
+def _configure_api_env(
+    tmp_path,
+    monkeypatch,
+    pipelines_root: Path,
+    *,
+    bgm_dir: Path | None = None,
+    bgm_backup_dir: Path | None = None,
+) -> None:
     monkeypatch.setenv("API_KEYS", "test-key")
     monkeypatch.setenv("OSS_LOCAL_ROOT", str(tmp_path / "oss"))
     monkeypatch.setenv("OSS_PREFIX", "GouMei-Video-Cut")
@@ -94,7 +101,12 @@ def _configure_api_env(tmp_path, monkeypatch, pipelines_root: Path, *, bgm_dir: 
         monkeypatch.delenv("BGM_DIR", raising=False)
     else:
         monkeypatch.setenv("BGM_DIR", str(bgm_dir))
+    if bgm_backup_dir is None:
+        monkeypatch.delenv("BGM_BACKUP_DIR", raising=False)
+    else:
+        monkeypatch.setenv("BGM_BACKUP_DIR", str(bgm_backup_dir))
     monkeypatch.delenv("BGM_OSS_URI", raising=False)
+    monkeypatch.delenv("BGM_BACKUP_OSS_URI", raising=False)
     monkeypatch.delenv("OSS_PUBLIC_ENDPOINT", raising=False)
     monkeypatch.setattr(api_app_module, "TaskQueue", FakeTaskQueue)
 
@@ -680,13 +692,16 @@ def test_bgm_endpoint_returns_catalog_from_runtime_bgm_dir(tmp_path, monkeypatch
     FakeTaskQueue.instances.clear()
     pipelines_root = tmp_path / "pipelines"
     bgm_dir = tmp_path / "runtime" / "bgm"
+    bgm_backup_dir = tmp_path / "runtime" / "bgm-backup"
     _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
     (bgm_dir / "intense").mkdir(parents=True)
     (bgm_dir / "calm").mkdir(parents=True)
+    (bgm_backup_dir / "legacy").mkdir(parents=True)
     (bgm_dir / "intense" / "2.mp3").write_text("intense", encoding="utf-8")
     (bgm_dir / "calm" / "1.mp3").write_text("calm", encoding="utf-8")
     (bgm_dir / "calm" / "note.txt").write_text("ignored", encoding="utf-8")
-    _configure_api_env(tmp_path, monkeypatch, pipelines_root, bgm_dir=bgm_dir)
+    (bgm_backup_dir / "legacy" / "old.mp3").write_text("legacy", encoding="utf-8")
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root, bgm_dir=bgm_dir, bgm_backup_dir=bgm_backup_dir)
 
     with TestClient(api_app_module.create_app()) as client:
         response = client.get("/bgm", headers={"X-Api-Key": "test-key"})
