@@ -7,6 +7,7 @@ from videocut.ffmpeg_config import FFmpegVideoSettings
 from videocut.pipeline.config import ParsedPipelineContext
 from videocut.pipeline.runner import PipelineRunner
 from videocut.pipeline.types import (
+    PipelineBgmConfig,
     PipelineClipConfig,
     PipelineConfig,
     PipelineOutputConfig,
@@ -77,3 +78,46 @@ def test_pipeline_runner_output_and_meta_are_task_unique(tmp_path, monkeypatch) 
     assert not (output_dir / "meta.json").exists()
     assert len(list(output_dir.glob("meta_t_first_*.json"))) == 1
     assert len(list(output_dir.glob("meta_t_second_*.json"))) == 1
+
+
+def test_pipeline_runner_random_bgm_can_use_backup_category(tmp_path, monkeypatch) -> None:
+    ctx = _make_context(tmp_path)
+    assert ctx.config.bgm is None
+    ctx.config.bgm = PipelineBgmConfig(enabled=True, dir="input/bgm", category="legacy", volume=1.0)
+    current_bgm_dir = tmp_path / "input" / "bgm"
+    backup_bgm_dir = tmp_path / "input" / "bgm-backup" / "legacy"
+    current_bgm_dir.mkdir(parents=True)
+    backup_bgm = backup_bgm_dir / "old.mp3"
+    backup_bgm_dir.mkdir(parents=True)
+    backup_bgm.write_text("music", encoding="utf-8")
+    applied_bgm_files: list[Path] = []
+
+    monkeypatch.setattr(
+        runner_module,
+        "resolve_runtime_video_settings",
+        lambda ffmpeg_path, configured: FFmpegVideoSettings(encoder="libx264"),
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "probe_single_video",
+        lambda ffprobe_path, video_path: {"duration": 5.0, "width": 1080, "height": 1920, "fps": 24},
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "normalize_clips",
+        lambda root_dir, ffmpeg_path, clips, qual_preset, res_preset, video_settings: (clips, lambda: None),
+    )
+
+    def fake_concat(ffmpeg_path, clips, junctions, output_path, qual_preset, res_preset, video_settings, task):
+        Path(output_path).write_text("video", encoding="utf-8")
+
+    def fake_apply_bgm(ffmpeg_path, ffprobe_path, video_path, bgm_file, volume, fade_out, task_id=None):
+        applied_bgm_files.append(Path(bgm_file))
+
+    monkeypatch.setattr(runner_module, "ffmpeg_pipeline_concat", fake_concat)
+    monkeypatch.setattr(runner_module, "apply_bgm", fake_apply_bgm)
+
+    result = PipelineRunner(tmp_path).run(ctx, "ffmpeg", "ffprobe", {}, task_id="t_backup_bgm")
+
+    assert result.status == "completed"
+    assert applied_bgm_files == [backup_bgm.resolve()]

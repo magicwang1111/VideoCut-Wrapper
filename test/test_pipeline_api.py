@@ -455,8 +455,11 @@ def test_render_endpoint_accepts_uploaded_user_audio_bgm(tmp_path, monkeypatch) 
 def test_render_endpoint_accepts_bgm_catalog_overrides(tmp_path, monkeypatch) -> None:
     FakeTaskQueue.instances.clear()
     pipelines_root = tmp_path / "pipelines"
+    bgm_dir = tmp_path / "runtime" / "bgm"
     _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
-    _configure_api_env(tmp_path, monkeypatch, pipelines_root)
+    (bgm_dir / "catalog").mkdir(parents=True)
+    (bgm_dir / "catalog" / "song.mp3").write_text("music", encoding="utf-8")
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root, bgm_dir=bgm_dir)
 
     with TestClient(api_app_module.create_app()) as client:
         store = client.app.state.store
@@ -469,7 +472,7 @@ def test_render_endpoint_accepts_bgm_catalog_overrides(tmp_path, monkeypatch) ->
             json={
                 "pipeline": "trim-mixed-dissolve-v1",
                 "clips": ["file1"],
-                "overrides": {"bgm": {"category": "卡点"}},
+                "overrides": {"bgm": {"category": "catalog"}},
             },
         )
         assert category_only.status_code == 200
@@ -480,14 +483,163 @@ def test_render_endpoint_accepts_bgm_catalog_overrides(tmp_path, monkeypatch) ->
             json={
                 "pipeline": "trim-mixed-dissolve-v1",
                 "clips": ["file1"],
-                "overrides": {"bgm": {"category": "卡点", "filename": "机械FUNK"}},
+                "overrides": {"bgm": {"category": "catalog", "filename": "song"}},
             },
         )
         assert category_filename.status_code == 200
         tasks = FakeTaskQueue.instances[-1].tasks
-        assert tasks[-2].payload["overrides"]["bgm"] == {"category": "卡点"}
-        assert tasks[-1].payload["overrides"]["bgm"] == {"category": "卡点", "filename": "机械FUNK"}
+        assert tasks[-2].payload["overrides"]["bgm"] == {"category": "catalog"}
+        assert tasks[-1].payload["overrides"]["bgm"] == {"category": "catalog", "filename": "song"}
         assert "user_bgm" not in tasks[-1].payload
+
+
+def test_render_endpoint_rejects_missing_bgm_category_before_enqueue(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    bgm_dir = tmp_path / "runtime" / "bgm"
+    backup_dir = tmp_path / "runtime" / "bgm-backup"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    bgm_dir.mkdir(parents=True)
+    backup_dir.mkdir(parents=True)
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root, bgm_dir=bgm_dir, bgm_backup_dir=backup_dir)
+
+    with TestClient(api_app_module.create_app()) as client:
+        client.app.state.store.save_file("file1", "GouMei-Video-Cut/inputs/file1.mp4")
+        response = client.post(
+            "/render",
+            headers={"X-Api-Key": "test-key", "Content-Type": "application/json"},
+            json={
+                "pipeline": "trim-mixed-dissolve-v1",
+                "clips": ["file1"],
+                "overrides": {"bgm": {"category": "electronic"}},
+            },
+        )
+
+        assert response.status_code == 400
+        assert response.json() == {
+            "error_code": 2007,
+            "message": "Invalid BGM override.",
+            "details": {
+                "field": "overrides.bgm.category",
+                "category": "electronic",
+                "bgmRoot": str(bgm_dir.resolve()),
+                "backupBgmRoot": str(backup_dir.resolve()),
+                "reason": "category_not_found",
+            },
+        }
+        assert FakeTaskQueue.instances[-1].tasks == []
+
+
+def test_render_endpoint_accepts_exact_bgm_file_from_backup_before_enqueue(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    bgm_dir = tmp_path / "runtime" / "bgm"
+    backup_dir = tmp_path / "runtime" / "bgm-backup"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    bgm_dir.mkdir(parents=True)
+    (backup_dir / "legacy").mkdir(parents=True)
+    (backup_dir / "legacy" / "old.mp3").write_text("music", encoding="utf-8")
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root, bgm_dir=bgm_dir, bgm_backup_dir=backup_dir)
+
+    with TestClient(api_app_module.create_app()) as client:
+        client.app.state.store.save_file("file1", "GouMei-Video-Cut/inputs/file1.mp4")
+        response = client.post(
+            "/render",
+            headers={"X-Api-Key": "test-key", "Content-Type": "application/json"},
+            json={
+                "pipeline": "trim-mixed-dissolve-v1",
+                "clips": ["file1"],
+                "overrides": {"bgm": {"category": "legacy", "filename": "old"}},
+            },
+        )
+
+        assert response.status_code == 200
+        assert FakeTaskQueue.instances[-1].tasks[-1].payload["overrides"]["bgm"] == {
+            "category": "legacy",
+            "filename": "old",
+        }
+
+
+def test_render_endpoint_rejects_missing_exact_bgm_file_before_enqueue(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    bgm_dir = tmp_path / "runtime" / "bgm"
+    backup_dir = tmp_path / "runtime" / "bgm-backup"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    (bgm_dir / "catalog").mkdir(parents=True)
+    backup_dir.mkdir(parents=True)
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root, bgm_dir=bgm_dir, bgm_backup_dir=backup_dir)
+
+    with TestClient(api_app_module.create_app()) as client:
+        client.app.state.store.save_file("file1", "GouMei-Video-Cut/inputs/file1.mp4")
+        response = client.post(
+            "/render",
+            headers={"X-Api-Key": "test-key", "Content-Type": "application/json"},
+            json={
+                "pipeline": "trim-mixed-dissolve-v1",
+                "clips": ["file1"],
+                "overrides": {"bgm": {"category": "catalog", "filename": "missing"}},
+            },
+        )
+
+        assert response.status_code == 400
+        assert response.json()["error_code"] == 2007
+        assert response.json()["details"]["reason"] == "file_not_found"
+        assert response.json()["details"]["filename"] == "missing"
+        assert FakeTaskQueue.instances[-1].tasks == []
+
+
+def test_render_endpoint_accepts_backup_only_bgm_category_random_selection(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    bgm_dir = tmp_path / "runtime" / "bgm"
+    backup_dir = tmp_path / "runtime" / "bgm-backup"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    bgm_dir.mkdir(parents=True)
+    (backup_dir / "legacy").mkdir(parents=True)
+    (backup_dir / "legacy" / "old.mp3").write_text("music", encoding="utf-8")
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root, bgm_dir=bgm_dir, bgm_backup_dir=backup_dir)
+
+    with TestClient(api_app_module.create_app()) as client:
+        client.app.state.store.save_file("file1", "GouMei-Video-Cut/inputs/file1.mp4")
+        response = client.post(
+            "/render",
+            headers={"X-Api-Key": "test-key", "Content-Type": "application/json"},
+            json={
+                "pipeline": "trim-mixed-dissolve-v1",
+                "clips": ["file1"],
+                "overrides": {"bgm": {"category": "legacy"}},
+            },
+        )
+
+        assert response.status_code == 200
+        assert FakeTaskQueue.instances[-1].tasks[-1].payload["overrides"]["bgm"] == {"category": "legacy"}
+
+
+def test_render_endpoint_rejects_unsafe_bgm_category_before_enqueue(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    bgm_dir = tmp_path / "runtime" / "bgm"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    bgm_dir.mkdir(parents=True)
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root, bgm_dir=bgm_dir)
+
+    with TestClient(api_app_module.create_app()) as client:
+        client.app.state.store.save_file("file1", "GouMei-Video-Cut/inputs/file1.mp4")
+        response = client.post(
+            "/render",
+            headers={"X-Api-Key": "test-key", "Content-Type": "application/json"},
+            json={
+                "pipeline": "trim-mixed-dissolve-v1",
+                "clips": ["file1"],
+                "overrides": {"bgm": {"category": "../outside"}},
+            },
+        )
+
+        assert response.status_code == 400
+        assert response.json()["error_code"] == 2007
+        assert response.json()["details"]["reason"] == "invalid_category"
+        assert FakeTaskQueue.instances[-1].tasks == []
 
 
 def test_render_endpoint_rejects_invalid_user_audio_bgm_refs(tmp_path, monkeypatch) -> None:

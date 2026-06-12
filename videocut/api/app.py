@@ -19,9 +19,15 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from videocut.bgm import list_bgm_catalog, resolve_bgm_dir
+from videocut.bgm import (
+    list_bgm_catalog,
+    resolve_bgm_backup_dir,
+    resolve_bgm_category_dir_optional,
+    resolve_bgm_category_file,
+    resolve_bgm_dir,
+)
 from videocut.env import load_project_env
-from videocut.errors import PipelineNotFoundError, VideoCutError
+from videocut.errors import PipelineNotFoundError, RenderError, VideoCutError
 from videocut.log import get_logger, setup_logging
 from videocut.oss import OssClient
 from videocut.pipeline import PipelineRegistry
@@ -326,6 +332,101 @@ def _resolve_user_bgm(store: TaskStore, overrides: dict[str, Any]) -> dict[str, 
     return {"fileId": file_record.file_id, "ossKey": file_record.oss_key}
 
 
+def _pipeline_bgm_dir_config(pipeline_config: dict[str, Any]) -> str | None:
+    bgm = pipeline_config.get("bgm")
+    if not isinstance(bgm, dict):
+        return None
+    value = bgm.get("dir")
+    return value if isinstance(value, str) else None
+
+
+def _bgm_override_error_details(
+    *,
+    category: str,
+    bgm_dir: Path,
+    backup_bgm_dir: Path,
+    reason: str,
+    filename: str | None = None,
+    error: str | None = None,
+) -> dict[str, Any]:
+    details: dict[str, Any] = {
+        "field": "overrides.bgm.category",
+        "category": category,
+        "bgmRoot": str(bgm_dir),
+        "backupBgmRoot": str(backup_bgm_dir),
+        "reason": reason,
+    }
+    if filename is not None:
+        details["filename"] = filename
+    if error is not None:
+        details["error"] = error
+    return details
+
+
+def _validate_bgm_catalog_override(root_dir: Path, pipeline_config: dict[str, Any], overrides: dict[str, Any]) -> None:
+    bgm = overrides.get("bgm")
+    if not isinstance(bgm, dict) or "fileId" in bgm:
+        return
+    category = bgm.get("category")
+    if not isinstance(category, str) or not category.strip():
+        return
+
+    bgm_dir = resolve_bgm_dir(root_dir, _pipeline_bgm_dir_config(pipeline_config))
+    backup_bgm_dir = resolve_bgm_backup_dir(root_dir)
+    filename = bgm.get("filename")
+
+    try:
+        current_category_dir = resolve_bgm_category_dir_optional(bgm_dir, category)
+        backup_category_dir = resolve_bgm_category_dir_optional(backup_bgm_dir, category)
+    except RenderError as exc:
+        raise _invalid_bgm_override(
+            _bgm_override_error_details(
+                category=category,
+                bgm_dir=bgm_dir,
+                backup_bgm_dir=backup_bgm_dir,
+                reason="invalid_category",
+                error=str(exc),
+            )
+        ) from exc
+
+    if isinstance(filename, str) and filename.strip():
+        if current_category_dir is None and backup_category_dir is None:
+            raise _invalid_bgm_override(
+                _bgm_override_error_details(
+                    category=category,
+                    bgm_dir=bgm_dir,
+                    backup_bgm_dir=backup_bgm_dir,
+                    reason="category_not_found",
+                    filename=filename,
+                )
+            )
+        try:
+            resolve_bgm_category_file(bgm_dir, category, filename, backup_bgm_dir=backup_bgm_dir)
+        except RenderError as exc:
+            raise _invalid_bgm_override(
+                _bgm_override_error_details(
+                    category=category,
+                    bgm_dir=bgm_dir,
+                    backup_bgm_dir=backup_bgm_dir,
+                    reason="file_not_found",
+                    filename=filename,
+                    error=str(exc),
+                )
+            ) from exc
+        return
+
+    if current_category_dir is not None or backup_category_dir is not None:
+        return
+    raise _invalid_bgm_override(
+        _bgm_override_error_details(
+            category=category,
+            bgm_dir=bgm_dir,
+            backup_bgm_dir=backup_bgm_dir,
+            reason="category_not_found",
+        )
+    )
+
+
 def _validate_pipeline_clip_count(pipeline_config: dict[str, Any], clip_count: int) -> None:
     required_clip_count = pipeline_config.get("required_clip_count")
     if required_clip_count is None:
@@ -539,6 +640,7 @@ def create_app() -> FastAPI:
         resolved_keys = _resolve_clip_refs(store, oss, body.clips, strict_pipeline=True)
         overrides = deepcopy(body.overrides)
         user_bgm = _resolve_user_bgm(store, overrides)
+        _validate_bgm_catalog_override(app.state.root_dir, pipeline_record.config, overrides)
         payload = {
             "clips": resolved_keys,
             "pipeline_config": pipeline_record.config,

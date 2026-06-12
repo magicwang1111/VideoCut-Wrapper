@@ -12,6 +12,7 @@ from videocut.bgm import (
     apply_bgm,
     resolve_bgm_backup_dir,
     resolve_bgm_dir,
+    resolve_bgm_category_dir_optional,
     resolve_bgm_category_file,
     scan_bgm_category_files,
     scan_bgm_files,
@@ -389,7 +390,13 @@ class PipelineRunner:
                             backup_bgm_dir=resolve_bgm_backup_dir(self.root_dir),
                         )
                     elif config.bgm.category:
-                        bgm_files = scan_bgm_category_files(bgm_dir_path, config.bgm.category)
+                        backup_bgm_dir_path = resolve_bgm_backup_dir(self.root_dir)
+                        if resolve_bgm_category_dir_optional(bgm_dir_path, config.bgm.category) is not None:
+                            bgm_files = scan_bgm_category_files(bgm_dir_path, config.bgm.category)
+                        elif resolve_bgm_category_dir_optional(backup_bgm_dir_path, config.bgm.category) is not None:
+                            bgm_files = scan_bgm_category_files(backup_bgm_dir_path, config.bgm.category)
+                        else:
+                            bgm_files = scan_bgm_category_files(bgm_dir_path, config.bgm.category)
                         chosen = random.choice(bgm_files)
                     else:
                         bgm_files = scan_bgm_files(bgm_dir_path)

@@ -10,6 +10,7 @@ from videocut.bgm import apply_bgm
 from videocut.bgm import build_bgm_manifest
 from videocut.bgm import list_bgm_catalog
 from videocut.bgm import resolve_bgm_backup_dir
+from videocut.bgm import resolve_bgm_category_dir_optional
 from videocut.bgm import resolve_bgm_category_file
 from videocut.bgm import resolve_bgm_dir
 from videocut.bgm import scan_bgm_category_files
@@ -224,6 +225,23 @@ def test_scan_bgm_category_files_rejects_missing_category(tmp_path) -> None:
 
     with pytest.raises(RenderError, match="BGM category directory not found"):
         scan_bgm_category_files(bgm_dir, "舒缓")
+
+
+def test_resolve_bgm_category_dir_optional_returns_existing_category(tmp_path) -> None:
+    bgm_dir = tmp_path / "input" / "bgm"
+    category_dir = bgm_dir / "catalog"
+    category_dir.mkdir(parents=True)
+
+    assert resolve_bgm_category_dir_optional(bgm_dir, "catalog") == category_dir
+    assert resolve_bgm_category_dir_optional(bgm_dir, "missing") is None
+
+
+def test_resolve_bgm_category_dir_optional_reuses_category_path_validation(tmp_path) -> None:
+    bgm_dir = tmp_path / "input" / "bgm"
+    bgm_dir.mkdir(parents=True)
+
+    with pytest.raises(RenderError, match="relative directory"):
+        resolve_bgm_category_dir_optional(bgm_dir, "../outside")
 
 
 def test_scan_bgm_category_files_rejects_category_without_audio(tmp_path) -> None:

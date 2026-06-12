@@ -212,6 +212,11 @@ def resolve_bgm_category_dir(bgm_dir: Path, configured_category: str) -> Path:
     return _resolve_bgm_category_dir(bgm_dir, configured_category, require_exists=True)
 
 
+def resolve_bgm_category_dir_optional(bgm_dir: Path, configured_category: str) -> Path | None:
+    category_dir = _resolve_bgm_category_dir(bgm_dir, configured_category, require_exists=False)
+    return category_dir if category_dir.is_dir() else None
+
+
 def scan_bgm_category_files(bgm_dir: Path, configured_category: str) -> list[Path]:
     return scan_bgm_files(resolve_bgm_category_dir(bgm_dir, configured_category))
 
