@@ -7,10 +7,8 @@ category-only random BGM selection from the backup BGM library.
 Run:
 python api-test/test_bgm_category_preflight.py
 
-Optional backup render:
-set BACKUP_BGM_CATEGORY=legacy
-set DOWNLOAD=0
-python api-test/test_bgm_category_preflight.py
+Default backup render category:
+oss://goumee-coze/GouMei-Video-Cut/bgm-backup/卡点/
 """
 
 from __future__ import annotations
@@ -32,6 +30,20 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from http_test_data import REAL_OSS_TEST_CLIP_GROUPS, validate_group_ids  # noqa: E402
+from videocut.env import load_env_file, load_project_env  # noqa: E402
+
+
+DEFAULT_SERVER_ENV_FILE = "/data/env/videocut.env"
+
+LOADED_ENV_FILES = [
+    env_path
+    for env_path in (
+        os.getenv("VIDEOCUT_ENV_FILE"),
+        DEFAULT_SERVER_ENV_FILE,
+    )
+    if env_path and load_env_file(env_path)
+]
+load_project_env(REPO_ROOT)
 
 
 def first_csv_value(value: str | None) -> str | None:
@@ -48,8 +60,8 @@ API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:3000").rstrip("/")
 API_KEY = os.getenv("API_KEY") or os.getenv("VIDEOCUT_API_KEY") or first_csv_value(os.getenv("API_KEYS")) or "change-me"
 PIPELINE = os.getenv("PIPELINE", "bgm-concat")
 GROUP_ID = int(os.getenv("GROUP_ID", "1"))
-MISSING_BGM_CATEGORY = os.getenv("MISSING_BGM_CATEGORY", "__codex_missing_bgm_category__")
-BACKUP_BGM_CATEGORY = os.getenv("BACKUP_BGM_CATEGORY", "").strip()
+MISSING_BGM_CATEGORY = os.getenv("MISSING_BGM_CATEGORY", "20260612测试")
+BACKUP_BGM_CATEGORY = os.getenv("BACKUP_BGM_CATEGORY", "卡点").strip()
 DOWNLOAD = os.getenv("DOWNLOAD", "0") == "1"
 DOWNLOAD_DIR = Path(__file__).resolve().parent / "downloads"
 REQUEST_TIMEOUT_SECONDS = int(os.getenv("REQUEST_TIMEOUT_SECONDS", "60"))
@@ -212,6 +224,7 @@ def run_backup_category_render() -> None:
 
 
 def main() -> int:
+    print(f"[config] loaded_env_files={LOADED_ENV_FILES or '<none>'}")
     print(f"[config] API_BASE_URL={API_BASE_URL}")
     print(f"[config] API_KEY_SET={bool(API_KEY and API_KEY != 'change-me')}")
     print(f"[config] pipeline={PIPELINE}, group={GROUP_ID}")
