@@ -67,6 +67,15 @@ def _optional_str(value: object) -> str | None:
     return str(value).strip() if isinstance(value, str) and str(value).strip() else None
 
 
+def _parse_bgm_source(raw: object, base: PipelineBgmConfig | None = None) -> str:
+    if not isinstance(raw, dict) or "source" not in raw:
+        return base.source if base else "catalog"
+    source = _optional_str(raw.get("source"))
+    if source not in {"catalog", "template"}:
+        raise VideoCutError('bgm.source must be "catalog" or "template".')
+    return source
+
+
 def parse_bgm_config(raw: object, base: PipelineBgmConfig | None = None) -> PipelineBgmConfig | None:
     if not isinstance(raw, dict):
         return base
@@ -78,6 +87,7 @@ def parse_bgm_config(raw: object, base: PipelineBgmConfig | None = None) -> Pipe
         filename = None
     return PipelineBgmConfig(
         enabled=bool(raw["enabled"]) if "enabled" in raw else (base.enabled if base else True),
+        source=_parse_bgm_source(raw, base),  # type: ignore[arg-type]
         dir=_optional_str(raw.get("dir")) if "dir" in raw else (base.dir if base else None),
         category=category,
         filename=filename,
@@ -330,6 +340,7 @@ def _clone_bgm(config: PipelineBgmConfig | None) -> PipelineBgmConfig | None:
         return None
     return PipelineBgmConfig(
         enabled=config.enabled,
+        source=config.source,
         dir=config.dir,
         category=config.category,
         filename=config.filename,

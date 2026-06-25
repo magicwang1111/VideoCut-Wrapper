@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
+import time
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from urllib.parse import quote, urlparse
 from uuid import uuid4
@@ -11,6 +13,7 @@ from videocut.errors import RenderError
 
 _BGM_EXTENSIONS = {".mp3", ".wav", ".aac", ".ogg", ".flac", ".m4a"}
 _DEFAULT_BGM_OSS_URI = "oss://goumee-coze/GouMei-Video-Cut/bgm/"
+_DEFAULT_BGM_TEMPLATE_OSS_URI = "oss://goumee-coze/GouMei-Video-Cut/bgm-templete/"
 _DEFAULT_OSS_BUCKET = "goumee-coze"
 _DEFAULT_OSS_ENDPOINT = "oss-cn-hangzhou.aliyuncs.com"
 _BGM_CATEGORY_DISPLAY_NAMES = {
@@ -21,6 +24,18 @@ _BGM_MANIFEST_PATH_RULE = (
     "API overrides.bgm.category + overrides.bgm.filename uses the category and extensionless filename fields below, "
     "relative to /app/input/bgm."
 )
+
+
+class BgmTemplateSyncError(RuntimeError):
+    def __init__(self, reason: str, detail: str, *, returncode: int | None = None) -> None:
+        super().__init__(detail)
+        self.reason = reason
+        self.detail = detail
+        self.returncode = returncode
+
+
+def allowed_bgm_extensions() -> list[str]:
+    return sorted(_BGM_EXTENSIONS)
 
 
 def resolve_bgm_dir(root_dir: str | Path, configured_dir: str | None = None) -> Path:
@@ -37,6 +52,15 @@ def resolve_bgm_dir(root_dir: str | Path, configured_dir: str | None = None) -> 
 def resolve_bgm_backup_dir(root_dir: str | Path) -> Path:
     env_dir = os.getenv("BGM_BACKUP_DIR")
     raw_dir = env_dir.strip() if env_dir and env_dir.strip() else "input/bgm-backup"
+    path_obj = Path(raw_dir).expanduser()
+    if path_obj.is_absolute():
+        return path_obj.resolve()
+    return (Path(root_dir).resolve() / path_obj).resolve()
+
+
+def resolve_bgm_template_dir(root_dir: str | Path) -> Path:
+    env_dir = os.getenv("BGM_TEMPLATE_DIR")
+    raw_dir = env_dir.strip() if env_dir and env_dir.strip() else "input/bgm-templete"
     path_obj = Path(raw_dir).expanduser()
     if path_obj.is_absolute():
         return path_obj.resolve()
@@ -61,6 +85,16 @@ def resolve_bgm_oss_uri(configured_uri: str | None = None) -> str:
         env_uri.strip()
         if env_uri and env_uri.strip()
         else (configured_uri.strip() if configured_uri and configured_uri.strip() else _DEFAULT_BGM_OSS_URI)
+    )
+    return raw_uri.rstrip("/") + "/"
+
+
+def resolve_bgm_template_oss_uri(configured_uri: str | None = None) -> str:
+    env_uri = os.getenv("BGM_TEMPLATE_OSS_URI")
+    raw_uri = (
+        env_uri.strip()
+        if env_uri and env_uri.strip()
+        else (configured_uri.strip() if configured_uri and configured_uri.strip() else _DEFAULT_BGM_TEMPLATE_OSS_URI)
     )
     return raw_uri.rstrip("/") + "/"
 
@@ -103,6 +137,10 @@ def _normalize_bgm_filename_stem(configured_filename: str) -> str:
     ):
         raise RenderError(f"BGM filename must be an extensionless plain file name under BGM category: {configured_filename}")
     return raw_filename
+
+
+def normalize_bgm_filename_stem(configured_filename: str) -> str:
+    return _normalize_bgm_filename_stem(configured_filename)
 
 
 def list_bgm_catalog(bgm_dir: Path, *, oss_uri_base: str | None = None) -> dict[str, object]:
@@ -179,7 +217,7 @@ def write_bgm_manifest(
     return manifest
 
 
-def _resolve_bgm_category_dir(bgm_dir: Path, configured_category: str, *, require_exists: bool) -> Path:
+def normalize_bgm_category(configured_category: str) -> str:
     raw_category = configured_category.strip().replace("\\", "/")
     if not raw_category:
         raise RenderError("BGM category must not be empty.")
@@ -196,6 +234,12 @@ def _resolve_bgm_category_dir(bgm_dir: Path, configured_category: str, *, requir
         or any(part in {".", ".."} for part in category_parts)
     ):
         raise RenderError(f"BGM category must be a relative directory under BGM directory: {configured_category}")
+    return "/".join(category_parts)
+
+
+def _resolve_bgm_category_dir(bgm_dir: Path, configured_category: str, *, require_exists: bool) -> Path:
+    raw_category = normalize_bgm_category(configured_category)
+    relative_category = Path(raw_category)
 
     base_dir = bgm_dir.resolve()
     category_dir = (base_dir / relative_category).resolve()
@@ -215,6 +259,10 @@ def resolve_bgm_category_dir(bgm_dir: Path, configured_category: str) -> Path:
 def resolve_bgm_category_dir_optional(bgm_dir: Path, configured_category: str) -> Path | None:
     category_dir = _resolve_bgm_category_dir(bgm_dir, configured_category, require_exists=False)
     return category_dir if category_dir.is_dir() else None
+
+
+def resolve_bgm_category_dir_for_write(bgm_dir: Path, configured_category: str) -> Path:
+    return _resolve_bgm_category_dir(bgm_dir, configured_category, require_exists=False)
 
 
 def scan_bgm_category_files(bgm_dir: Path, configured_category: str) -> list[Path]:
@@ -267,6 +315,122 @@ def resolve_bgm_category_file(
     if backup_category_dir is not None:
         message += f" (backup checked: {backup_category_dir / raw_filename})"
     raise RenderError(message)
+
+
+def validate_bgm_directory_files(bgm_dir: Path) -> dict[str, object]:
+    base_dir = bgm_dir.resolve()
+    invalid_files: list[dict[str, str]] = []
+    valid_audio_files = 0
+    if base_dir.is_dir():
+        for item in sorted((p for p in base_dir.rglob("*") if p.is_file()), key=lambda p: p.relative_to(base_dir).as_posix()):
+            relative_path = item.relative_to(base_dir).as_posix()
+            suffix = item.suffix.lower()
+            if suffix in _BGM_EXTENSIONS:
+                valid_audio_files += 1
+            else:
+                invalid_files.append(
+                    {
+                        "path": relative_path,
+                        "reason": "unsupported_extension",
+                        "extension": suffix,
+                    }
+                )
+    return {
+        "validAudioFiles": valid_audio_files,
+        "invalidFiles": invalid_files,
+        "allowedExtensions": allowed_bgm_extensions(),
+    }
+
+
+def _truncate_sync_detail(value: str) -> str:
+    detail = value.strip()
+    if len(detail) > 2000:
+        return "...\n" + detail[-2000:]
+    return detail
+
+
+def _resolve_ossutil_path() -> str:
+    raw_path = os.getenv("OSSUTIL_PATH", "ossutil64").strip() or "ossutil64"
+    resolved = shutil.which(raw_path)
+    if resolved:
+        return resolved
+    candidate = Path(raw_path)
+    if candidate.is_file():
+        return str(candidate)
+    raise BgmTemplateSyncError("ossutil_not_found", f"OSSUTIL_PATH is not executable or not found: {raw_path}")
+
+
+def sync_bgm_template_from_oss(root_dir: str | Path, *, category: str | None = None) -> dict[str, object]:
+    template_dir = resolve_bgm_template_dir(root_dir)
+    template_oss_uri = resolve_bgm_template_oss_uri()
+    normalized_category = normalize_bgm_category(category) if isinstance(category, str) and category.strip() else None
+    scope = "category" if normalized_category else "all"
+    source_uri = template_oss_uri if normalized_category is None else template_oss_uri + normalized_category.rstrip("/") + "/"
+    target_dir = (
+        template_dir
+        if normalized_category is None
+        else resolve_bgm_category_dir_for_write(template_dir, normalized_category)
+    )
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    endpoint = os.getenv("OSS_ENDPOINT")
+    access_key_id = os.getenv("OSS_ACCESS_KEY_ID")
+    access_key_secret = os.getenv("OSS_ACCESS_KEY_SECRET")
+    if not endpoint or not access_key_id or not access_key_secret:
+        raise BgmTemplateSyncError(
+            "missing_credentials",
+            "OSS_ENDPOINT / OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET are required for BGM template sync.",
+        )
+
+    command = [
+        _resolve_ossutil_path(),
+        "sync",
+        source_uri,
+        str(target_dir) + os.sep,
+        "-e",
+        endpoint,
+        "-i",
+        access_key_id,
+        "-k",
+        access_key_secret,
+        "-u",
+        "-f",
+    ]
+    sts_token = os.getenv("OSS_STS_TOKEN")
+    if sts_token:
+        command.extend(["-t", sts_token])
+
+    timeout_seconds = int(os.getenv("BGM_TEMPLATE_SYNC_TIMEOUT_SECONDS", "600"))
+    started_at = time.monotonic()
+    try:
+        result = subprocess.run(
+            command,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise BgmTemplateSyncError(
+            "timeout",
+            f"ossutil sync timed out after {timeout_seconds} seconds.",
+        ) from exc
+    if result.returncode != 0:
+        detail = _truncate_sync_detail(result.stderr or result.stdout or "")
+        raise BgmTemplateSyncError("ossutil_failed", detail, returncode=result.returncode)
+
+    validation_root = target_dir if normalized_category else template_dir
+    return {
+        "scope": scope,
+        "category": normalized_category,
+        "templateBgmRoot": str(template_dir.resolve()),
+        "templateBgmOssUri": source_uri,
+        "durationSeconds": round(time.monotonic() - started_at, 3),
+        "validation": validate_bgm_directory_files(validation_root),
+    }
 
 
 def apply_bgm(

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import subprocess
 from dataclasses import asdict
 import importlib
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -15,6 +17,7 @@ from videocut.pipeline.types import PipelineVariableDef
 from videocut.store import PipelineRecord, TaskRecord, TaskStore
 
 api_app_module = importlib.import_module("videocut.api.app")
+bgm_module = importlib.import_module("videocut.bgm")
 
 
 class FakeTaskQueue:
@@ -90,6 +93,7 @@ def _configure_api_env(
     *,
     bgm_dir: Path | None = None,
     bgm_backup_dir: Path | None = None,
+    bgm_template_dir: Path | None = None,
 ) -> None:
     monkeypatch.setenv("API_KEYS", "test-key")
     monkeypatch.setenv("OSS_LOCAL_ROOT", str(tmp_path / "oss"))
@@ -105,8 +109,14 @@ def _configure_api_env(
         monkeypatch.delenv("BGM_BACKUP_DIR", raising=False)
     else:
         monkeypatch.setenv("BGM_BACKUP_DIR", str(bgm_backup_dir))
+    if bgm_template_dir is None:
+        monkeypatch.delenv("BGM_TEMPLATE_DIR", raising=False)
+    else:
+        monkeypatch.setenv("BGM_TEMPLATE_DIR", str(bgm_template_dir))
     monkeypatch.delenv("BGM_OSS_URI", raising=False)
     monkeypatch.delenv("BGM_BACKUP_OSS_URI", raising=False)
+    monkeypatch.delenv("BGM_TEMPLATE_OSS_URI", raising=False)
+    monkeypatch.delenv("BGM_TEMPLATE_SYNC_TIMEOUT_SECONDS", raising=False)
     monkeypatch.delenv("OSS_PUBLIC_ENDPOINT", raising=False)
     monkeypatch.setattr(api_app_module, "TaskQueue", FakeTaskQueue)
 
@@ -491,6 +501,230 @@ def test_render_endpoint_accepts_bgm_catalog_overrides(tmp_path, monkeypatch) ->
         assert tasks[-2].payload["overrides"]["bgm"] == {"category": "catalog"}
         assert tasks[-1].payload["overrides"]["bgm"] == {"category": "catalog", "filename": "song"}
         assert "user_bgm" not in tasks[-1].payload
+
+
+def test_admin_bgm_template_sync_all_uses_incremental_sync_and_reports_invalid_files(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    template_dir = tmp_path / "runtime" / "bgm-templete"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    (template_dir / "测试1").mkdir(parents=True)
+    (template_dir / "测试1" / "生活感.mp3").write_text("music", encoding="utf-8")
+    (template_dir / "测试1" / "readme.txt").write_text("not audio", encoding="utf-8")
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root, bgm_template_dir=template_dir)
+    monkeypatch.setenv("OSS_ENDPOINT", "oss-cn-hangzhou.aliyuncs.com")
+    monkeypatch.setenv("OSS_ACCESS_KEY_ID", "test-id")
+    monkeypatch.setenv("OSS_ACCESS_KEY_SECRET", "test-secret")
+    monkeypatch.setenv("BGM_TEMPLATE_OSS_URI", "oss://goumee-coze/GouMei-Video-Cut/bgm-templete/")
+    monkeypatch.setattr(bgm_module.shutil, "which", lambda command: "/usr/local/bin/ossutil64")
+    calls: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="synced", stderr="")
+
+    monkeypatch.setattr(bgm_module.subprocess, "run", fake_run)
+
+    with TestClient(api_app_module.create_app()) as client:
+        response = client.post(
+            "/admin/bgm-template/sync",
+            headers={"X-Api-Key": "test-key", "Content-Type": "application/json"},
+            json={},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["ok"] is True
+        assert body["scope"] == "all"
+        assert body["category"] is None
+        assert body["templateBgmRoot"] == str(template_dir.resolve())
+        assert body["templateBgmOssUri"] == "oss://goumee-coze/GouMei-Video-Cut/bgm-templete/"
+        assert body["validation"]["validAudioFiles"] == 1
+        assert body["validation"]["invalidFiles"] == [
+            {"path": "测试1/readme.txt", "reason": "unsupported_extension", "extension": ".txt"}
+        ]
+        assert calls == [
+            [
+                "/usr/local/bin/ossutil64",
+                "sync",
+                "oss://goumee-coze/GouMei-Video-Cut/bgm-templete/",
+                str(template_dir.resolve()) + os.sep,
+                "-e",
+                "oss-cn-hangzhou.aliyuncs.com",
+                "-i",
+                "test-id",
+                "-k",
+                "test-secret",
+                "-u",
+                "-f",
+            ]
+        ]
+
+        empty_body_response = client.post(
+            "/admin/bgm-template/sync",
+            headers={"X-Api-Key": "test-key"},
+        )
+        assert empty_body_response.status_code == 200
+        assert empty_body_response.json()["scope"] == "all"
+        assert calls[-1][1:4] == [
+            "sync",
+            "oss://goumee-coze/GouMei-Video-Cut/bgm-templete/",
+            str(template_dir.resolve()) + os.sep,
+        ]
+
+
+def test_admin_bgm_template_sync_category_and_errors(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    template_dir = tmp_path / "runtime" / "bgm-templete"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    (template_dir / "测试1").mkdir(parents=True)
+    (template_dir / "测试1" / "生活感.mp3").write_text("music", encoding="utf-8")
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root, bgm_template_dir=template_dir)
+    monkeypatch.setenv("OSS_ENDPOINT", "oss-cn-hangzhou.aliyuncs.com")
+    monkeypatch.setenv("OSS_ACCESS_KEY_ID", "test-id")
+    monkeypatch.setenv("OSS_ACCESS_KEY_SECRET", "test-secret")
+    monkeypatch.setenv("BGM_TEMPLATE_OSS_URI", "oss://goumee-coze/GouMei-Video-Cut/bgm-templete/")
+    monkeypatch.setattr(bgm_module.shutil, "which", lambda command: "/usr/local/bin/ossutil64")
+    calls: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="synced", stderr="")
+
+    monkeypatch.setattr(bgm_module.subprocess, "run", fake_run)
+
+    with TestClient(api_app_module.create_app()) as client:
+        category_response = client.post(
+            "/admin/bgm-template/sync",
+            headers={"X-Api-Key": "test-key", "Content-Type": "application/json"},
+            json={"category": "测试1"},
+        )
+        assert category_response.status_code == 200
+        assert category_response.json()["scope"] == "category"
+        assert category_response.json()["category"] == "测试1"
+        assert calls[-1] == [
+            "/usr/local/bin/ossutil64",
+            "sync",
+            "oss://goumee-coze/GouMei-Video-Cut/bgm-templete/测试1/",
+            str((template_dir / "测试1").resolve()) + os.sep,
+            "-e",
+            "oss-cn-hangzhou.aliyuncs.com",
+            "-i",
+            "test-id",
+            "-k",
+            "test-secret",
+            "-u",
+            "-f",
+        ]
+
+        invalid_response = client.post(
+            "/admin/bgm-template/sync",
+            headers={"X-Api-Key": "test-key", "Content-Type": "application/json"},
+            json={"category": "../bad"},
+        )
+        assert invalid_response.status_code == 400
+        assert invalid_response.json()["details"]["reason"] == "invalid_category"
+
+        client.app.state.bgm_template_sync_lock.acquire()
+        try:
+            conflict_response = client.post(
+                "/admin/bgm-template/sync",
+                headers={"X-Api-Key": "test-key", "Content-Type": "application/json"},
+                json={},
+            )
+        finally:
+            client.app.state.bgm_template_sync_lock.release()
+        assert conflict_response.status_code == 409
+        assert conflict_response.json()["error_code"] == 3005
+
+
+def test_render_endpoint_accepts_template_bgm_and_hides_it_from_catalog(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    bgm_dir = tmp_path / "runtime" / "bgm"
+    template_dir = tmp_path / "runtime" / "bgm-templete"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    (bgm_dir / "catalog").mkdir(parents=True)
+    (bgm_dir / "catalog" / "public.mp3").write_text("music", encoding="utf-8")
+    (template_dir / "测试1").mkdir(parents=True)
+    (template_dir / "测试1" / "生活感.mp3").write_text("music", encoding="utf-8")
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root, bgm_dir=bgm_dir, bgm_template_dir=template_dir)
+
+    with TestClient(api_app_module.create_app()) as client:
+        client.app.state.store.save_file("file1", "GouMei-Video-Cut/inputs/file1.mp4")
+        response = client.post(
+            "/render",
+            headers={"X-Api-Key": "test-key", "Content-Type": "application/json"},
+            json={
+                "pipeline": "trim-mixed-dissolve-v1",
+                "clips": ["file1"],
+                "overrides": {"bgm": {"source": "template", "category": "测试1", "filename": "生活感"}},
+            },
+        )
+
+        assert response.status_code == 200
+        assert FakeTaskQueue.instances[-1].tasks[-1].payload["overrides"]["bgm"] == {
+            "source": "template",
+            "category": "测试1",
+            "filename": "生活感",
+        }
+
+        catalog = client.get("/bgm", headers={"X-Api-Key": "test-key"})
+        assert catalog.status_code == 200
+        assert catalog.json()["files"] == [
+            {
+                "category": "catalog",
+                "displayName": "catalog",
+                "filename": "public",
+                "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/catalog/public.mp3",
+            }
+        ]
+
+
+def test_render_endpoint_rejects_invalid_template_bgm_before_enqueue(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    template_dir = tmp_path / "runtime" / "bgm-templete"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    (template_dir / "测试1").mkdir(parents=True)
+    (template_dir / "测试1" / "生活感.mp3").write_text("music", encoding="utf-8")
+    (template_dir / "unsupported").mkdir(parents=True)
+    (template_dir / "unsupported" / "生活感.txt").write_text("not audio", encoding="utf-8")
+    (template_dir / "empty").mkdir(parents=True)
+    (template_dir / "empty" / "note.txt").write_text("not audio", encoding="utf-8")
+    (template_dir / "other").mkdir(parents=True)
+    (template_dir / "other" / "别的.mp3").write_text("music", encoding="utf-8")
+    (template_dir / "duplicate").mkdir(parents=True)
+    (template_dir / "duplicate" / "生活感.mp3").write_text("music", encoding="utf-8")
+    (template_dir / "duplicate" / "生活感.wav").write_text("music", encoding="utf-8")
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root, bgm_template_dir=template_dir)
+
+    cases = [
+        ({"source": "template", "filename": "生活感"}, "category_required"),
+        ({"source": "template", "category": "测试1"}, "filename_required"),
+        ({"source": "template", "category": "missing", "filename": "生活感"}, "category_not_found"),
+        ({"source": "template", "category": "unsupported", "filename": "生活感"}, "unsupported_extension"),
+        ({"source": "template", "category": "empty", "filename": "生活感"}, "no_audio_files"),
+        ({"source": "template", "category": "other", "filename": "生活感"}, "file_not_found"),
+        ({"source": "template", "category": "duplicate", "filename": "生活感"}, "duplicate_filename"),
+    ]
+
+    with TestClient(api_app_module.create_app()) as client:
+        client.app.state.store.save_file("file1", "GouMei-Video-Cut/inputs/file1.mp4")
+        for bgm_override, reason in cases:
+            response = client.post(
+                "/render",
+                headers={"X-Api-Key": "test-key", "Content-Type": "application/json"},
+                json={
+                    "pipeline": "trim-mixed-dissolve-v1",
+                    "clips": ["file1"],
+                    "overrides": {"bgm": bgm_override},
+                },
+            )
+            assert response.status_code == 400
+            assert response.json()["details"]["reason"] == reason
+        assert FakeTaskQueue.instances[-1].tasks == []
 
 
 def test_render_endpoint_rejects_missing_bgm_category_before_enqueue(tmp_path, monkeypatch) -> None:

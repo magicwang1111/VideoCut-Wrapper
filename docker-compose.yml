@@ -19,6 +19,7 @@ services:
       - ./temp:/srv/videocut/temp
       - ./input/bgm:/app/input/bgm
       - ./input/bgm-backup:/app/input/bgm-backup
+      - ./input/bgm-templete:/app/input/bgm-templete
       - ./output:/app/output
       - ./pipelines:/app/pipelines:ro
       - ./fonts:/app/fonts:ro

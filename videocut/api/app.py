@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import re
+import threading
 from copy import deepcopy
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -20,11 +22,16 @@ from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from videocut.bgm import (
+    BgmTemplateSyncError,
+    allowed_bgm_extensions,
     list_bgm_catalog,
+    normalize_bgm_filename_stem,
     resolve_bgm_backup_dir,
     resolve_bgm_category_dir_optional,
     resolve_bgm_category_file,
     resolve_bgm_dir,
+    resolve_bgm_template_dir,
+    sync_bgm_template_from_oss,
 )
 from videocut.env import load_project_env
 from videocut.errors import PipelineNotFoundError, RenderError, VideoCutError
@@ -45,7 +52,7 @@ AUDIO_UPLOAD_EXTS = {".mp3", ".wav", ".aac", ".ogg", ".flac", ".m4a"}
 ASSET_UPLOAD_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".png", ".jpg", ".jpeg", ".webp"}
 ALLOWED_UPLOAD_EXTS = ASSET_UPLOAD_EXTS | AUDIO_UPLOAD_EXTS
 MAX_UPLOAD_BYTES = 500 * 1024 * 1024
-BGM_OVERRIDE_FIELDS = {"fileId", "enabled", "dir", "category", "filename", "volume", "fade_out"}
+BGM_OVERRIDE_FIELDS = {"fileId", "enabled", "source", "dir", "category", "filename", "volume", "fade_out"}
 
 
 class ApiErrorCode(IntEnum):
@@ -65,6 +72,8 @@ class ApiErrorCode(IntEnum):
     QUEUE_FULL = 3002
     FILE_TOO_LARGE = 3003
     TASK_OUTPUT_URL_INVALID = 3004
+    BGM_TEMPLATE_SYNC_RUNNING = 3005
+    BGM_TEMPLATE_SYNC_FAILED = 9002
     INTERNAL_ERROR = 9001
 
 
@@ -72,6 +81,10 @@ class RenderBody(BaseModel):
     pipeline: str
     clips: list[str] = Field(default_factory=list)
     overrides: dict[str, Any] = Field(default_factory=dict)
+
+
+class BgmTemplateSyncBody(BaseModel):
+    category: str | None = None
 
 
 def api_error_payload(error_code: ApiErrorCode | int, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -181,6 +194,16 @@ def require_content_type(request: Request, expected: str) -> None:
         )
 
 
+def request_has_body(request: Request) -> bool:
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            return int(content_length) > 0
+        except ValueError:
+            return True
+    return bool(request.headers.get("transfer-encoding"))
+
+
 def _create_store_record(task_id: str, task_kind: str, source_name: str, payload: dict[str, Any]) -> TaskRecord:
     return TaskRecord(
         id=task_id,
@@ -269,10 +292,14 @@ def _invalid_bgm_override(details: dict[str, Any]) -> HTTPException:
 
 
 def _validate_optional_bgm_field_types(bgm: dict[str, Any]) -> None:
-    for field in ("dir", "category", "filename"):
+    for field in ("source", "dir", "category", "filename"):
         value = bgm.get(field)
         if field in bgm and not isinstance(value, str):
             raise _invalid_bgm_override({"field": f"overrides.bgm.{field}", "expected": "string"})
+
+    source = bgm.get("source")
+    if "source" in bgm and source not in {"catalog", "template"}:
+        raise _invalid_bgm_override({"field": "overrides.bgm.source", "expected": "catalog|template"})
 
     for field in ("volume", "fade_out"):
         value = bgm.get(field)
@@ -363,9 +390,159 @@ def _bgm_override_error_details(
     return details
 
 
+def _bgm_template_error_details(
+    *,
+    template_bgm_dir: Path,
+    reason: str,
+    category: str | None = None,
+    filename: str | None = None,
+    field: str = "overrides.bgm",
+    error: str | None = None,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    details: dict[str, Any] = {
+        "field": field,
+        "source": "template",
+        "templateBgmRoot": str(template_bgm_dir),
+        "reason": reason,
+    }
+    if category is not None:
+        details["category"] = category
+    if filename is not None:
+        details["filename"] = filename
+    if error is not None:
+        details["error"] = error
+    if extra:
+        details.update(extra)
+    return details
+
+
+def _validate_bgm_template_override(root_dir: Path, bgm: dict[str, Any]) -> None:
+    template_bgm_dir = resolve_bgm_template_dir(root_dir)
+    category = bgm.get("category")
+    if not isinstance(category, str) or not category.strip():
+        raise _invalid_bgm_override(
+            _bgm_template_error_details(
+                template_bgm_dir=template_bgm_dir,
+                reason="category_required",
+                field="overrides.bgm.category",
+                extra={"expected": "non-empty string"},
+            )
+        )
+    filename = bgm.get("filename")
+    if not isinstance(filename, str) or not filename.strip():
+        raise _invalid_bgm_override(
+            _bgm_template_error_details(
+                template_bgm_dir=template_bgm_dir,
+                reason="filename_required",
+                category=category,
+                field="overrides.bgm.filename",
+                extra={"expected": "non-empty string"},
+            )
+        )
+
+    try:
+        category_dir = resolve_bgm_category_dir_optional(template_bgm_dir, category)
+    except RenderError as exc:
+        raise _invalid_bgm_override(
+            _bgm_template_error_details(
+                template_bgm_dir=template_bgm_dir,
+                reason="invalid_category",
+                category=category,
+                filename=filename,
+                field="overrides.bgm.category",
+                error=str(exc),
+            )
+        ) from exc
+    if category_dir is None:
+        raise _invalid_bgm_override(
+            _bgm_template_error_details(
+                template_bgm_dir=template_bgm_dir,
+                reason="category_not_found",
+                category=category,
+                filename=filename,
+                field="overrides.bgm.category",
+            )
+        )
+
+    try:
+        filename_stem = normalize_bgm_filename_stem(filename)
+    except RenderError as exc:
+        raise _invalid_bgm_override(
+            _bgm_template_error_details(
+                template_bgm_dir=template_bgm_dir,
+                reason="invalid_filename",
+                category=category,
+                filename=filename,
+                field="overrides.bgm.filename",
+                error=str(exc),
+            )
+        ) from exc
+
+    allowed_extensions = set(allowed_bgm_extensions())
+    files = sorted(p for p in category_dir.iterdir() if p.is_file())
+    valid_audio_files = [p for p in files if p.suffix.lower() in allowed_extensions]
+    stem_matches = [p for p in files if p.stem == filename_stem]
+    valid_matches = [p for p in stem_matches if p.suffix.lower() in allowed_extensions]
+    invalid_matches = [p for p in stem_matches if p.suffix.lower() not in allowed_extensions]
+
+    if invalid_matches and not valid_matches:
+        raise _invalid_bgm_override(
+            _bgm_template_error_details(
+                template_bgm_dir=template_bgm_dir,
+                reason="unsupported_extension",
+                category=category,
+                filename=filename_stem,
+                field="overrides.bgm.filename",
+                extra={
+                    "matches": [item.name for item in invalid_matches],
+                    "allowedExtensions": allowed_bgm_extensions(),
+                },
+            )
+        )
+    if not valid_audio_files:
+        raise _invalid_bgm_override(
+            _bgm_template_error_details(
+                template_bgm_dir=template_bgm_dir,
+                reason="no_audio_files",
+                category=category,
+                filename=filename_stem,
+                field="overrides.bgm.category",
+                extra={"allowedExtensions": allowed_bgm_extensions()},
+            )
+        )
+    if len(valid_matches) > 1:
+        raise _invalid_bgm_override(
+            _bgm_template_error_details(
+                template_bgm_dir=template_bgm_dir,
+                reason="duplicate_filename",
+                category=category,
+                filename=filename_stem,
+                field="overrides.bgm.filename",
+                extra={"matches": [item.name for item in valid_matches]},
+            )
+        )
+    if not valid_matches:
+        raise _invalid_bgm_override(
+            _bgm_template_error_details(
+                template_bgm_dir=template_bgm_dir,
+                reason="file_not_found",
+                category=category,
+                filename=filename_stem,
+                field="overrides.bgm.filename",
+                extra={"allowedExtensions": allowed_bgm_extensions()},
+            )
+        )
+
+
 def _validate_bgm_catalog_override(root_dir: Path, pipeline_config: dict[str, Any], overrides: dict[str, Any]) -> None:
     bgm = overrides.get("bgm")
     if not isinstance(bgm, dict) or "fileId" in bgm:
+        return
+    if bgm.get("enabled") is False:
+        return
+    if bgm.get("source") == "template":
+        _validate_bgm_template_override(root_dir, bgm)
         return
     category = bgm.get("category")
     if not isinstance(category, str) or not category.strip():
@@ -494,6 +671,7 @@ async def lifespan(app: FastAPI):
     app.state.worker_count = worker_count
     app.state.pipelines_dir = pipelines_dir
     app.state.pipeline_count = registry.size
+    app.state.bgm_template_sync_lock = threading.Lock()
     try:
         yield
     finally:
@@ -576,6 +754,45 @@ def create_app() -> FastAPI:
                 {"bgmRoot": str(bgm_dir)},
             )
         return list_bgm_catalog(bgm_dir)
+
+    @app.post("/admin/bgm-template/sync", dependencies=[Depends(auth_guard)])
+    async def sync_bgm_template(request: Request, body: BgmTemplateSyncBody | None = None) -> dict[str, Any]:
+        if request_has_body(request):
+            require_content_type(request, "application/json")
+        lock: threading.Lock = app.state.bgm_template_sync_lock
+        if not lock.acquire(blocking=False):
+            raise api_http_exception(
+                409,
+                ApiErrorCode.BGM_TEMPLATE_SYNC_RUNNING,
+                "BGM template sync is already running.",
+            )
+        try:
+            try:
+                result = await asyncio.to_thread(
+                    sync_bgm_template_from_oss,
+                    app.state.root_dir,
+                    category=body.category if body else None,
+                )
+            except RenderError as exc:
+                raise api_http_exception(
+                    400,
+                    ApiErrorCode.INVALID_BODY,
+                    "Invalid BGM template sync request.",
+                    {"field": "category", "reason": "invalid_category", "error": str(exc)},
+                ) from exc
+            except BgmTemplateSyncError as exc:
+                details: dict[str, Any] = {"reason": exc.reason, "detail": exc.detail}
+                if exc.returncode is not None:
+                    details["returnCode"] = exc.returncode
+                raise api_http_exception(
+                    500,
+                    ApiErrorCode.BGM_TEMPLATE_SYNC_FAILED,
+                    "BGM template sync failed.",
+                    details,
+                ) from exc
+            return {"ok": True, **result, "completedAt": now_api_time()}
+        finally:
+            lock.release()
 
     @app.post("/upload", dependencies=[Depends(auth_guard)])
     async def upload(request: Request, file: UploadFile = File(...)) -> dict[str, str]:

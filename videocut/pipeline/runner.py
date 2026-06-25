@@ -14,6 +14,7 @@ from videocut.bgm import (
     resolve_bgm_dir,
     resolve_bgm_category_dir_optional,
     resolve_bgm_category_file,
+    resolve_bgm_template_dir,
     scan_bgm_category_files,
     scan_bgm_files,
 )
@@ -381,26 +382,41 @@ class PipelineRunner:
                     chosen = Path(ctx.user_bgm_path)
                     chosen_label = chosen.name
                 else:
-                    bgm_dir_path = resolve_bgm_dir(self.root_dir, config.bgm.dir)
-                    if config.bgm.category and config.bgm.filename:
-                        chosen = resolve_bgm_category_file(
-                            bgm_dir_path,
-                            config.bgm.category,
-                            config.bgm.filename,
-                            backup_bgm_dir=resolve_bgm_backup_dir(self.root_dir),
-                        )
-                    elif config.bgm.category:
-                        backup_bgm_dir_path = resolve_bgm_backup_dir(self.root_dir)
-                        if resolve_bgm_category_dir_optional(bgm_dir_path, config.bgm.category) is not None:
+                    if config.bgm.source == "template":
+                        bgm_dir_path = resolve_bgm_template_dir(self.root_dir)
+                        if config.bgm.category and config.bgm.filename:
+                            chosen = resolve_bgm_category_file(
+                                bgm_dir_path,
+                                config.bgm.category,
+                                config.bgm.filename,
+                            )
+                        elif config.bgm.category:
                             bgm_files = scan_bgm_category_files(bgm_dir_path, config.bgm.category)
-                        elif resolve_bgm_category_dir_optional(backup_bgm_dir_path, config.bgm.category) is not None:
-                            bgm_files = scan_bgm_category_files(backup_bgm_dir_path, config.bgm.category)
+                            chosen = random.choice(bgm_files)
                         else:
-                            bgm_files = scan_bgm_category_files(bgm_dir_path, config.bgm.category)
-                        chosen = random.choice(bgm_files)
+                            bgm_files = scan_bgm_files(bgm_dir_path)
+                            chosen = random.choice(bgm_files)
                     else:
-                        bgm_files = scan_bgm_files(bgm_dir_path)
-                        chosen = random.choice(bgm_files)
+                        bgm_dir_path = resolve_bgm_dir(self.root_dir, config.bgm.dir)
+                        if config.bgm.category and config.bgm.filename:
+                            chosen = resolve_bgm_category_file(
+                                bgm_dir_path,
+                                config.bgm.category,
+                                config.bgm.filename,
+                                backup_bgm_dir=resolve_bgm_backup_dir(self.root_dir),
+                            )
+                        elif config.bgm.category:
+                            backup_bgm_dir_path = resolve_bgm_backup_dir(self.root_dir)
+                            if resolve_bgm_category_dir_optional(bgm_dir_path, config.bgm.category) is not None:
+                                bgm_files = scan_bgm_category_files(bgm_dir_path, config.bgm.category)
+                            elif resolve_bgm_category_dir_optional(backup_bgm_dir_path, config.bgm.category) is not None:
+                                bgm_files = scan_bgm_category_files(backup_bgm_dir_path, config.bgm.category)
+                            else:
+                                bgm_files = scan_bgm_category_files(bgm_dir_path, config.bgm.category)
+                            chosen = random.choice(bgm_files)
+                        else:
+                            bgm_files = scan_bgm_files(bgm_dir_path)
+                            chosen = random.choice(bgm_files)
                     try:
                         chosen_label = str(chosen.relative_to(bgm_dir_path))
                     except ValueError:

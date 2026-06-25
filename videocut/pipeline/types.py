@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 PipelineJunctionType = Literal["flash-black", "dissolve", "cut", "zoom-dissolve"]
+BgmSource = Literal["catalog", "template"]
 
 
 @dataclass(slots=True)
@@ -30,6 +31,7 @@ class PipelineOutputConfig:
 @dataclass(slots=True)
 class PipelineBgmConfig:
     enabled: bool = True
+    source: BgmSource = "catalog"
     dir: str | None = None
     category: str | None = None
     filename: str | None = None

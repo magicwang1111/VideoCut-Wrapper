@@ -121,3 +121,51 @@ def test_pipeline_runner_random_bgm_can_use_backup_category(tmp_path, monkeypatc
 
     assert result.status == "completed"
     assert applied_bgm_files == [backup_bgm.resolve()]
+
+
+def test_pipeline_runner_template_bgm_uses_template_dir_only(tmp_path, monkeypatch) -> None:
+    ctx = _make_context(tmp_path)
+    ctx.config.bgm = PipelineBgmConfig(
+        enabled=True,
+        source="template",
+        category="测试1",
+        filename="生活感",
+        volume=1.0,
+    )
+    template_bgm = tmp_path / "input" / "bgm-templete" / "测试1" / "生活感.mp3"
+    backup_bgm = tmp_path / "input" / "bgm-backup" / "测试1" / "生活感.mp3"
+    template_bgm.parent.mkdir(parents=True)
+    backup_bgm.parent.mkdir(parents=True)
+    template_bgm.write_text("template music", encoding="utf-8")
+    backup_bgm.write_text("backup music", encoding="utf-8")
+    applied_bgm_files: list[Path] = []
+
+    monkeypatch.setattr(
+        runner_module,
+        "resolve_runtime_video_settings",
+        lambda ffmpeg_path, configured: FFmpegVideoSettings(encoder="libx264"),
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "probe_single_video",
+        lambda ffprobe_path, video_path: {"duration": 5.0, "width": 1080, "height": 1920, "fps": 24},
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "normalize_clips",
+        lambda root_dir, ffmpeg_path, clips, qual_preset, res_preset, video_settings: (clips, lambda: None),
+    )
+
+    def fake_concat(ffmpeg_path, clips, junctions, output_path, qual_preset, res_preset, video_settings, task):
+        Path(output_path).write_text("video", encoding="utf-8")
+
+    def fake_apply_bgm(ffmpeg_path, ffprobe_path, video_path, bgm_file, volume, fade_out, task_id=None):
+        applied_bgm_files.append(Path(bgm_file))
+
+    monkeypatch.setattr(runner_module, "ffmpeg_pipeline_concat", fake_concat)
+    monkeypatch.setattr(runner_module, "apply_bgm", fake_apply_bgm)
+
+    result = PipelineRunner(tmp_path).run(ctx, "ffmpeg", "ffprobe", {}, task_id="t_template_bgm")
+
+    assert result.status == "completed"
+    assert applied_bgm_files == [template_bgm.resolve()]

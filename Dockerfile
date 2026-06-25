@@ -19,6 +19,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     BGM_OSS_URI=oss://goumee-coze/GouMei-Video-Cut/bgm/ \
     BGM_BACKUP_DIR=/app/input/bgm-backup \
     BGM_BACKUP_OSS_URI=oss://goumee-coze/GouMei-Video-Cut/bgm-backup/ \
+    BGM_TEMPLATE_DIR=/app/input/bgm-templete \
+    BGM_TEMPLATE_OSS_URI=oss://goumee-coze/GouMei-Video-Cut/bgm-templete/ \
+    BGM_TEMPLATE_SYNC_TIMEOUT_SECONDS=600 \
     SYNC_BGM_ON_STARTUP=1
 
 WORKDIR /app
@@ -41,7 +44,7 @@ RUN sed -i 's/\r$//' /usr/local/bin/videocut-entrypoint \
     && rm -rf /var/lib/apt/lists/* \
     && python -m pip install --upgrade pip \
     && python -m pip install . \
-    && mkdir -p /app/input/bgm /app/input/bgm-backup /app/output /srv/videocut/data /srv/videocut/temp /srv/videocut/oss-local
+    && mkdir -p /app/input/bgm /app/input/bgm-backup /app/input/bgm-templete /app/output /srv/videocut/data /srv/videocut/temp /srv/videocut/oss-local
 
 EXPOSE 3000
 

@@ -22,6 +22,7 @@ videocut serve --host 0.0.0.0 --port 3000
 |---|---|---|---|
 | `GET` | `/health` | 否 | 服务和队列健康检查 |
 | `GET` | `/bgm` | 是 | 查询当前可用 BGM 分类和文件清单 |
+| `POST` | `/admin/bgm-template/sync` | 是 | 同步后台模板音乐到隐藏模板音乐目录 |
 | `POST` | `/upload` | 是 | 上传本地素材或临时用户音频，返回 `fileId` 和 `ossKey` |
 | `POST` | `/render` | 是 | 创建异步渲染任务，返回 `taskId` |
 | `GET` | `/tasks/summary` | 是 | 查询整体任务状态计数 |
@@ -106,7 +107,9 @@ HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读
 | `503` | `3002` | 渲染队列已满 | 稍后重试 |
 | `413` | `3003` | 上传文件过大 | 压缩或拆分文件 |
 | `500` | `3004` | 任务结果 URL 配置异常，例如 `OSS_PUBLIC_ENDPOINT` 误配为 internal endpoint，或路径分隔符被编码成 `%2F` | 检查 `OSS_PUBLIC_ENDPOINT` 和服务端日志里的 `outputUrlHost`、`outputUrlPath`、`ossKey` |
+| `409` | `3005` | 模板音乐同步正在运行 | 稍后重试 `POST /admin/bgm-template/sync` |
 | `500` | `9001` | 未预期服务端异常 | 记录日志并联系服务方 |
+| `500` | `9002` | 模板音乐 OSS 同步失败 | 检查 OSS 凭证、endpoint、`ossutil` 和响应里的 `reason/detail` |
 
 ## 3. 推荐对接流程
 
@@ -228,6 +231,111 @@ curl "http://127.0.0.1:3000/bgm" \
   "message": "BGM directory not found.",
   "details": {
     "bgmRoot": "/app/input/bgm"
+  }
+}
+```
+
+## 5.1 `POST /admin/bgm-template/sync`
+
+同步后台模板配置使用的隐藏音乐。模板音乐不会出现在 `GET /bgm`，也不会被前端查询到。
+
+默认 OSS 源：
+
+```text
+oss://goumee-coze/GouMei-Video-Cut/bgm-templete/
+```
+
+默认本地目录：
+
+```text
+/app/input/bgm-templete
+```
+
+请求头：
+
+```http
+POST /admin/bgm-template/sync
+Content-Type: application/json
+X-Api-Key: goumee-music
+```
+
+全量同步请求：
+
+```json
+{}
+```
+
+等价命令：
+
+```bash
+ossutil sync "$BGM_TEMPLATE_OSS_URI" "$BGM_TEMPLATE_DIR/" -u -f ...
+```
+
+指定分类同步请求：
+
+```json
+{"category": "测试1"}
+```
+
+等价命令：
+
+```bash
+ossutil sync "oss://goumee-coze/GouMei-Video-Cut/bgm-templete/测试1/" "/app/input/bgm-templete/测试1/" -u -f ...
+```
+
+接口固定使用 OSS 增量同步参数 `-u -f`。`-u` 会跳过本地已存在且无需更新的相同文件；接口不会加删除参数，避免误删仍被模板引用的音乐。同步不需要重启镜像或容器。
+
+成功响应：
+
+```json
+{
+  "ok": true,
+  "scope": "category",
+  "category": "测试1",
+  "templateBgmRoot": "/app/input/bgm-templete",
+  "templateBgmOssUri": "oss://goumee-coze/GouMei-Video-Cut/bgm-templete/测试1/",
+  "durationSeconds": 1.234,
+  "completedAt": "2026-06-25T18:30:00.000000",
+  "validation": {
+    "validAudioFiles": 1,
+    "invalidFiles": [],
+    "allowedExtensions": [".aac", ".flac", ".m4a", ".mp3", ".ogg", ".wav"]
+  }
+}
+```
+
+同步后发现非音频文件时，接口会在 `validation.invalidFiles` 中反馈：
+
+```json
+{
+  "validation": {
+    "validAudioFiles": 1,
+    "invalidFiles": [
+      {"path": "测试1/readme.txt", "reason": "unsupported_extension", "extension": ".txt"}
+    ],
+    "allowedExtensions": [".aac", ".flac", ".m4a", ".mp3", ".ogg", ".wav"]
+  }
+}
+```
+
+常见错误：
+
+```json
+{
+  "error_code": 3005,
+  "message": "BGM template sync is already running.",
+  "details": {}
+}
+```
+
+```json
+{
+  "error_code": 9002,
+  "message": "BGM template sync failed.",
+  "details": {
+    "reason": "ossutil_failed",
+    "detail": "ossutil sync failed output",
+    "returnCode": 1
   }
 }
 ```
@@ -479,7 +587,7 @@ other-prefix/input/a.mp4
 | `clip_overrides` | 覆盖单个素材的 `trim_start`、`trim_end`，单位秒 |
 | `transition_overrides` | 覆盖单个转场的类型、时长和缩放参数 |
 | `default_transition` | 覆盖默认转场 |
-| `bgm` | 覆盖 BGM 设置，常用 `{"enabled": false}` 禁用 BGM，`{"category": "calm"}` 按分类随机，`{"category": "calm", "filename": "1"}` 指定曲库音乐，或 `{"fileId": "audioFileId1"}` 使用用户上传音频 |
+| `bgm` | 覆盖 BGM 设置，常用 `{"enabled": false}` 禁用 BGM，`{"category": "calm"}` 按分类随机，`{"category": "calm", "filename": "1"}` 指定公开曲库音乐，`{"source": "template", "category": "测试1", "filename": "生活感"}` 指定后台模板音乐，或 `{"fileId": "audioFileId1"}` 使用用户上传音频 |
 | `output` | 覆盖渲染临时输出文件名，API 最终 OSS key 使用 `outputs/<YYYYMMDD>/<YYYYMMDD_HHMMSS>/<taskId>/final.mp4`，时间戳为北京时间（Asia/Shanghai） |
 
 转场类型：
@@ -501,11 +609,13 @@ BGM 指定规则：
 
 - 对接方应先调用 `GET /bgm` 获取当前实时清单；`docs/BGM_MANIFEST.json` 是打包脚本可刷新的静态清单，适合离线对齐，不替代运行时扫描结果。
 - 用户上传音频不需要调用 `GET /bgm`。客户端先用 `/upload` 上传音频，再在 `/render` 的 `overrides.bgm.fileId` 里传音频 `fileId`。
+- 模板音乐不需要调用 `GET /bgm`。后台先调用 `POST /admin/bgm-template/sync`，再在 `/render` 的 `overrides.bgm` 中传 `source="template"`、`category` 和 `filename`。
 - `overrides.bgm.fileId` 场景只接受 `fileId` 一个字段，不能同时传 `category`、`filename`、`dir`、`volume`、`fade_out` 或其它 BGM 字段。音量使用 pipeline 默认配置。
 - 用户上传音频字段必须是驼峰 `fileId`；snake_case `file_id` 是非法字段，会返回 `error_code=2007`。
-- `overrides.bgm` 只接受 `fileId`、`enabled`、`dir`、`category`、`filename`、`volume`、`fade_out`，其它字段会返回 `error_code=2007`。
+- `overrides.bgm` 只接受 `fileId`、`enabled`、`source`、`dir`、`category`、`filename`、`volume`、`fade_out`，其它字段会返回 `error_code=2007`。
 - 使用 `overrides.bgm.fileId` 后，服务端直接使用用户上传音频，不扫描 `/input/bgm`，不随机选择曲库音乐。
 - `overrides.bgm.category` 是 `/app/input/bgm` 下的英文相对目录名，例如 `calm`。
+- `source="template"` 时，`category` 是 `/app/input/bgm-templete` 下的相对目录名，例如 `测试1`；`filename` 是不带扩展名的文件名，例如 `生活感`。模板音乐只查模板目录，不查公开曲库或归档 backup。
 - `overrides.bgm.filename` 是分类目录下不带扩展名的歌曲 ID，例如 `1`；真实文件仍可以是 `1.mp3`。
 - 传 `category + filename` 时，服务端精确选择该分类下的文件；只传 `category` 时，服务端只在该分类目录下随机选择一首。
 - 精确指定歌曲时使用 `GET /bgm` 响应里的 `files[].category + files[].filename`，按分类随机时使用 `categories[].name`。
@@ -546,6 +656,20 @@ BGM 指定规则：
     "bgm": {
       "category": "calm",
       "filename": "1"
+    }
+  }
+}
+```
+
+使用后台模板音乐：
+
+```json
+{
+  "overrides": {
+    "bgm": {
+      "source": "template",
+      "category": "测试1",
+      "filename": "生活感"
     }
   }
 }
@@ -625,6 +749,24 @@ BGM 指定规则：
     "fileId": "videoFileId1",
     "kind": "asset",
     "expected": "user_audio"
+  }
+}
+```
+
+模板音乐不存在或不是音频：
+
+```json
+{
+  "error_code": 2007,
+  "message": "Invalid BGM override.",
+  "details": {
+    "field": "overrides.bgm.filename",
+    "source": "template",
+    "templateBgmRoot": "/app/input/bgm-templete",
+    "reason": "file_not_found",
+    "category": "测试1",
+    "filename": "生活感",
+    "allowedExtensions": [".aac", ".flac", ".m4a", ".mp3", ".ogg", ".wav"]
   }
 }
 ```
@@ -960,6 +1102,9 @@ BGM 配置：
 | `SYNC_BGM_ON_STARTUP` | `1` | Docker entrypoint 是否启动时同步 BGM |
 | `BGM_OSS_URI` | `oss://goumee-coze/GouMei-Video-Cut/bgm/` | BGM 同步源 |
 | `BGM_BACKUP_OSS_URI` | `oss://goumee-coze/GouMei-Video-Cut/bgm-backup/` | 归档 BGM 同步源，目录结构需和当前 BGM 一致 |
+| `BGM_TEMPLATE_DIR` | `/app/input/bgm-templete` | 后台模板音乐本地目录。`GET /bgm` 不展示 |
+| `BGM_TEMPLATE_OSS_URI` | `oss://goumee-coze/GouMei-Video-Cut/bgm-templete/` | 后台模板音乐 OSS 同步源 |
+| `BGM_TEMPLATE_SYNC_TIMEOUT_SECONDS` | `600` | `POST /admin/bgm-template/sync` 的同步超时时间 |
 
 ## 14. 本地联调配置
 

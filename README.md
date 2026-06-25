@@ -185,6 +185,8 @@ videocut serve --host 0.0.0.0 --port 3000
 
 `GET /bgm` 用来查询实时音乐清单，只展示 `BGM_DIR` 的当前歌曲，不展示 `BGM_BACKUP_DIR` 的归档歌曲；`overrides.bgm.category + filename` 用来指定某一首 BGM，其中 `filename` 是不带扩展名的歌曲 ID。只指定 `category` 时，会在该分类目录下随机选择一首；都不传时保持全目录随机选择。
 
+后台模板音乐使用隐藏目录 `BGM_TEMPLATE_DIR=/app/input/bgm-templete` 和 OSS 前缀 `BGM_TEMPLATE_OSS_URI=oss://goumee-coze/GouMei-Video-Cut/bgm-templete/`。后台发布模板前调用 `POST /admin/bgm-template/sync` 同步，渲染时传 `overrides.bgm.source="template"`、`category` 和 `filename`；这类音乐不会出现在 `GET /bgm`。
+
 ## API
 
 完整、按当前代码校对过的对接文档见 [docs/API.md](docs/API.md)。下面是仓库 README 内的概要说明。
@@ -212,6 +214,7 @@ videocut serve --host 0.0.0.0 --port 3000
 - `GET /health`
 - `GET /bgm`
 - `POST /upload`
+- `POST /admin/bgm-template/sync`
 - `POST /render`
 - `GET /tasks/summary`
 - `GET /tasks/active`
@@ -652,6 +655,9 @@ videocut serve --port 3000
 - `OSS_BUCKET`
 - `OSS_PREFIX`
 - `OSS_LOCAL_ROOT`: 本地 OSS 模式根目录，设置后不会访问阿里云 OSS
+- `BGM_TEMPLATE_DIR`: 后台模板音乐本地目录，默认 `/app/input/bgm-templete`
+- `BGM_TEMPLATE_OSS_URI`: 后台模板音乐 OSS 同步源，默认 `oss://goumee-coze/GouMei-Video-Cut/bgm-templete/`
+- `BGM_TEMPLATE_SYNC_TIMEOUT_SECONDS`: 模板音乐同步超时时间，默认 `600`
 - `WORKER_COUNT`
 - `QUEUE_MAX`
 - `TASK_MAX_ATTEMPT`
@@ -806,6 +812,7 @@ docker compose logs -f videocut
 - `./temp -> /srv/videocut/temp`
 - `./input/bgm -> /app/input/bgm`
 - `./input/bgm-backup -> /app/input/bgm-backup`
+- `./input/bgm-templete -> /app/input/bgm-templete`
 - `./output -> /app/output`
 - `./fonts -> /app/fonts`
 - `./oss-local -> /srv/videocut/oss-local`
@@ -815,6 +822,7 @@ docker compose logs -f videocut
 - `data/` 保存 SQLite 任务库
 - `temp/` 保存上传临时文件和 worker 下载素材
 - `input/bgm/` 保存启动时从 OSS 同步的背景音乐
+- `input/bgm-templete/` 保存后台同步的隐藏模板音乐
 - `output/` 保存 worker 本地渲染产物，再上传到 OSS / 本地 OSS
 - `fonts/` 用于自定义字体
 - `oss-local/` 只在本地 OSS 模式下使用
