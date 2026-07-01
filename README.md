@@ -185,7 +185,7 @@ videocut serve --host 0.0.0.0 --port 3000
 
 `GET /bgm` 用来查询实时音乐清单，只展示 `BGM_DIR` 的当前歌曲，不展示 `BGM_BACKUP_DIR` 的归档歌曲；`overrides.bgm.category + filename` 用来指定某一首 BGM，其中 `filename` 是不带扩展名的歌曲 ID。只指定 `category` 时，会在该分类目录下随机选择一首；都不传时保持全目录随机选择。
 
-后台模板音乐使用隐藏目录 `BGM_TEMPLATE_DIR=/app/input/bgm-templete` 和 OSS 前缀 `BGM_TEMPLATE_OSS_URI=oss://goumee-coze/GouMei-Video-Cut/bgm-templete/`。后台发布模板前调用 `POST /admin/bgm-template/sync` 同步，渲染时传 `overrides.bgm.source="template"`、`category` 和 `filename`；这类音乐不会出现在 `GET /bgm`。
+后台模板音乐使用隐藏目录 `BGM_TEMPLATE_DIR=/app/input/bgm-templete` 和 OSS 前缀 `BGM_TEMPLATE_OSS_URI=oss://goumee-coze/GouMei-Video-Cut/bgm-templete/`。默认 `SYNC_BGM_TEMPLATE_ON_STARTUP=1`，容器启动时会先执行模板音乐全量增量同步；后台发布模板后仍可调用 `POST /admin/bgm-template/sync` 立即同步。渲染时传 `overrides.bgm.source="template"`、`category` 和 `filename`；这类音乐不会出现在 `GET /bgm`。
 
 ## API
 
@@ -759,11 +759,11 @@ cp .env.example .env
   - 填好 `OSS_ACCESS_KEY_ID`
   - 填好 `OSS_ACCESS_KEY_SECRET`
   - 保持 `OSS_LOCAL_ROOT=` 为空
-  - 保持 `SYNC_BGM_ON_STARTUP=1`
+  - 保持 `SYNC_BGM_ON_STARTUP=1` 和 `SYNC_BGM_TEMPLATE_ON_STARTUP=1`
 - 如果只是单机或联调：
   - 设置 `OSS_LOCAL_ROOT=/srv/videocut/oss-local`
   - OSS AK/SK 可以留空
-  - 如果不从真实 OSS 拉 BGM，设置 `SYNC_BGM_ON_STARTUP=0`
+  - 如果不从真实 OSS 拉 BGM，同时设置 `SYNC_BGM_ON_STARTUP=0` 和 `SYNC_BGM_TEMPLATE_ON_STARTUP=0`
 
 3. 先构建基础镜像：
 
@@ -822,7 +822,7 @@ docker compose logs -f videocut
 - `data/` 保存 SQLite 任务库
 - `temp/` 保存上传临时文件和 worker 下载素材
 - `input/bgm/` 保存启动时从 OSS 同步的背景音乐
-- `input/bgm-templete/` 保存后台同步的隐藏模板音乐
+- `input/bgm-templete/` 保存容器启动或后台接口同步的隐藏模板音乐
 - `output/` 保存 worker 本地渲染产物，再上传到 OSS / 本地 OSS
 - `fonts/` 用于自定义字体
 - `oss-local/` 只在本地 OSS 模式下使用
@@ -845,7 +845,8 @@ docker compose logs -f videocut
 - GPU Linux 部署机需要先安装 NVIDIA 驱动和 NVIDIA Container Toolkit，确保 `docker run --gpus all ... nvidia-smi` 可用
 - `IMAGE_TAG` 用于业务镜像版本，例如 `videocut-wrapper:v1`
 - `IMAGE_DESCRIPTION` 会写入镜像 label，方便 `docker inspect` 查看这一版做了什么
-- 业务镜像启动前会自动把 `oss://goumee-coze/GouMei-Video-Cut/bgm/` 同步到 `BGM_DIR`
+- 业务镜像启动前会自动同步公开 BGM、backup 和隐藏模板音乐；同步固定使用 `ossutil sync -u -f`
+- 没有挂载持久化目录时，删除并重建容器会重新下载 OSS 音乐；挂载目录或仅重启原容器时，`-u` 会跳过相同文件
 - `WORKER_COUNT` 默认使用 `0`，表示自动按 CPU 数量推导，避免空值导致启动报错
 - `FFMPEG_ENCODER` 默认使用 `auto`，会优先探测 `h264_nvenc`，不可用时回退到 `libx264`
 - `OSS_ENDPOINT` 示例改成公网 endpoint，适合大多数非阿里云内网环境

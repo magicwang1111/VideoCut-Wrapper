@@ -68,16 +68,12 @@ sync_bgm_prefix() {
 }
 
 sync_bgm_from_oss() {
-  if [ "${SYNC_BGM_ON_STARTUP:-1}" != "1" ]; then
-    echo "[entrypoint] skip BGM sync because SYNC_BGM_ON_STARTUP=${SYNC_BGM_ON_STARTUP:-0}"
-    return
-  fi
+  SYNC_PUBLIC_BGM="${SYNC_BGM_ON_STARTUP:-1}"
+  SYNC_TEMPLATE_BGM="${SYNC_BGM_TEMPLATE_ON_STARTUP:-1}"
 
-  BGM_DIR="${BGM_DIR:-/app/input/bgm}"
-  BGM_OSS_URI="${BGM_OSS_URI:-oss://goumee-coze/GouMei-Video-Cut/bgm/}"
-  BGM_BACKUP_DIR="${BGM_BACKUP_DIR:-/app/input/bgm-backup}"
-  if [ -z "${BGM_BACKUP_OSS_URI+x}" ]; then
-    BGM_BACKUP_OSS_URI="oss://goumee-coze/GouMei-Video-Cut/bgm-backup/"
+  if [ "${SYNC_PUBLIC_BGM}" != "1" ] && [ "${SYNC_TEMPLATE_BGM}" != "1" ]; then
+    echo "[entrypoint] skip BGM sync because startup sync is disabled"
+    return
   fi
 
   if ! command -v ossutil >/dev/null 2>&1; then
@@ -90,8 +86,27 @@ sync_bgm_from_oss() {
     exit 1
   fi
 
-  sync_bgm_prefix "${BGM_OSS_URI}" "${BGM_DIR}" "BGM"
-  sync_bgm_prefix "${BGM_BACKUP_OSS_URI}" "${BGM_BACKUP_DIR}" "BGM backup"
+  if [ "${SYNC_PUBLIC_BGM}" = "1" ]; then
+    BGM_DIR="${BGM_DIR:-/app/input/bgm}"
+    BGM_OSS_URI="${BGM_OSS_URI:-oss://goumee-coze/GouMei-Video-Cut/bgm/}"
+    BGM_BACKUP_DIR="${BGM_BACKUP_DIR:-/app/input/bgm-backup}"
+    if [ -z "${BGM_BACKUP_OSS_URI+x}" ]; then
+      BGM_BACKUP_OSS_URI="oss://goumee-coze/GouMei-Video-Cut/bgm-backup/"
+    fi
+
+    sync_bgm_prefix "${BGM_OSS_URI}" "${BGM_DIR}" "BGM"
+    sync_bgm_prefix "${BGM_BACKUP_OSS_URI}" "${BGM_BACKUP_DIR}" "BGM backup"
+  else
+    echo "[entrypoint] skip public BGM sync because SYNC_BGM_ON_STARTUP=${SYNC_PUBLIC_BGM}"
+  fi
+
+  if [ "${SYNC_TEMPLATE_BGM}" = "1" ]; then
+    BGM_TEMPLATE_DIR="${BGM_TEMPLATE_DIR:-/app/input/bgm-templete}"
+    BGM_TEMPLATE_OSS_URI="${BGM_TEMPLATE_OSS_URI:-oss://goumee-coze/GouMei-Video-Cut/bgm-templete/}"
+    sync_bgm_prefix "${BGM_TEMPLATE_OSS_URI}" "${BGM_TEMPLATE_DIR}" "BGM template"
+  else
+    echo "[entrypoint] skip template BGM sync because SYNC_BGM_TEMPLATE_ON_STARTUP=${SYNC_TEMPLATE_BGM}"
+  fi
 }
 
 load_env_file

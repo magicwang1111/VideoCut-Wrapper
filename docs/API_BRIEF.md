@@ -158,6 +158,12 @@ Content-Type: application/json
 X-Api-Key: goumee-music
 ```
 
+容器默认设置 `SYNC_BGM_TEMPLATE_ON_STARTUP=1`，每次启动 API 服务前都会自动执行一次模板音乐全量增量同步。后台发布模板后调用本接口，可以不重启容器立即拉取最新音乐。
+
+- 同一容器重启，或者 `BGM_TEMPLATE_DIR` 使用了宿主机目录/Docker volume 时，`-u` 会跳过相同文件。
+- 容器被删除且 `BGM_TEMPLATE_DIR` 未持久化时，本地音乐也会被删除；新容器启动时会自动从 OSS 重新下载。
+- 启动同步失败时服务不会启动，容器日志会保留 `ossutil` 错误。
+
 全量同步：
 
 ```bash
@@ -227,6 +233,7 @@ ossutil sync "oss://goumee-coze/GouMei-Video-Cut/bgm-templete/测试1/" "/app/in
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
+| `SYNC_BGM_TEMPLATE_ON_STARTUP` | `1` | 容器启动前是否执行模板音乐全量增量同步 |
 | `BGM_TEMPLATE_DIR` | `/app/input/bgm-templete` | 模板音乐本地目录，不会被 `GET /bgm` 展示 |
 | `BGM_TEMPLATE_OSS_URI` | `oss://goumee-coze/GouMei-Video-Cut/bgm-templete/` | 模板音乐 OSS 同步源 |
 | `BGM_TEMPLATE_SYNC_TIMEOUT_SECONDS` | `600` | 同步接口等待 `ossutil sync` 的超时时间 |

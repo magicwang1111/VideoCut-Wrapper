@@ -259,6 +259,12 @@ Content-Type: application/json
 X-Api-Key: goumee-music
 ```
 
+容器默认设置 `SYNC_BGM_TEMPLATE_ON_STARTUP=1`，entrypoint 会在 API 服务启动前执行一次模板音乐全量增量同步。后台发布模板后仍应调用本接口，以便运行中的容器立即获得最新音乐。
+
+- 同一容器重启，或者 `BGM_TEMPLATE_DIR` 使用了宿主机目录/Docker volume 时，`-u` 会跳过相同文件。
+- 删除容器且没有持久化 `BGM_TEMPLATE_DIR` 时，本地音乐会随容器删除；新容器创建后会在启动阶段自动从 OSS 重新下载。
+- 启动同步失败会阻止 API 服务启动，可通过容器日志查看 `ossutil` 错误。
+
 全量同步请求：
 
 ```json
@@ -1100,6 +1106,7 @@ BGM 配置：
 | `BGM_DIR` | `input/bgm` | BGM 文件目录。设置后优先级高于 pipeline 配置里的 `bgm.dir` |
 | `BGM_BACKUP_DIR` | `input/bgm-backup` | 归档 BGM 文件目录。`GET /bgm` 不展示，只在精确指定歌曲找不到当前文件时兜底 |
 | `SYNC_BGM_ON_STARTUP` | `1` | Docker entrypoint 是否启动时同步 BGM |
+| `SYNC_BGM_TEMPLATE_ON_STARTUP` | `1` | Docker entrypoint 是否启动时全量增量同步模板音乐 |
 | `BGM_OSS_URI` | `oss://goumee-coze/GouMei-Video-Cut/bgm/` | BGM 同步源 |
 | `BGM_BACKUP_OSS_URI` | `oss://goumee-coze/GouMei-Video-Cut/bgm-backup/` | 归档 BGM 同步源，目录结构需和当前 BGM 一致 |
 | `BGM_TEMPLATE_DIR` | `/app/input/bgm-templete` | 后台模板音乐本地目录。`GET /bgm` 不展示 |
