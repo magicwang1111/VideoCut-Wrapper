@@ -151,6 +151,10 @@ class WorkerPool:
     def idle_count(self) -> int:
         return len([worker for worker in self.workers if worker.ready and worker.current_task_id is None])
 
+    @property
+    def active_count(self) -> int:
+        return len([worker for worker in self.workers if worker.current_task_id is not None])
+
     def stop(self) -> None:
         self._stop_event.set()
         for worker in self.workers:
@@ -186,8 +190,25 @@ class TaskQueue:
 
     def start(self) -> None:
         self.pool.start()
-        self._replay_from_store()
+        if self._consume_skip_replay_once_file():
+            logger.info("Skipped persisted task replay for this startup during a blue-green handoff.")
+        else:
+            self._replay_from_store()
         self._drain()
+
+    def _consume_skip_replay_once_file(self) -> bool:
+        raw_path = os.getenv("TASK_REPLAY_SKIP_ONCE_FILE", "").strip()
+        if not raw_path:
+            return False
+        marker = Path(raw_path)
+        try:
+            marker.unlink()
+        except FileNotFoundError:
+            return False
+        except OSError:
+            logger.exception("Could not consume one-time task replay marker: %s", marker)
+            raise
+        return True
 
     def stop(self) -> None:
         self.pool.stop()
@@ -226,6 +247,10 @@ class TaskQueue:
     def queue_size(self) -> int:
         with self._lock:
             return len(self.queue)
+
+    @property
+    def active_worker_count(self) -> int:
+        return self.pool.active_count
 
     def get_upload_diagnostics(self, task_id: str) -> dict[str, Any] | None:
         with self._lock:

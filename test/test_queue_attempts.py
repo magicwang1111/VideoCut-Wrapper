@@ -21,6 +21,15 @@ class RecordingPool:
         return True
 
 
+class StartableRecordingPool(RecordingPool):
+    def start(self) -> None:
+        return
+
+    @property
+    def active_count(self) -> int:
+        return 0
+
+
 class FakeOss:
     upload_backend = "fake"
     endpoint = "oss-test"
@@ -70,6 +79,33 @@ def test_task_queue_dispatches_current_attempt(tmp_path) -> None:
     assert task is not None
     assert task.attempt == 2
     queue.upload_executor.shutdown(wait=True)
+    store.close()
+
+
+def test_blue_green_marker_skips_replay_once_then_restores_recovery(tmp_path, monkeypatch) -> None:
+    store = TaskStore(tmp_path / "tasks.db")
+    store.create(_make_task("t_handoff"))
+    marker = tmp_path / "skip-replay-once"
+    marker.touch()
+    monkeypatch.setenv("TASK_REPLAY_SKIP_ONCE_FILE", str(marker))
+
+    handoff_queue = TaskQueue(store, object(), 1, lambda event: None, tmp_path)
+    handoff_pool = StartableRecordingPool()
+    handoff_queue.pool = handoff_pool  # type: ignore[assignment]
+    handoff_queue.start()
+
+    assert not marker.exists()
+    assert handoff_pool.dispatched == []
+    assert handoff_queue.active_worker_count == 0
+    handoff_queue.upload_executor.shutdown(wait=True)
+
+    restarted_queue = TaskQueue(store, object(), 1, lambda event: None, tmp_path)
+    restarted_pool = StartableRecordingPool()
+    restarted_queue.pool = restarted_pool  # type: ignore[assignment]
+    restarted_queue.start()
+
+    assert [task.task_id for task in restarted_pool.dispatched] == ["t_handoff"]
+    restarted_queue.upload_executor.shutdown(wait=True)
     store.close()
 
 

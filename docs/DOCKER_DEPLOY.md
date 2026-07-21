@@ -1,16 +1,44 @@
-# Docker 部署命令手册
+# VideoCut Wrapper Docker 构建与零停机部署手册
 
-流程：本地 build `videocut-wrapper:v2`，导出 tar，传到 Linux，`docker load`，然后 `docker run` 启动。
+本手册从 `v5.17` 开始使用蓝绿发布：
 
-## 1. 本地 build 镜像
+- `videocut-proxy` 固定监听宿主机 `3000`；
+- `videocut-blue`、`videocut-green` 轮流运行新旧镜像；
+- 新镜像健康后才切换流量；
+- 旧容器完成手中任务后再退出；
+- 发布失败时保留或回切旧版本；
+- SQLite、BGM、输出文件统一保存在宿主机持久目录。
 
-在本机 WSL 进入项目：
+旧的 `docker rm -f videocut-wrapper` 再 `docker run -p 3000:3000` 方式不再作为正常更新流程。第一次从旧部署迁移到蓝绿部署会有一次短暂停机，后续更新不需要中断服务。
+
+## 1. 路径和版本约定
+
+本手册使用以下示例，请按实际服务器修改服务器地址：
+
+```text
+本地仓库：D:\VideoCut-Wrapper
+WSL 仓库：/mnt/d/VideoCut-Wrapper
+服务器仓库：/data/VideoCut-Wrapper
+服务器镜像目录：/data/images
+服务器环境文件：/data/env/videocut.env
+服务器持久目录：/data/videocut
+镜像：videocut-wrapper:v5.17
+```
+
+同一次构建、检查、导出、导入和发布必须使用同一个版本号，避免混用 `v2`、`v5.10`、`v5.15` 等标签。
+
+## 2. 本地构建 v5.17
+
+进入 WSL 仓库：
 
 ```bash
 cd /mnt/d/VideoCut-Wrapper
+
+VERSION=v5.17
+IMAGE=videocut-wrapper:${VERSION}
 ```
 
-build base 镜像：
+如本地还没有基础镜像，先构建一次：
 
 ```bash
 docker build \
@@ -19,177 +47,268 @@ docker build \
   .
 ```
 
-build 业务镜像，tag 直接写 `v2`。建议走脚本，它会先扫描本地 `input/bgm` 并刷新 `docs/BGM_MANIFEST.json`，再执行 `docker build`：
+构建业务镜像：
 
 ```bash
-./docker/build_image.sh v2
+docker build \
+  --build-arg BASE_IMAGE=magicwang/pytorch-base:torch210-cu128-runtime-v1 \
+  --build-arg IMAGE_VERSION="${VERSION}" \
+  --build-arg IMAGE_DESCRIPTION="VideoCut Docker image ${VERSION}" \
+  -t "${IMAGE}" \
+  .
 ```
 
-如果 BGM 不在默认目录，可以指定：
+也可以使用仓库脚本。脚本会先根据本地 `input/bgm` 刷新 `docs/BGM_MANIFEST.json`，再构建镜像：
 
 ```bash
-BGM_MANIFEST_SOURCE=/path/to/bgm ./docker/build_image.sh v2
+./docker/build_image.sh "${VERSION}"
 ```
 
-如果本机 Python 命令不是 `python`，脚本会自动尝试 `python3`，也可以手动指定：
+如果本次不准备更新 BGM 清单，构建后应检查 `git diff -- docs/BGM_MANIFEST.json`，避免把无关的大型清单变化带入提交。
 
-```bash
-PYTHON=python3 ./docker/build_image.sh v2
-```
+## 3. 本地验证镜像
 
-本地检查镜像：
+GPU 检查：
 
 ```bash
 docker run --rm \
   --gpus all \
   -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
   --entrypoint python \
-  videocut-wrapper:v2 \
+  "${IMAGE}" \
   -m videocut check
 ```
 
-GPU 正常时应看到：
+GPU 正常时应包含：
 
 ```text
 Video encoder: h264_nvenc
 ```
 
-## 2. 导出镜像并传到 Linux
-
-导出 tar 包：
+检查镜像标签：
 
 ```bash
-docker save videocut-wrapper:v2 -o videocut-wrapper_v2.tar
+docker image inspect "${IMAGE}" \
+  --format '{{json .Config.Labels}}'
 ```
 
-导出后文件在：
+## 4. 导出并上传镜像
+
+在 WSL 中导出：
+
+```bash
+docker save "${IMAGE}" -o "videocut-wrapper_${VERSION}.tar"
+```
+
+对应 Windows 文件：
 
 ```text
-D:\VideoCut-Wrapper\videocut-wrapper_v2.tar
+D:\VideoCut-Wrapper\videocut-wrapper_v5.17.tar
 ```
 
-传到 Linux 服务器。下面用 `root@192.168.1.100` 做例子，实际执行时把 IP 换成你的 Linux 服务器 IP：
+上传镜像和环境文件；把 `SERVER_IP` 换成实际地址：
 
 ```bash
-scp videocut-wrapper_v2.tar root@192.168.1.100:/tmp/
+SERVER_IP=192.168.1.100
+
+scp "videocut-wrapper_${VERSION}.tar" \
+  root@${SERVER_IP}:/data/images/
+
+scp /mnt/d/VideoCut-Wrapper/.env \
+  root@${SERVER_IP}:/data/env/videocut.env
 ```
 
-说明：`docker save` 会把业务镜像依赖的底层镜像层一起打进去，Linux 服务器不需要单独 build base 镜像。
+不要把 `.env` 打进镜像。镜像或 tar 可能被复制，密钥应只通过服务器环境文件注入。
 
-## 3. Linux 导入镜像
+## 5. 同步服务器部署文件
 
-登录 Linux 服务器后执行：
+镜像 tar 只包含应用代码，不会自动更新宿主机上的 Compose、Nginx 和发布脚本。服务器的 `/data/VideoCut-Wrapper` 必须同步到构建 `v5.17` 时使用的同一份代码。
+
+如果服务器仓库通过 Git 管理：
 
 ```bash
-sudo docker load -i /tmp/videocut-wrapper_v2.tar
-sudo docker images | grep videocut-wrapper
+cd /data/VideoCut-Wrapper
+git pull --ff-only
 ```
 
-确认能看到：
+至少应确认以下文件存在：
 
 ```text
-videocut-wrapper   v2
+docker-compose.zero-downtime.yml
+docker-compose.zero-downtime.gpu.yml
+deploy/nginx/nginx.conf
+deploy/zero_downtime_deploy.sh
 ```
 
-## 4. 把本地 .env 传到 Linux
-
-镜像里已经有 Linux、Python、FFmpeg 和代码。`.env` 只是运行参数和密钥，例如 OSS AK/SK、端口、worker 数量。
-
-可以把 `.env` 打进镜像，但不建议这么做：镜像一旦传给别人或保存成 tar，OSS 密钥也一起被带走；以后换 AK/SK 还要重新 build 镜像。更简单也更安全的做法是启动时用 `--env-file` 传进去。
-
-你本地已经有 `D:\VideoCut-Wrapper\.env`，直接传到 Linux：
+发布脚本需要可执行权限：
 
 ```bash
-scp /mnt/d/VideoCut-Wrapper/.env root@192.168.1.100:/tmp/videocut.env
+chmod +x /data/VideoCut-Wrapper/deploy/zero_downtime_deploy.sh
 ```
 
-## 5. Linux 启动容器
+## 6. Linux 导入 v5.17
 
-你的旧命令里没有目录映射，只有 `-p` 端口映射。下面也先给不挂载目录的简单启动命令。
-
-不挂载目录时，删除容器会同时删除容器内的 BGM。新容器启动时会自动从 OSS 增量同步公开 BGM、backup 和模板音乐，因此无需手动调用模板同步接口；由于新容器本地目录为空，这次会重新下载全部文件。需要跨容器复用本地音乐时，应挂载 `/app/input/bgm`、`/app/input/bgm-backup` 和 `/app/input/bgm-templete`，此时 `ossutil sync -u -f` 会跳过相同文件。
-
-注意端口：当前服务容器内端口是 `3000`，这里也直接用宿主机 `3000`，所以是 `-p 3000:3000`。你以前的 `8536` 只是旧项目示例端口，不作为当前项目默认值。
-
-### 5.1 有 GPU 的服务器，最简单启动
+登录服务器后执行：
 
 ```bash
-sudo docker rm -f videocut-wrapper 2>/dev/null || true
-
-sudo docker run -d \
-  --name videocut-wrapper \
-  --restart unless-stopped \
-  -p 3000:3000 \
-  --memory="64g" \
-  --cpus="16" \
-  --gpus all \
-  -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
-  --env-file /tmp/videocut.env \
-  videocut-wrapper:v2
+docker load -i /data/images/videocut-wrapper_v5.17.tar
+docker image inspect videocut-wrapper:v5.17 >/dev/null
+docker images | grep videocut-wrapper
 ```
 
-### 5.2 没有 GPU 的服务器，最简单启动
+`docker save` 已包含依赖镜像层，服务器不需要重新构建基础镜像。
 
-```bash
-sudo docker rm -f videocut-wrapper 2>/dev/null || true
+## 7. 检查服务器环境文件
 
-sudo docker run -d \
-  --name videocut-wrapper \
-  --restart unless-stopped \
-  -p 3000:3000 \
-  --memory="64g" \
-  --cpus="16" \
-  --env-file /tmp/videocut.env \
-  videocut-wrapper:v2
+`/data/env/videocut.env` 中的运行路径必须是容器内 Linux 路径，不能使用 `D:\...` 等 Windows 路径：
+
+```dotenv
+PORT=3000
+DB_PATH=/srv/videocut/data/tasks.db
+TEMP_DIR=/srv/videocut/temp
+BGM_DIR=/app/input/bgm
+BGM_BACKUP_DIR=/app/input/bgm-backup
+BGM_TEMPLATE_DIR=/app/input/bgm-templete
+OSSUTIL_PATH=ossutil64
 ```
 
-CPU-only 命令不要加 `--gpus all`。GPU 命令比 CPU-only 命令只多两行：
+同时检查 OSS、API key、worker 数量和启动同步配置：
 
-```bash
-  --gpus all \
-  -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
+```dotenv
+API_KEYS=替换成真实密钥
+WORKER_COUNT=6
+UPLOAD_WORKER_COUNT=6
+SYNC_BGM_ON_STARTUP=1
+SYNC_BGM_TEMPLATE_ON_STARTUP=1
 ```
 
-### 5.3 进入已启动容器排查
+不要把环境文件内容输出到日志或提交到 Git。
 
-第 5.1 / 5.2 节用的是 `docker run -d`，容器会在后台自动启动服务，不需要再进容器手动执行 `python -m videocut serve`。
+## 8. 首次从旧容器迁移
 
-如果只是想进去看文件、数据库或执行检查，用 `docker exec` 进入这个已经在跑的容器：
+本节只执行一次。适用于当前仍由单个 `videocut-wrapper` 容器直接占用宿主机 `3000`，并且旧容器没有挂载持久目录的情况。
 
-```bash
-sudo docker exec -it videocut-wrapper /bin/bash
-```
+### 8.1 确认旧任务排空
 
-进入后常用命令：
+查询旧容器中的任务：
 
 ```bash
-python -m videocut check
-ls -lh /srv/videocut/data
-python - <<'PY'
+docker exec -i videocut-wrapper python - <<'PY'
 import sqlite3
+
 db = "/srv/videocut/data/tasks.db"
-conn = sqlite3.connect(db)
-for row in conn.execute("select id, status, progress, created_at, completed_at, error from tasks order by created_at desc limit 20"):
-    print(row)
+with sqlite3.connect(db) as conn:
+    rows = list(conn.execute("""
+        select status, count(*)
+        from tasks
+        where status in ('pending', 'rendering')
+        group by status
+    """))
+    print(rows)
 PY
 ```
 
-另开一个 Linux 服务器窗口跑测试：
+预期输出：
 
-```bash
-cd /mnt/VideoCut-Wrapper
-export API_BASE_URL=http://127.0.0.1:3000
-export API_KEY=你的API_KEY
-python api-test/render_bgm_file.py
+```text
+[]
 ```
 
-## 6. 验证
+如果还有 `pending` 或 `rendering`，先等待任务完成。不要直接 `docker rm -f`。
+
+### 8.2 停止旧容器
+
+```bash
+docker stop --time 600 videocut-wrapper
+```
+
+先不要删除，下一步还需要从容器复制数据。
+
+### 8.3 创建宿主持久目录
+
+```bash
+mkdir -p \
+  /data/videocut/data \
+  /data/videocut/temp \
+  /data/videocut/input/bgm \
+  /data/videocut/input/bgm-backup \
+  /data/videocut/input/bgm-templete \
+  /data/videocut/output \
+  /data/videocut/oss-local
+```
+
+### 8.4 复制数据库和资源
+
+数据库是必须迁移的数据。该命令失败时不要继续删除旧容器：
+
+```bash
+docker cp videocut-wrapper:/srv/videocut/data/. \
+  /data/videocut/data/
+```
+
+其余目录若在旧容器中存在则复制：
+
+```bash
+docker cp videocut-wrapper:/srv/videocut/temp/. \
+  /data/videocut/temp/ || true
+
+docker cp videocut-wrapper:/app/input/bgm/. \
+  /data/videocut/input/bgm/ || true
+
+docker cp videocut-wrapper:/app/input/bgm-backup/. \
+  /data/videocut/input/bgm-backup/ || true
+
+docker cp videocut-wrapper:/app/input/bgm-templete/. \
+  /data/videocut/input/bgm-templete/ || true
+
+docker cp videocut-wrapper:/app/output/. \
+  /data/videocut/output/ || true
+
+docker cp videocut-wrapper:/srv/videocut/oss-local/. \
+  /data/videocut/oss-local/ || true
+```
+
+确认数据库已复制：
+
+```bash
+ls -lh /data/videocut/data/tasks.db
+```
+
+确认无误后删除旧容器：
+
+```bash
+docker rm videocut-wrapper
+```
+
+### 8.5 启动第一套 blue + proxy
+
+GPU 服务器：
+
+```bash
+cd /data/VideoCut-Wrapper
+
+VIDEOCUT_ENV_FILE=/data/env/videocut.env \
+VIDEOCUT_RUNTIME_ROOT=/data/videocut \
+VIDEOCUT_MEMORY_LIMIT=28g \
+VIDEOCUT_CPU_LIMIT=8 \
+./deploy/zero_downtime_deploy.sh videocut-wrapper:v5.17
+```
+
+第一次启动完成后，宿主机 `3000` 由 `videocut-proxy` 占用，应用运行在 `videocut-blue` 或 `videocut-green` 中。
+
+## 9. 验证 v5.17
 
 查看容器：
 
 ```bash
-sudo docker ps --filter "name=videocut-wrapper"
-sudo docker logs -f videocut-wrapper
+docker ps --filter name=videocut-
+```
+
+正常情况下至少看到：
+
+```text
+videocut-proxy
+videocut-blue 或 videocut-green
 ```
 
 健康检查：
@@ -198,168 +317,200 @@ sudo docker logs -f videocut-wrapper
 curl http://127.0.0.1:3000/health
 ```
 
-检查编码器：
+查看当前流量槽位：
 
 ```bash
-sudo docker exec videocut-wrapper python -m videocut check
+docker exec videocut-proxy \
+  cat /etc/nginx/runtime/upstream.conf
 ```
 
-预期：
-
-```text
-有 GPU: Video encoder: h264_nvenc
-无 GPU: Video encoder: libx264
-```
-
-BGM 支持按类型放在子目录里，例如：
-
-```text
-/app/input/bgm/舒缓/1.mp3
-/app/input/bgm/动感/1.mp3
-```
-
-程序会递归扫描 `/app/input/bgm` 下的音频文件。
-
-当前 BGM 对齐清单在仓库里。每次用 `./docker/build_image.sh` 打包前会自动刷新：
-
-```text
-docs/BGM_MANIFEST.json
-```
-
-接口指定某一首 BGM 时，使用清单里的 `category + filename`，例如：
-
-```json
-{
-  "category": "calm",
-  "filename": "1"
-}
-```
-
-这里的 `filename` 是不带扩展名的歌曲 ID；真实文件和 `ossUrl` 仍保留 `.mp3` 等扩展名。
-
-如果接口里要指定某一首 BGM，就传清单里的 `category + filename`：
+查看应用日志，容器名按实际槽位选择：
 
 ```bash
+docker logs --tail 200 -f videocut-blue
+```
+
+检查 GPU 编码器：
+
+```bash
+docker exec videocut-blue python -m videocut check
+```
+
+接口冒烟测试：
+
+```bash
+cd /data/VideoCut-Wrapper
+export API_BASE_URL=http://127.0.0.1:3000
+export API_KEY=替换成真实API密钥
 python api-test/render_bgm_file.py
 ```
 
-对应 `/render` 请求体里就是：
-
-```json
-{
-  "overrides": {
-    "bgm": {
-      "category": "calm",
-      "filename": "1"
-    }
-  }
-}
-```
-
-## 7. 删除旧镜像或切换到 v2
-
-如果删除旧镜像时报错，通常是还有容器正在使用它。先查哪个容器占用了 `v1`：
+检查历史任务数据库仍可读取：
 
 ```bash
-docker ps -a --filter ancestor=videocut-wrapper:v1
+python - <<'PY'
+import sqlite3
+
+db = "/data/videocut/data/tasks.db"
+with sqlite3.connect(db) as conn:
+    for row in conn.execute("""
+        select id, status, progress, created_at, completed_at, error
+        from tasks
+        order by created_at desc
+        limit 20
+    """):
+        print(row)
+PY
 ```
 
-你现在本机如果看到 `videocut-wrapper` 还在运行，说明它就是从 `videocut-wrapper:v1` 启动的。要切换到 `v2`，先停掉并删除旧容器，再用 `v2` 启动：
+## 10. v5.18 及后续零停机更新
+
+本地仍按第 2～4 节执行 build、验证、`docker save` 和 `scp`。服务器执行 `docker load` 后，不再手工停止旧容器，也不再执行 `docker run`。
+
+例如发布 `v5.18`：
+
+```bash
+docker load -i /data/images/videocut-wrapper_v5.18.tar
+
+cd /data/VideoCut-Wrapper
+
+VIDEOCUT_ENV_FILE=/data/env/videocut.env \
+VIDEOCUT_RUNTIME_ROOT=/data/videocut \
+VIDEOCUT_MEMORY_LIMIT=28g \
+VIDEOCUT_CPU_LIMIT=8 \
+./deploy/zero_downtime_deploy.sh videocut-wrapper:v5.18
+```
+
+发布脚本会自动：
+
+1. 识别当前 blue/green 槽位；
+2. 在另一个槽位启动新镜像；
+3. 等待新容器健康检查通过；
+4. reload Nginx，将新请求切换到新版本；
+5. 等待旧容器的本地队列和渲染任务排空；
+6. 优雅停止并删除旧应用容器。
+
+默认最多等待旧任务排空 1 小时，停止时最多等待 10 分钟。长任务环境可以调整：
+
+```bash
+DRAIN_TIMEOUT_SECONDS=7200 \
+STOP_TIMEOUT_SECONDS=1200 \
+VIDEOCUT_ENV_FILE=/data/env/videocut.env \
+VIDEOCUT_RUNTIME_ROOT=/data/videocut \
+VIDEOCUT_MEMORY_LIMIT=28g \
+VIDEOCUT_CPU_LIMIT=8 \
+./deploy/zero_downtime_deploy.sh videocut-wrapper:v5.18
+```
+
+如果排空超时，流量已经切到新版本，但旧容器会被保留，不会强杀正在渲染的任务。
+
+## 11. CPU-only 服务器
+
+CPU-only 发布时关闭 GPU Compose，并按机器情况设置资源：
+
+```bash
+VIDEOCUT_ENV_FILE=/data/env/videocut.env \
+VIDEOCUT_RUNTIME_ROOT=/data/videocut \
+VIDEOCUT_MEMORY_LIMIT=64g \
+VIDEOCUT_CPU_LIMIT=2 \
+ZERO_DOWNTIME_GPU=0 \
+./deploy/zero_downtime_deploy.sh videocut-wrapper:v5.17
+```
+
+CPU-only 环境预期编码器为：
+
+```text
+Video encoder: libx264
+```
+
+## 12. 回滚
+
+如果新版本已经发布完成，需要回滚到仍保留的旧镜像，例如 `v5.17`，把旧镜像当作一次新发布即可：
+
+```bash
+VIDEOCUT_ENV_FILE=/data/env/videocut.env \
+VIDEOCUT_RUNTIME_ROOT=/data/videocut \
+VIDEOCUT_MEMORY_LIMIT=28g \
+VIDEOCUT_CPU_LIMIT=8 \
+./deploy/zero_downtime_deploy.sh videocut-wrapper:v5.17
+```
+
+如果新容器未通过健康检查，发布脚本不会切走旧流量。如果切流后的代理验证失败，脚本会尝试自动回切到旧槽位。
+
+## 13. 清理旧镜像
+
+先确认没有容器仍在使用目标镜像：
+
+```bash
+docker ps -a --filter ancestor=videocut-wrapper:v5.16
+```
+
+没有输出后再删除：
+
+```bash
+docker rmi videocut-wrapper:v5.16
+```
+
+不要在发布脚本运行期间执行强制镜像清理，也不要使用 `docker system prune -a` 作为日常更新步骤。
+
+## 14. 常用排查命令
+
+查看所有蓝绿相关容器：
+
+```bash
+docker ps -a --filter name=videocut-
+```
+
+查看当前槽位：
+
+```bash
+docker exec videocut-proxy \
+  cat /etc/nginx/runtime/upstream.conf
+```
+
+查看代理日志：
+
+```bash
+docker logs --tail 200 videocut-proxy
+```
+
+查看应用健康状态：
+
+```bash
+docker inspect --format '{{json .State.Health}}' videocut-blue
+docker inspect --format '{{json .State.Health}}' videocut-green
+```
+
+查看当前任务：
+
+```bash
+curl http://127.0.0.1:3000/health
+```
+
+数据库一致性快照：
+
+```bash
+python - <<'PY'
+import sqlite3
+
+src = "/data/videocut/data/tasks.db"
+dst = "/data/videocut/data/tasks_snapshot.db"
+
+with sqlite3.connect(src) as source:
+    with sqlite3.connect(dst) as target:
+        source.backup(target)
+
+print(dst)
+PY
+```
+
+## 15. 不再使用的旧操作
+
+正常更新不要再执行：
 
 ```bash
 docker rm -f videocut-wrapper
-
-docker run -d \
-  --name videocut-wrapper \
-  --restart unless-stopped \
-  -p 3000:3000 \
-  --memory="64g" \
-  --cpus="16" \
-  --gpus all \
-  -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
-  --env-file /tmp/videocut.env \
-  videocut-wrapper:v2
+docker run -d -p 3000:3000 ...
 ```
 
-确认 v2 容器启动正常后，再删旧镜像：
-
-```bash
-docker rmi videocut-wrapper:v1
-```
-
-如果只是本地强制清理，而且你已经确认没有容器需要它，也可以：
-
-```bash
-docker rmi -f videocut-wrapper:v1
-```
-
-## 8. 下次更新到 v3
-
-本地 build `v3`：
-
-```bash
-cd /mnt/d/VideoCut-Wrapper
-
-docker build \
-  --build-arg BASE_IMAGE=magicwang/pytorch-base:torch210-cu128-runtime-v1 \
-  --build-arg IMAGE_VERSION=v3 \
-  --build-arg IMAGE_DESCRIPTION="VideoCut Docker image v3" \
-  -t videocut-wrapper:v3 \
-  .
-```
-
-导出并传到 Linux：
-
-```bash
-docker save videocut-wrapper:v3 -o videocut-wrapper_v3.tar
-scp videocut-wrapper_v3.tar root@192.168.1.100:/tmp/
-```
-
-Linux 导入：
-
-```bash
-sudo docker load -i /tmp/videocut-wrapper_v3.tar
-```
-
-启动时把最后一行镜像名从 `videocut-wrapper:v2` 改成：
-
-```bash
-videocut-wrapper:v3
-```
-
-## 9. 临时修改镜像时才用 docker commit
-
-正常情况不要用 `docker commit`，应该改代码后重新 build。只有临时热修时才这样做。
-
-启动一个干净容器进去修改：
-
-```bash
-sudo docker run -it \
-  --name commit-videocut-fix \
-  --gpus all \
-  -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,video \
-  --entrypoint /bin/bash \
-  videocut-wrapper:v2
-```
-
-容器里只做最终修复，退出前清理临时文件：
-
-```bash
-rm -rf /srv/videocut/temp/* /tmp/*
-exit
-```
-
-提交新镜像，`-m` 用中文：
-
-```bash
-sudo docker commit \
-  -m "修复视频渲染问题" \
-  commit-videocut-fix \
-  videocut-wrapper:v2
-```
-
-导出热修镜像：
-
-```bash
-sudo docker save videocut-wrapper:v2 -o videocut-wrapper_v2.tar
-```
+也不要使用 `docker commit` 制作正式版本。正式版本应修改仓库代码、重新构建带明确 tag 的镜像、验证后再通过蓝绿发布脚本上线。

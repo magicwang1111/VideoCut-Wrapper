@@ -1,0 +1,89 @@
+name: videocut-zero-downtime
+
+x-videocut-common: &videocut-common
+  restart: unless-stopped
+  mem_limit: ${VIDEOCUT_MEMORY_LIMIT:-28g}
+  cpus: ${VIDEOCUT_CPU_LIMIT:-8}
+  env_file:
+    - ${VIDEOCUT_ENV_FILE:-.env}
+  expose:
+    - "3000"
+  volumes:
+    - ${VIDEOCUT_RUNTIME_ROOT:-.}/data:/srv/videocut/data
+    - ${VIDEOCUT_RUNTIME_ROOT:-.}/temp:/srv/videocut/temp
+    - ${VIDEOCUT_RUNTIME_ROOT:-.}/input/bgm:/app/input/bgm
+    - ${VIDEOCUT_RUNTIME_ROOT:-.}/input/bgm-backup:/app/input/bgm-backup
+    - ${VIDEOCUT_RUNTIME_ROOT:-.}/input/bgm-templete:/app/input/bgm-templete
+    - ${VIDEOCUT_RUNTIME_ROOT:-.}/output:/app/output
+    - ./pipelines:/app/pipelines:ro
+    - ./fonts:/app/fonts:ro
+    - ${VIDEOCUT_RUNTIME_ROOT:-.}/oss-local:/srv/videocut/oss-local
+  healthcheck:
+    test:
+      [
+        "CMD",
+        "python",
+        "-c",
+        "import os, sys, urllib.request; port = os.getenv('PORT', '3000'); sys.exit(0 if urllib.request.urlopen(f'http://127.0.0.1:{port}/health', timeout=3).getcode() == 200 else 1)",
+      ]
+    interval: 5s
+    timeout: 5s
+    retries: 12
+    start_period: 20s
+
+services:
+  proxy:
+    image: nginx:1.27-alpine
+    container_name: videocut-proxy
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - proxy-runtime:/etc/nginx/runtime
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        test -f /etc/nginx/runtime/upstream.conf ||
+        printf 'server videocut-blue:3000;\n' > /etc/nginx/runtime/upstream.conf;
+        exec nginx -g 'daemon off;'
+
+  blue:
+    <<: *videocut-common
+    image: ${VIDEOCUT_BLUE_IMAGE:-videocut-wrapper:latest}
+    container_name: videocut-blue
+    environment:
+      TASK_REPLAY_SKIP_ONCE_FILE: /run/videocut-deploy/skip-replay-once
+    volumes:
+      - ${VIDEOCUT_RUNTIME_ROOT:-.}/data:/srv/videocut/data
+      - ${VIDEOCUT_RUNTIME_ROOT:-.}/temp:/srv/videocut/temp
+      - ${VIDEOCUT_RUNTIME_ROOT:-.}/input/bgm:/app/input/bgm
+      - ${VIDEOCUT_RUNTIME_ROOT:-.}/input/bgm-backup:/app/input/bgm-backup
+      - ${VIDEOCUT_RUNTIME_ROOT:-.}/input/bgm-templete:/app/input/bgm-templete
+      - ${VIDEOCUT_RUNTIME_ROOT:-.}/output:/app/output
+      - ./pipelines:/app/pipelines:ro
+      - ./fonts:/app/fonts:ro
+      - ${VIDEOCUT_RUNTIME_ROOT:-.}/oss-local:/srv/videocut/oss-local
+      - ./deploy/runtime/blue:/run/videocut-deploy
+
+  green:
+    <<: *videocut-common
+    image: ${VIDEOCUT_GREEN_IMAGE:-videocut-wrapper:latest}
+    container_name: videocut-green
+    environment:
+      TASK_REPLAY_SKIP_ONCE_FILE: /run/videocut-deploy/skip-replay-once
+    volumes:
+      - ${VIDEOCUT_RUNTIME_ROOT:-.}/data:/srv/videocut/data
+      - ${VIDEOCUT_RUNTIME_ROOT:-.}/temp:/srv/videocut/temp
+      - ${VIDEOCUT_RUNTIME_ROOT:-.}/input/bgm:/app/input/bgm
+      - ${VIDEOCUT_RUNTIME_ROOT:-.}/input/bgm-backup:/app/input/bgm-backup
+      - ${VIDEOCUT_RUNTIME_ROOT:-.}/input/bgm-templete:/app/input/bgm-templete
+      - ${VIDEOCUT_RUNTIME_ROOT:-.}/output:/app/output
+      - ./pipelines:/app/pipelines:ro
+      - ./fonts:/app/fonts:ro
+      - ${VIDEOCUT_RUNTIME_ROOT:-.}/oss-local:/srv/videocut/oss-local
+      - ./deploy/runtime/green:/run/videocut-deploy
+
+volumes:
+  proxy-runtime:

@@ -743,6 +743,7 @@ def create_app() -> FastAPI:
             "ok": True,
             "workers": app.state.worker_count,
             "queueSize": queue_obj.queue_size,
+            "localActiveWorkers": getattr(queue_obj, "active_worker_count", 0),
             "pipelines": app.state.pipeline_count,
         }
 
