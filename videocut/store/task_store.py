@@ -215,6 +215,19 @@ class TaskStore:
             self._db.execute("UPDATE tasks SET progress=? WHERE id=?", (progress, task_id))
             self._db.commit()
 
+    def patch_payload(self, task_id: str, updates: dict[str, Any]) -> None:
+        with self._lock:
+            row = self._db.execute("SELECT variables FROM tasks WHERE id=?", (task_id,)).fetchone()
+            if row is None:
+                return
+            payload = json.loads(row["variables"] or "{}")
+            payload.update(updates)
+            self._db.execute(
+                "UPDATE tasks SET variables=? WHERE id=?",
+                (json.dumps(payload, ensure_ascii=False), task_id),
+            )
+            self._db.commit()
+
     def mark_completed(self, task_id: str, oss_key: str) -> None:
         with self._lock:
             self._db.execute(

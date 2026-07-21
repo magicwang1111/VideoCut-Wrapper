@@ -67,7 +67,8 @@
       "Bash(python -m videocut list)",
       "Bash(gh pr create --title 'refactor: 迁移后代码清理 — 错误码、日志统一、去重、正确性修复' --body ':*)",
       "Bash(python -c \"from videocut.pipeline.runner import ffmpeg_pipeline_concat; print\\('import ok'\\)\")",
-      "Bash(npx skills *)"
+      "Bash(npx skills *)",
+      "PowerShell(Out-Null *)"
     ]
   }
 }

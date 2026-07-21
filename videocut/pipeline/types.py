@@ -5,6 +5,10 @@ from typing import Any, Literal
 
 PipelineJunctionType = Literal["flash-black", "dissolve", "cut", "zoom-dissolve"]
 BgmSource = Literal["catalog", "template"]
+SubtitleLanguageMode = Literal["source", "translation", "bilingual", "auto"]
+SubtitlePosition = Literal[
+    "bottom-left", "bottom", "bottom-right", "middle", "top-left", "top", "top-right"
+]
 
 
 @dataclass(slots=True)
@@ -40,6 +44,24 @@ class PipelineBgmConfig:
 
 
 @dataclass(slots=True)
+class PipelineSubtitleConfig:
+    enabled: bool = True
+    definition: int = 122
+    target_language: str = "auto"
+    language_mode: SubtitleLanguageMode = "source"
+    accurate_mode: bool = True
+    need_wordlist: bool = False
+    adapt_words: str = ""
+    font_name: str = "simkai.ttf"
+    font_size: int = 40
+    font_color: str = "#FFFFFF"
+    font_alpha: float = 0.9
+    position: SubtitlePosition = "bottom"
+    auto_wrap: bool = True
+    max_chars_per_line: int = 16
+
+
+@dataclass(slots=True)
 class PipelineVariableDef:
     type: Literal["number", "boolean", "select"]
     required: bool = False
@@ -61,6 +83,7 @@ class PipelineConfig:
     transitions: list[PipelineTransitionConfig] | None = None
     default_transition: PipelineTransitionConfig | None = None
     bgm: PipelineBgmConfig | None = None
+    subtitle: PipelineSubtitleConfig | None = None
     variables: dict[str, PipelineVariableDef] | None = None
     overridable: list[str] | None = None
 

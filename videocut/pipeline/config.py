@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -14,9 +15,72 @@ from videocut.pipeline.types import (
     PipelineConfig,
     PipelineJunctionType,
     PipelineOutputConfig,
+    PipelineSubtitleConfig,
     PipelineTransitionConfig,
     PipelineVariableDef,
 )
+
+_SUBTITLE_LANGUAGE_MODES = {"source", "translation", "bilingual", "auto"}
+_SUBTITLE_POSITIONS = {"bottom-left", "bottom", "bottom-right", "middle", "top-left", "top", "top-right"}
+_SUBTITLE_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
+
+
+def parse_subtitle_config(raw: Any) -> PipelineSubtitleConfig | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise VideoCutError("subtitle must be an object.")
+    enabled = raw.get("enabled", True)
+    definition = raw.get("definition", 122)
+    language_mode = raw.get("language_mode", "source")
+    target_language = raw.get("target_language", "auto")
+    position = raw.get("position", "bottom")
+    font_name = raw.get("font_name", "simkai.ttf")
+    font_size = raw.get("font_size", 40)
+    font_color = raw.get("font_color", "#FFFFFF")
+    font_alpha = raw.get("font_alpha", 0.9)
+    max_chars = raw.get("max_chars_per_line", 16)
+    for field, value in (("enabled", enabled), ("accurate_mode", raw.get("accurate_mode", True)),
+                         ("need_wordlist", raw.get("need_wordlist", False)), ("auto_wrap", raw.get("auto_wrap", True))):
+        if not isinstance(value, bool):
+            raise VideoCutError(f"subtitle.{field} must be a boolean.")
+    if not isinstance(definition, int) or isinstance(definition, bool) or definition <= 0:
+        raise VideoCutError("subtitle.definition must be a positive integer.")
+    if language_mode not in _SUBTITLE_LANGUAGE_MODES:
+        raise VideoCutError("subtitle.language_mode is invalid.")
+    if not isinstance(target_language, str) or not target_language.strip():
+        raise VideoCutError("subtitle.target_language must be a non-empty string.")
+    if position not in _SUBTITLE_POSITIONS:
+        raise VideoCutError("subtitle.position is invalid.")
+    if not isinstance(font_name, str) or Path(font_name).name != font_name or font_name not in {"simkai.ttf", "simhei.ttf", "SIMHEI.TTF"}:
+        raise VideoCutError("subtitle.font_name must be an allowed bundled/system subtitle font.")
+    if not isinstance(font_size, int) or isinstance(font_size, bool) or not 8 <= font_size <= 200:
+        raise VideoCutError("subtitle.font_size must be an integer between 8 and 200.")
+    if not isinstance(font_color, str) or not _SUBTITLE_COLOR_RE.fullmatch(font_color):
+        raise VideoCutError("subtitle.font_color must use #RRGGBB.")
+    if not isinstance(font_alpha, (int, float)) or isinstance(font_alpha, bool) or not 0 < float(font_alpha) <= 1:
+        raise VideoCutError("subtitle.font_alpha must be in (0, 1].")
+    if not isinstance(max_chars, int) or isinstance(max_chars, bool) or not 4 <= max_chars <= 100:
+        raise VideoCutError("subtitle.max_chars_per_line must be an integer between 4 and 100.")
+    adapt_words = raw.get("adapt_words", "")
+    if not isinstance(adapt_words, str):
+        raise VideoCutError("subtitle.adapt_words must be a string.")
+    return PipelineSubtitleConfig(
+        enabled=enabled,
+        definition=definition,
+        target_language=target_language.strip(),
+        language_mode=language_mode,
+        accurate_mode=raw.get("accurate_mode", True),
+        need_wordlist=raw.get("need_wordlist", False),
+        adapt_words=adapt_words,
+        font_name=font_name,
+        font_size=font_size,
+        font_color=font_color.upper(),
+        font_alpha=float(font_alpha),
+        position=position,
+        auto_wrap=raw.get("auto_wrap", True),
+        max_chars_per_line=max_chars,
+    )
 
 
 def is_pipeline_config(raw: Any) -> bool:
@@ -268,6 +332,7 @@ def parse_pipeline_config(
         transitions=transitions,
         default_transition=default_transition,
         bgm=parse_bgm_config(raw.get("bgm")),
+        subtitle=parse_subtitle_config(raw.get("subtitle")),
         variables=variables,
         overridable=overridable,
     )
@@ -347,6 +412,12 @@ def _clone_bgm(config: PipelineBgmConfig | None) -> PipelineBgmConfig | None:
         volume=config.volume,
         fade_out=config.fade_out,
     )
+
+
+def _clone_subtitle(config: PipelineSubtitleConfig | None) -> PipelineSubtitleConfig | None:
+    if config is None:
+        return None
+    return PipelineSubtitleConfig(**{field: getattr(config, field) for field in config.__dataclass_fields__})
 
 
 def _parse_override_index(raw: object, location: str) -> int:
@@ -451,6 +522,7 @@ def bind_pipeline_config(
     bgm = _clone_bgm(config.bgm)
     if overrides.get("bgm") is not None:
         bgm = parse_bgm_config(overrides.get("bgm"), base=bgm)
+    subtitle = _clone_subtitle(config.subtitle)
 
     bound_clips: list[PipelineClipConfig] = []
     for index in range(bound_clip_count):
@@ -500,6 +572,7 @@ def bind_pipeline_config(
         transitions=bound_transitions or None,
         default_transition=default_transition,
         bgm=bgm,
+        subtitle=subtitle,
         variables=config.variables,
         overridable=config.overridable,
     )

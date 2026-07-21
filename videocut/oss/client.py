@@ -12,6 +12,7 @@ import oss2
 
 from videocut.errors import DependencyError
 from videocut.runtime_paths import project_root, resolve_runtime_path
+from videocut.subtitle.config import subtitle_input_subdir, subtitle_output_subdir
 
 
 try:
@@ -39,7 +40,7 @@ def _normalize_public_endpoint(raw_endpoint: str | None) -> str:
 class OssClient:
     def __init__(self) -> None:
         self.bucket_name = os.getenv("OSS_BUCKET", "goumee-coze")
-        self.prefix = os.getenv("OSS_PREFIX", "GouMei-Video-Cut")
+        self.prefix = (os.getenv("OSS_PREFIX", "GouMei-Video-Cut").strip().strip("/") or "GouMei-Video-Cut")
         endpoint = os.getenv("OSS_ENDPOINT", "oss-cn-hangzhou.aliyuncs.com")
         access_key_id = os.getenv("OSS_ACCESS_KEY_ID")
         access_key_secret = os.getenv("OSS_ACCESS_KEY_SECRET")
@@ -72,6 +73,13 @@ class OssClient:
     def input_key(self, file_id: str, ext: str) -> str:
         return f"{self.prefix}/inputs/{file_id}{ext}"
 
+    @property
+    def subtitle_input_prefix(self) -> str:
+        return f"{self.prefix}/{subtitle_input_subdir()}/"
+
+    def subtitle_input_key(self, file_id: str, ext: str) -> str:
+        return f"{self.subtitle_input_prefix}{file_id}{ext}"
+
     def user_audio_key(self, file_id: str, ext: str) -> str:
         return f"{self.prefix}/user-audio/{file_id}{ext}"
 
@@ -80,6 +88,26 @@ class OssClient:
         date_dir = output_time.strftime("%Y%m%d")
         timestamp_dir = output_time.strftime("%Y%m%d_%H%M%S")
         return f"{self.prefix}/outputs/{date_dir}/{timestamp_dir}/{task_id}/final.mp4"
+
+    def subtitle_output_key(self, task_id: str, timestamp: datetime | None = None) -> str:
+        output_time = _as_output_time(timestamp)
+        date_dir = output_time.strftime("%Y%m%d")
+        timestamp_dir = output_time.strftime("%Y%m%d_%H%M%S")
+        return f"{self.prefix}/{subtitle_output_subdir()}/{date_dir}/{timestamp_dir}/{task_id}/final.mp4"
+
+    def exists(self, oss_key: str) -> bool:
+        if self.local_root:
+            return (Path(self.local_root) / oss_key).is_file()
+        if self.bucket is None:
+            return False
+        return bool(self.bucket.object_exists(oss_key))
+
+    def signed_get_url(self, oss_key: str, expires: int = 86400) -> str:
+        if self.local_root:
+            raise DependencyError("OSS signed URL", "A public OSS backend is required for Tencent MPS URL input.")
+        if self.bucket is None:
+            raise DependencyError("OSS bucket", "Bucket not initialized.")
+        return self.bucket.sign_url("GET", oss_key, expires, slash_safe=True)
 
     def upload(self, local_path: str | Path, oss_key: str) -> None:
         if self.local_root:

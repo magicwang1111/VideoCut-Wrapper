@@ -373,6 +373,55 @@ def test_render_endpoint_rejects_wrong_required_clip_count(tmp_path, monkeypatch
         assert FakeTaskQueue.instances[-1].tasks == []
 
 
+def test_subtitle_render_enforces_single_prefixed_input_and_no_overrides(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    payload = {
+        "name": "subtitle-burn",
+        "mode": "pipeline",
+        "required_clip_count": 1,
+        "clips": [{"source_index": 0}],
+        "subtitle": {"enabled": True, "definition": 122, "font_name": "simkai.ttf"},
+    }
+    _write_pipeline_config(pipelines_root, "subtitle-burn", payload)
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root)
+    headers = {"X-Api-Key": "test-key", "Content-Type": "application/json"}
+
+    with TestClient(api_app_module.create_app()) as client:
+        wrong_count = client.post(
+            "/render", headers=headers,
+            json={"pipeline": "subtitle-burn", "clips": ["a", "b"]},
+        )
+        assert wrong_count.status_code == 400
+        assert wrong_count.json()["error_code"] == 2009
+
+        wrong_prefix = client.post(
+            "/render", headers=headers,
+            json={"pipeline": "subtitle-burn", "clips": ["GouMei-Video-Cut/inputs/a.mp4"]},
+        )
+        assert wrong_prefix.status_code == 400
+        assert wrong_prefix.json()["error_code"] == 2011
+
+        wrong_overrides = client.post(
+            "/render", headers=headers,
+            json={"pipeline": "subtitle-burn", "clips": ["GouMei-Video-Cut/subtitle-input/a.mp4"], "overrides": {"quality": "medium"}},
+        )
+        assert wrong_overrides.status_code == 400
+        assert wrong_overrides.json()["error_code"] == 2010
+
+        valid_object = tmp_path / "oss" / "GouMei-Video-Cut" / "subtitle-input" / "a.mp4"
+        valid_object.parent.mkdir(parents=True, exist_ok=True)
+        valid_object.write_bytes(b"video")
+        accepted = client.post(
+            "/render", headers=headers,
+            json={"pipeline": "subtitle-burn", "clips": ["GouMei-Video-Cut/subtitle-input/a.mp4"], "overrides": {}},
+        )
+        assert accepted.status_code == 200
+        queued = FakeTaskQueue.instances[-1].tasks[-1]
+        assert queued.payload["clips"] == ["GouMei-Video-Cut/subtitle-input/a.mp4"]
+        assert queued.payload["subtitle_output_oss_key"].endswith(f"/{queued.task_id}/final.mp4")
+
+
 def test_upload_audio_uses_user_audio_prefix_and_is_not_bgm_catalog(tmp_path, monkeypatch) -> None:
     FakeTaskQueue.instances.clear()
     pipelines_root = tmp_path / "pipelines"

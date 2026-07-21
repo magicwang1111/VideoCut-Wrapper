@@ -302,7 +302,7 @@ TENCENTCLOUD_SECRET_KEY=
 TENCENT_REGION=ap-guangzhou
 TENCENT_MPS_HOST=mps.tencentcloudapi.com
 TENCENT_MPS_VERSION=2019-06-12
-TENCENT_REQUEST_TIMEOUT=120
+TENCENT_REQUEST_TIMEOUT=600
 TENCENT_POLL_INTERVAL=5
 TENCENT_MAX_WAIT_SECONDS=3600
 
@@ -493,7 +493,7 @@ ASS 脚本建议使用：
 | top | 8 |
 | top-right | 9 |
 
-`simkai.ttf` 必须存在于运行 FFmpeg 的宿主机或容器中。Docker 镜像需要安装该字体并刷新 fontconfig 缓存。ASS 的 `Fontname` 字段使用字体族名称；实现时应通过 fontconfig 解析 `simkai.ttf` 对应的字体族，不能只假设文件名一定能被 libass 识别。
+`simkai.ttf` 是腾讯 MPS 字幕压制 API 支持的 `FontType` 值，但本 pipeline 不调用腾讯压制能力；这里沿用已验证的 ComfyUI-Subtitle 本地 ASS 做法，将 `simkai.ttf` 写入 ASS `Fontname`。运行 FFmpeg 的 Windows 宿主机或 Linux 容器仍须自行提供可被 libass/fontconfig 解析的该字体，腾讯字幕识别接口不会下发字体文件。
 
 ## 12. 本地压制命令
 

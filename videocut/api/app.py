@@ -68,6 +68,9 @@ class ApiErrorCode(IntEnum):
     FILE_NOT_FOUND = 2006
     INVALID_BGM_OVERRIDE = 2007
     INVALID_BGM_FILE_REFERENCE = 2008
+    INVALID_SUBTITLE_CLIP_COUNT = 2009
+    INVALID_SUBTITLE_OVERRIDE = 2010
+    INVALID_SUBTITLE_INPUT_PREFIX = 2011
     TASK_OUTPUT_NOT_READY = 3001
     QUEUE_FULL = 3002
     FILE_TOO_LARGE = 3003
@@ -852,12 +855,38 @@ def create_app() -> FastAPI:
         pipeline_record = store.get_pipeline(pipeline_name)
         if pipeline_record is None:
             raise PipelineNotFoundError(pipeline_name, [item.name for item in store.list_pipelines()])
+        if pipeline_name == "subtitle-burn" and len(body.clips) != 1:
+            raise api_http_exception(
+                400, ApiErrorCode.INVALID_SUBTITLE_CLIP_COUNT,
+                "subtitle-burn requires exactly one input video.",
+            )
         _validate_pipeline_clip_count(pipeline_record.config, len(body.clips))
 
         resolved_keys = _resolve_clip_refs(store, oss, body.clips, strict_pipeline=True)
         overrides = deepcopy(body.overrides)
+        if pipeline_name == "subtitle-burn":
+            if overrides:
+                raise api_http_exception(
+                    400, ApiErrorCode.INVALID_SUBTITLE_OVERRIDE,
+                    "subtitle-burn does not accept runtime overrides.",
+                )
+            invalid_keys = [key for key in resolved_keys if not key.startswith(oss.subtitle_input_prefix)]
+            if invalid_keys:
+                raise api_http_exception(
+                    400, ApiErrorCode.INVALID_SUBTITLE_INPUT_PREFIX,
+                    "subtitle-burn input must be stored under the subtitle input prefix.",
+                    {"expectedPrefix": oss.subtitle_input_prefix},
+                )
+            missing_keys = [key for key in resolved_keys if not oss.exists(key)]
+            if missing_keys:
+                raise api_http_exception(
+                    400, ApiErrorCode.FILE_NOT_FOUND,
+                    "Subtitle input object was not found.",
+                    {"ossKey": missing_keys[0]},
+                )
         user_bgm = _resolve_user_bgm(store, overrides)
         _validate_bgm_catalog_override(app.state.root_dir, pipeline_record.config, overrides)
+        task_id = generate_task_id(prefix="t_")
         payload = {
             "clips": resolved_keys,
             "pipeline_config": pipeline_record.config,
@@ -866,7 +895,8 @@ def create_app() -> FastAPI:
         }
         if user_bgm:
             payload["user_bgm"] = user_bgm
-        task_id = generate_task_id(prefix="t_")
+        if pipeline_name == "subtitle-burn":
+            payload["subtitle_output_oss_key"] = oss.subtitle_output_key(task_id)
         store.create(_create_store_record(task_id, "pipeline", pipeline_name, payload))
         queue_obj: TaskQueue = app.state.task_queue
         enqueued = queue_obj.enqueue(

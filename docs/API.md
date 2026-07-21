@@ -175,7 +175,7 @@ curl "http://127.0.0.1:3000/health"
   "ok": true,
   "workers": 4,
   "queueSize": 0,
-  "pipelines": 11
+  "pipelines": 12
 }
 ```
 
@@ -1046,6 +1046,7 @@ HTTP 状态码为 `500`。检查 `OSS_PUBLIC_ENDPOINT`，真实 OSS 结果 URL �
 | `bgm-concat` | 1 | `cut` | 是 | 纯拼接不做转场，最后混入 BGM；单个视频时用于给单视频添加 BGM |
 | `flash-black-concat` | 6 | `flash-black` | 是 | 闪黑转场拼接并混入 BGM |
 | `segment-5-6-then-3-5-concat` | 10 | `cut` | 是 | 固定使用 5 个输入视频，先取每段 5-6 秒，再取每段 3-5 秒，按顺序直切拼接并混入 BGM |
+| `subtitle-burn` | 1 | `cut` | 否 | 腾讯 MPS 模板 122 生成字幕，本地 FFmpeg 使用 `simkai.ttf` 压制，保留原音轨 |
 | `trim-2-5-concat` | 5 | `cut` | 是 | 固定使用 5 个输入视频，取每段 2-5 秒，按顺序直切拼接并混入 BGM |
 | `trim-concat` | 6 | `cut` | 是 | 裁剪后直切拼接并混入 BGM |
 | `trim-mixed-concat` | 6 | `flash-black` | 是 | 配置内前 5 个转场交替闪黑和溶解，并混入 BGM |
@@ -1070,6 +1071,12 @@ HTTP 状态码为 `500`。检查 `OSS_PUBLIC_ENDPOINT`，真实 OSS 结果 URL �
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `API_KEYS` | 空 | API key 白名单；当前对接文档固定使用 `goumee-music` |
+| `SUBTITLE_OSS_INPUT_SUBDIR` | `subtitle-input` | 字幕任务允许读取的 OSS 子目录 |
+| `SUBTITLE_OSS_OUTPUT_SUBDIR` | `subtitle-output` | 字幕成片 OSS 输出子目录 |
+| `TENCENTCLOUD_SECRET_ID` / `TENCENTCLOUD_SECRET_KEY` | 空 | 腾讯 MPS/COS 凭证，只能通过部署环境注入 |
+| `TENCENT_REGION` | `ap-guangzhou` | MPS/COS 地域 |
+| `TENCENT_COS_BUCKET` | `goumee-1444407842` | MPS 中间字幕输出桶 |
+| `TENCENT_SUBTITLE_DEFINITION` | `122` | 智能字幕模板 ID |
 | `DB_PATH` | `data/tasks.db` | SQLite 任务库 |
 | `TEMP_DIR` | `temp` | 上传临时文件和 worker 临时目录 |
 | `PIPELINES_DIR` | `pipelines` | pipeline 配置目录 |

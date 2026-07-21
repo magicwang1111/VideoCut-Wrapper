@@ -3,6 +3,7 @@ from __future__ import annotations
 import multiprocessing as mp
 import os
 import queue
+import shutil
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -298,8 +299,15 @@ class TaskQueue:
                 _uploadQueuedMonotonic=queued_monotonic,
             )
             logger.info("task %s reached 95%%; output upload queued: %s", task_id, output_path)
-            future = self.upload_executor.submit(self._upload_output, task_id, output_path)
-            future.add_done_callback(lambda item, task_id=task_id: self._handle_upload_done(task_id, item))
+            requested_oss_key = message.get("oss_key") if isinstance(message.get("oss_key"), str) else None
+            if requested_oss_key is None:
+                future = self.upload_executor.submit(self._upload_output, task_id, output_path)
+            else:
+                future = self.upload_executor.submit(self._upload_output, task_id, output_path, requested_oss_key)
+            cleanup_dir = message.get("cleanup_dir") if isinstance(message.get("cleanup_dir"), str) else None
+            future.add_done_callback(
+                lambda item, task_id=task_id, cleanup_dir=cleanup_dir: self._handle_upload_done(task_id, item, cleanup_dir)
+            )
             self._drain()
             return
 
@@ -330,8 +338,14 @@ class TaskQueue:
                 self.progress_throttle[task_id] = now
                 self.store.update_progress(task_id, int(message["progress"]))
                 self.on_event({"type": "progress", "taskId": task_id, "progress": int(message["progress"])})
+            return
 
-    def _upload_output(self, task_id: str, output_path: str) -> str:
+        if message_type == "task_metadata":
+            updates = message.get("updates")
+            if isinstance(updates, dict):
+                self.store.patch_payload(task_id, updates)
+
+    def _upload_output(self, task_id: str, output_path: str, requested_oss_key: str | None = None) -> str:
         started_monotonic = time.monotonic()
         output_file = Path(output_path)
         try:
@@ -348,7 +362,7 @@ class TaskQueue:
             uploadQueueWaitSeconds=_round_elapsed(queue_wait_seconds),
             outputSizeBytes=output_size_bytes,
         )
-        oss_key = self.oss.output_key(task_id)
+        oss_key = requested_oss_key or self.oss.output_key(task_id)
         last_error: Exception | None = None
         for attempt in range(1, max(1, UPLOAD_MAX_ATTEMPT) + 1):
             self._update_upload_diagnostics(task_id, uploadAttempt=attempt, ossKey=oss_key)
@@ -393,16 +407,20 @@ class TaskQueue:
         )
         raise RuntimeError(f"Output upload failed after {max(1, UPLOAD_MAX_ATTEMPT)} attempt(s): {last_error}")
 
-    def _handle_upload_done(self, task_id: str, future: Future[str]) -> None:
+    def _handle_upload_done(self, task_id: str, future: Future[str], cleanup_dir: str | None = None) -> None:
         try:
             oss_key = future.result()
         except Exception as exc:
             error = str(exc)
             self.store.mark_failed(task_id, error)
             self.on_event({"type": "failed", "taskId": task_id, "error": error})
+            if cleanup_dir:
+                shutil.rmtree(cleanup_dir, ignore_errors=True)
             return
         self.store.mark_completed(task_id, oss_key)
         self.on_event({"type": "completed", "taskId": task_id, "ossKey": oss_key})
+        if cleanup_dir:
+            shutil.rmtree(cleanup_dir, ignore_errors=True)
 
     def _handle_worker_dead(self, worker_id: int, task_id: str | None) -> None:
         if not task_id:
