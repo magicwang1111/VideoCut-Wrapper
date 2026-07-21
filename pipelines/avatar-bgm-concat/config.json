@@ -1,0 +1,20 @@
+{
+  "name": "avatar-bgm-concat",
+  "mode": "pipeline",
+  "required_clip_count": 1,
+  "preset": "auto",
+  "quality": "high",
+  "bgm": {
+    "enabled": true,
+    "dir": "input/bgm",
+    "volume": 1,
+    "fade_out": 0
+  },
+  "clips": [
+    { "source_index": 0, "trim_start": 3, "trim_end": 0 }
+  ],
+  "default_transition": {
+    "type": "cut",
+    "duration": 0
+  }
+}

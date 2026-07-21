@@ -1223,6 +1223,25 @@ def test_bgm_concat_pipeline_config_parses() -> None:
     assert config.bgm.dir == "input/bgm"
 
 
+def test_avatar_bgm_concat_pipeline_config_parses() -> None:
+    config_path = Path(__file__).resolve().parents[1] / "pipelines" / "avatar-bgm-concat" / "config.json"
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+    config = parse_pipeline_config(payload, config_path, require_name=True)
+
+    assert config.name == "avatar-bgm-concat"
+    assert config.required_clip_count == 1
+    assert len(config.clips) == 1
+    assert config.clips[0].source_index == 0
+    assert config.clips[0].trim_start == 3
+    assert config.clips[0].trim_end == 0
+    assert config.default_transition is not None
+    assert config.default_transition.type == "cut"
+    assert config.default_transition.duration == 0
+    assert config.bgm is not None
+    assert config.bgm.enabled is True
+    assert config.bgm.dir == "input/bgm"
+
+
 def test_bgm_category_override_clears_existing_filename_and_preserves_options(tmp_path) -> None:
     payload = _make_pipeline_payload()
     payload["bgm"] = {

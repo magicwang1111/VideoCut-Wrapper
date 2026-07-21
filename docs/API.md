@@ -175,7 +175,7 @@ curl "http://127.0.0.1:3000/health"
   "ok": true,
   "workers": 4,
   "queueSize": 0,
-  "pipelines": 8
+  "pipelines": 11
 }
 ```
 
@@ -1042,14 +1042,17 @@ HTTP 状态码为 `500`。检查 `OSS_PUBLIC_ENDPOINT`，真实 OSS 结果 URL �
 
 | Pipeline ID | 默认素材槽位 | 默认转场 | BGM | 备注 |
 |---|---:|---|---|---|
+| `avatar-bgm-concat` | 1 | `cut` | 是 | 单个 avatar 视频先裁掉开头 3 秒，再混入 BGM |
 | `bgm-concat` | 1 | `cut` | 是 | 纯拼接不做转场，最后混入 BGM；单个视频时用于给单视频添加 BGM |
-| `flash-black-concat` | 6 | `flash-black` | 否 | 闪黑转场拼接 |
-| `trim-concat` | 6 | `cut` | 否 | 裁剪后直切拼接 |
-| `trim-mixed-concat` | 6 | `flash-black` | 否 | 配置内前 5 个转场交替闪黑和溶解 |
+| `flash-black-concat` | 6 | `flash-black` | 是 | 闪黑转场拼接并混入 BGM |
+| `segment-5-6-then-3-5-concat` | 10 | `cut` | 是 | 固定使用 5 个输入视频，先取每段 5-6 秒，再取每段 3-5 秒，按顺序直切拼接并混入 BGM |
+| `trim-2-5-concat` | 5 | `cut` | 是 | 固定使用 5 个输入视频，取每段 2-5 秒，按顺序直切拼接并混入 BGM |
+| `trim-concat` | 6 | `cut` | 是 | 裁剪后直切拼接并混入 BGM |
+| `trim-mixed-concat` | 6 | `flash-black` | 是 | 配置内前 5 个转场交替闪黑和溶解，并混入 BGM |
 | `trim-mixed-dissolve-v1` | 5 | `flash-black` | 是 | 当前测试客户端默认推荐 pipeline |
-| `trim-xfade-concat` | 6 | `dissolve` | 否 | 裁剪后溶解拼接 |
-| `xfade-concat` | 6 | `dissolve` | 否 | 溶解拼接 |
-| `zoom-dissolve-concat` | 6 | `zoom-dissolve` | 否 | 放大溶解拼接 |
+| `trim-xfade-concat` | 6 | `dissolve` | 是 | 裁剪后溶解拼接并混入 BGM |
+| `xfade-concat` | 6 | `dissolve` | 是 | 溶解拼接并混入 BGM |
+| `zoom-dissolve-concat` | 6 | `zoom-dissolve` | 是 | 放大溶解拼接并混入 BGM |
 
 素材数量说明：
 

@@ -79,7 +79,10 @@ videocut serve --host 0.0.0.0 --port 3000
 
 | Pipeline ID | 转场 | 主要变量 |
 |---|---|---|
+| `avatar-bgm-concat` | 直切 + BGM | 固定裁掉开头 3 秒 |
 | `bgm-concat` | 直切 + BGM | — |
+| `segment-5-6-then-3-5-concat` | 直切 + BGM | 固定取 5 段素材的 5-6 秒和 3-5 秒 |
+| `trim-2-5-concat` | 直切 + BGM | 固定取每段 2-5 秒 |
 | `trim-concat` | 直切 | `trim_start` |
 | `xfade-concat` | dissolve | `transition_duration` |
 | `trim-xfade-concat` | dissolve + trim | `trim_start`, `transition_duration` |
@@ -266,7 +269,7 @@ curl "http://127.0.0.1:3000/health"
   "ok": true,
   "workers": 4,
   "queueSize": 0,
-  "pipelines": 8
+  "pipelines": 11
 }
 ```
 
