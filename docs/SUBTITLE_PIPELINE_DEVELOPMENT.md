@@ -493,7 +493,7 @@ ASS 脚本建议使用：
 | top | 8 |
 | top-right | 9 |
 
-`simkai.ttf` 是腾讯 MPS 字幕压制 API 支持的 `FontType` 值，但本 pipeline 不调用腾讯压制能力；这里沿用已验证的 ComfyUI-Subtitle 本地 ASS 做法，将 `simkai.ttf` 写入 ASS `Fontname`。运行 FFmpeg 的 Windows 宿主机或 Linux 容器仍须自行提供可被 libass/fontconfig 解析的该字体，腾讯字幕识别接口不会下发字体文件。
+`simkai.ttf` 是腾讯 MPS 字幕压制 API 支持的 `FontType` 值，但本 pipeline 不调用腾讯压制能力，腾讯字幕识别接口也不会下发字体文件。当前仓库在 `fonts/simkai.ttf` 中自带字体，Dockerfile 会将其复制到 `/app/fonts`；生成 ASS 时使用字体内部 family 名称 `KaiTi`，本地 FFmpeg 则通过 `fontsdir` 显式加载项目字体目录，避免 Linux 容器回退到其他字体。
 
 ## 12. 本地压制命令
 

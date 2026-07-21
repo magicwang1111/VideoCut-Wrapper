@@ -49,7 +49,7 @@ def test_parse_select_wrap_and_render_ass() -> None:
     config = _subtitle_config()
     assert config is not None
     ass = render_ass(wrapped, config)
-    assert "Style: Default,simkai.ttf,40" in ass
+    assert "Style: Default,KaiTi,40" in ass
     assert r"原文很长\N需要换行" in ass
 
 

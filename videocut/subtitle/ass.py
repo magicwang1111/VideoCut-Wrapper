@@ -7,6 +7,7 @@ from videocut.subtitle.parser import SubtitleCue
 
 _ALIGNMENT = {"bottom-left": 1, "bottom": 2, "bottom-right": 3, "middle": 5,
               "top-left": 7, "top": 8, "top-right": 9}
+_FONT_FAMILIES = {"simkai.ttf": "KaiTi"}
 
 
 def _timestamp(seconds: float) -> str:
@@ -24,12 +25,13 @@ def _color(rgb: str, opacity: float) -> str:
 
 
 def render_ass(cues: list[SubtitleCue], config: PipelineSubtitleConfig) -> str:
+    font_family = _FONT_FAMILIES.get(config.font_name.lower(), config.font_name)
     lines = [
         "[Script Info]", "ScriptType: v4.00+", "PlayResX: 1920", "PlayResY: 1080",
         f"WrapStyle: {0 if config.auto_wrap else 2}", "ScaledBorderAndShadow: yes", "",
         "[V4+ Styles]",
         "Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding",
-        f"Style: Default,{config.font_name},{config.font_size},{_color(config.font_color, config.font_alpha)},&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,{_ALIGNMENT[config.position]},40,40,40,1",
+        f"Style: Default,{font_family},{config.font_size},{_color(config.font_color, config.font_alpha)},&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,{_ALIGNMENT[config.position]},40,40,40,1",
         "", "[Events]", "Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text",
     ]
     for cue in cues:

@@ -8,6 +8,10 @@ from videocut.ffmpeg_config import resolve_runtime_video_settings, resolve_video
 from videocut.presets import get_quality_preset
 
 
+def _ass_filter_path(path: Path) -> str:
+    return path.resolve().as_posix().replace(":", r"\:").replace("'", r"\'")
+
+
 def probe_media(ffprobe: str, path: str | Path) -> dict[str, bool]:
     result = subprocess.run(
         [ffprobe, "-v", "error", "-show_entries", "stream=codec_type", "-of", "json", str(path)],
@@ -30,9 +34,13 @@ def burn_ass(input_video: str | Path, ass_path: str | Path, output_video: str | 
         raise RuntimeError("Input has no audio stream.")
     settings = resolve_runtime_video_settings(ffmpeg, resolve_video_settings())
     preset = get_quality_preset(quality)
+    fonts_dir = Path(__file__).resolve().parents[2] / "fonts"
+    ass_filter = f"ass=filename='{subtitle.name}'"
+    if fonts_dir.is_dir():
+        ass_filter += f":fontsdir='{_ass_filter_path(fonts_dir)}'"
     command = [
         ffmpeg, "-v", "error", "-y", *settings.input_args(), "-i", str(source),
-        "-map", "0:v:0", "-map", "0:a?", "-vf", f"ass=filename='{subtitle.name}'",
+        "-map", "0:v:0", "-map", "0:a?", "-vf", ass_filter,
         *settings.output_args(preset), "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(target),
     ]
     result = subprocess.run(command, cwd=subtitle.parent, capture_output=True, text=True,
