@@ -23,7 +23,7 @@
     "accurate_mode": true,
     "need_wordlist": false,
     "adapt_words": "",
-    "font_name": "simkai.ttf",
+    "font_name": "msyh.ttc",
     "font_size": 40,
     "font_color": "#FFFFFF",
     "font_alpha": 0.9,

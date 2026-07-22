@@ -1073,7 +1073,7 @@ HTTP 状态码为 `500`。检查 `OSS_PUBLIC_ENDPOINT`，真实 OSS 结果 URL �
 | `bgm-concat` | 1 | `cut` | 是 | 纯拼接不做转场，最后混入 BGM；单个视频时用于给单视频添加 BGM |
 | `flash-black-concat` | 6 | `flash-black` | 是 | 闪黑转场拼接并混入 BGM |
 | `segment-5-6-then-3-5-concat` | 10 | `cut` | 是 | 固定使用 5 个输入视频，先取每段 5-6 秒，再取每段 3-5 秒，按顺序直切拼接并混入 BGM |
-| `subtitle-burn` | 1 | `cut` | 否 | 腾讯 MPS 模板 122 生成字幕，本地 FFmpeg 使用 `simkai.ttf` 压制，保留原音轨 |
+| `subtitle-burn` | 1 | `cut` | 否 | 腾讯 MPS 模板 122 生成字幕，本地 FFmpeg 使用 `msyh.ttc`（Microsoft YaHei UI）压制，保留原音轨 |
 | `trim-2-5-concat` | 5 | `cut` | 是 | 固定使用 5 个输入视频，取每段 2-5 秒，按顺序直切拼接并混入 BGM |
 | `trim-concat` | 6 | `cut` | 是 | 裁剪后直切拼接并混入 BGM |
 | `trim-mixed-concat` | 6 | `flash-black` | 是 | 配置内前 5 个转场交替闪黑和溶解，并混入 BGM |

@@ -7,7 +7,10 @@ from videocut.subtitle.parser import SubtitleCue
 
 _ALIGNMENT = {"bottom-left": 1, "bottom": 2, "bottom-right": 3, "middle": 5,
               "top-left": 7, "top": 8, "top-right": 9}
-_FONT_FAMILIES = {"simkai.ttf": "KaiTi"}
+_FONT_FAMILIES = {
+    "simkai.ttf": "KaiTi",
+    "msyh.ttc": "Microsoft YaHei UI",
+}
 
 
 def _timestamp(seconds: float) -> str:

@@ -111,7 +111,7 @@ pipelines/subtitle-burn/config.json
     "accurate_mode": true,
     "need_wordlist": false,
     "adapt_words": "",
-    "font_name": "simkai.ttf",
+    "font_name": "msyh.ttc",
     "font_size": 40,
     "font_color": "#FFFFFF",
     "font_alpha": 0.9,
@@ -125,7 +125,7 @@ pipelines/subtitle-burn/config.json
 }
 ```
 
-以上字幕参数是 `subtitle-burn` 的固定业务配置，不通过 API 暴露，也不允许请求覆盖。当前固定为：高精度识别、自动识别语言、保留原文、`simkai.ttf`、40 号白字、0.9 文字透明度、底部位置、自动换行、每行最多 16 个字符。需要调整样式或识别策略时，只修改 pipeline 配置并随版本发布。
+以上字幕参数是 `subtitle-burn` 的固定业务配置，不通过 API 暴露，也不允许请求覆盖。当前固定为：高精度识别、自动识别语言、保留原文、`msyh.ttc`（内部 family 为 `Microsoft YaHei UI`）、40 号白字、0.9 文字透明度、底部位置、自动换行、每行最多 16 个字符。需要调整样式或识别策略时，只修改 pipeline 配置并随版本发布。
 
 截图中的 `subtitle_format=srt` 用于单独保存字幕文件；本 pipeline 不输出独立字幕文件，因此不设置该字段。MPS 原始 VTT/SRT 只作为中间文件，压制前统一转换为 ASS。
 
@@ -137,7 +137,7 @@ pipelines/subtitle-burn/config.json
 - 首期不允许启用 `bgm`。
 - `definition` 必须为正整数。
 - 当前发布配置必须保持 `target_language=auto`、`language_mode=source`、`accurate_mode=true`。
-- 当前发布配置必须保持 `font_name=simkai.ttf`、`font_size=40`、`font_color=#FFFFFF`、`font_alpha=0.9`。
+- 当前发布配置必须保持 `font_name=msyh.ttc`、`font_size=40`、`font_color=#FFFFFF`、`font_alpha=0.9`。
 - 当前发布配置必须保持 `position=bottom`、`auto_wrap=true`、`max_chars_per_line=16`。
 - `font_alpha` 范围为 `0.0-1.0`。
 - `max_chars_per_line` 必须大于 `0`。
@@ -493,7 +493,7 @@ ASS 脚本建议使用：
 | top | 8 |
 | top-right | 9 |
 
-`simkai.ttf` 是腾讯 MPS 字幕压制 API 支持的 `FontType` 值，但本 pipeline 不调用腾讯压制能力，腾讯字幕识别接口也不会下发字体文件。当前仓库在 `fonts/simkai.ttf` 中自带字体，Dockerfile 会将其复制到 `/app/fonts`；生成 ASS 时使用字体内部 family 名称 `KaiTi`，本地 FFmpeg 则通过 `fontsdir` 显式加载项目字体目录，避免 Linux 容器回退到其他字体。
+本 pipeline 不调用腾讯压制能力，腾讯字幕识别接口也不会下发字体文件。当前仓库在 `fonts/msyh.ttc` 中自带字体集合，Dockerfile 会将其复制到 `/app/fonts`；生成 ASS 时使用本地 ComfyUI 实际回退选中的内部 family 名称 `Microsoft YaHei UI`，本地 FFmpeg 则通过 `fontsdir` 显式加载项目字体目录，避免 Linux 容器产生不同的字体回退。`fonts/simkai.ttf` 仍保留用于显式选择楷体的兼容配置。
 
 ## 12. 本地压制命令
 

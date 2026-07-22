@@ -41,6 +41,14 @@ def test_subtitle_config_rejects_untrusted_font_path() -> None:
         )
 
 
+def test_ass_maps_msyh_collection_to_ui_family() -> None:
+    config = _subtitle_config()
+    assert config is not None
+    config.font_name = "msyh.ttc"
+    ass = render_ass([], config)
+    assert "Style: Default,Microsoft YaHei UI,40" in ass
+
+
 def test_parse_select_wrap_and_render_ass() -> None:
     cues = parse_subtitle(
         "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\n原文很长需要换行\nTranslated line\n"

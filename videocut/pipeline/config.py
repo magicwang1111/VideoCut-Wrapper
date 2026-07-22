@@ -52,7 +52,7 @@ def parse_subtitle_config(raw: Any) -> PipelineSubtitleConfig | None:
         raise VideoCutError("subtitle.target_language must be a non-empty string.")
     if position not in _SUBTITLE_POSITIONS:
         raise VideoCutError("subtitle.position is invalid.")
-    if not isinstance(font_name, str) or Path(font_name).name != font_name or font_name not in {"simkai.ttf", "simhei.ttf", "SIMHEI.TTF"}:
+    if not isinstance(font_name, str) or Path(font_name).name != font_name or font_name not in {"simkai.ttf", "msyh.ttc", "simhei.ttf", "SIMHEI.TTF"}:
         raise VideoCutError("subtitle.font_name must be an allowed bundled/system subtitle font.")
     if not isinstance(font_size, int) or isinstance(font_size, bool) or not 8 <= font_size <= 200:
         raise VideoCutError("subtitle.font_size must be an integer between 8 and 200.")
