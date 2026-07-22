@@ -108,6 +108,16 @@ def _collect_paths(value: Any) -> list[str]:
     return []
 
 
+def _format_task_failure(name: str, task: dict[str, Any]) -> str:
+    details = [
+        f"ErrCode={task['ErrCode']}" if task.get("ErrCode") is not None else "",
+        f"ErrCodeExt={task['ErrCodeExt']}" if task.get("ErrCodeExt") is not None else "",
+        f"Message={task['Message']}" if task.get("Message") else "",
+    ]
+    detail = ", ".join(item for item in details if item) or "unknown error"
+    return f"{name}: {detail}"
+
+
 def normalize_task_detail(task_id: str, raw: dict[str, Any]) -> MpsTaskResult:
     workflow = raw.get("WorkflowTask") if isinstance(raw.get("WorkflowTask"), dict) else {}
     status = str(raw.get("Status") or workflow.get("Status") or "UNKNOWN").upper()
@@ -121,14 +131,16 @@ def normalize_task_detail(task_id: str, raw: dict[str, Any]) -> MpsTaskResult:
             if not isinstance(task, dict):
                 continue
             if str(task.get("Status") or "").upper() in {"FAIL", "FAILED"}:
-                failures.append(f"{name}: {task.get('ErrCodeExt') or task.get('ErrCode') or task.get('Message') or 'unknown'}")
+                failures.append(_format_task_failure(name, task))
             output = task.get("Output") if isinstance(task.get("Output"), dict) else {}
             path = output.get("SubtitlePath") or output.get("Path")
             if isinstance(path, str) and path.strip():
                 subtitle_paths.append(path.strip())
     if failures:
         audio_streams = (workflow.get("MetaData") or {}).get("AudioStreamSet") if isinstance(workflow.get("MetaData"), dict) else None
-        message = "Input video has no audio stream." if audio_streams == [] else "; ".join(failures)
+        message = "; ".join(failures)
+        if audio_streams == []:
+            message += "; Tencent MPS returned empty media metadata."
         return MpsTaskResult(task_id, "FAILED", [], message)
     if not subtitle_paths:
         subtitle_paths = [path for path in _collect_paths(raw) if path.lower().split("?", 1)[0].endswith((".vtt", ".srt"))]

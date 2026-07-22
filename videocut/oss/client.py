@@ -53,6 +53,7 @@ class OssClient:
         if self.local_root:
             self.local_root = str(resolve_runtime_path(self.local_root, project_root() / "oss-local"))
             self.bucket = None
+            self.public_bucket = None
             self.endpoint = endpoint
             self.access_key_id = access_key_id
             self.access_key_secret = access_key_secret
@@ -65,6 +66,9 @@ class OssClient:
             )
         auth = oss2.Auth(access_key_id, access_key_secret)
         self.bucket = oss2.Bucket(auth, endpoint, self.bucket_name)
+        # Uploads and downloads may use an Alibaba Cloud internal endpoint, but
+        # Tencent MPS must receive a URL that is reachable from the public internet.
+        self.public_bucket = oss2.Bucket(auth, self.public_endpoint, self.bucket_name)
         self.endpoint = endpoint
         self.access_key_id = access_key_id
         self.access_key_secret = access_key_secret
@@ -105,9 +109,9 @@ class OssClient:
     def signed_get_url(self, oss_key: str, expires: int = 86400) -> str:
         if self.local_root:
             raise DependencyError("OSS signed URL", "A public OSS backend is required for Tencent MPS URL input.")
-        if self.bucket is None:
+        if self.public_bucket is None:
             raise DependencyError("OSS bucket", "Bucket not initialized.")
-        return self.bucket.sign_url("GET", oss_key, expires, slash_safe=True)
+        return self.public_bucket.sign_url("GET", oss_key, expires, slash_safe=True)
 
     def upload(self, local_path: str | Path, oss_key: str) -> None:
         if self.local_root:

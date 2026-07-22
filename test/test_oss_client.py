@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 from datetime import UTC, datetime
+from urllib.parse import urlsplit
 
 import videocut.oss.client as oss_client_module
 from videocut.oss.client import OssClient
@@ -57,6 +58,23 @@ def test_public_url_uses_public_endpoint_and_preserves_path_slashes(monkeypatch)
         "GouMei-Video-Cut/outputs/20260606/final%20video%20%E4%B8%AD%E6%96%87.mp4"
     )
     assert "%2F" not in url
+
+
+def test_signed_get_url_uses_public_endpoint_for_external_consumers(monkeypatch) -> None:
+    monkeypatch.delenv("OSS_LOCAL_ROOT", raising=False)
+    monkeypatch.setenv("OSS_ENDPOINT", "oss-cn-hangzhou-internal.aliyuncs.com")
+    monkeypatch.setenv("OSS_PUBLIC_ENDPOINT", "oss-cn-hangzhou.aliyuncs.com")
+    monkeypatch.setenv("OSS_ACCESS_KEY_ID", "test-id")
+    monkeypatch.setenv("OSS_ACCESS_KEY_SECRET", "test-secret")
+    monkeypatch.setenv("OSS_BUCKET", "goumee-coze")
+
+    oss = OssClient()
+
+    url = oss.signed_get_url("GouMei-Video-Cut/subtitle-input/sample.mp4")
+
+    assert urlsplit(url).hostname == "goumee-coze.oss-cn-hangzhou.aliyuncs.com"
+    assert "internal" not in url
+    assert "/GouMei-Video-Cut/subtitle-input/sample.mp4" in url
 
 
 def test_upload_defaults_to_ossutil64(monkeypatch, tmp_path) -> None:

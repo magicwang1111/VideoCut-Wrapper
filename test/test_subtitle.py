@@ -78,6 +78,36 @@ def test_normalize_mps_subtitle_result() -> None:
     assert result.subtitle_paths == ["https://bucket.cos.ap-guangzhou.myqcloud.com/subtitle-output/a.vtt"]
 
 
+def test_normalize_mps_failure_preserves_provider_error_with_empty_metadata() -> None:
+    result = normalize_task_detail(
+        "mps-failed",
+        {
+            "Status": "FINISH",
+            "WorkflowTask": {
+                "Status": "FINISH",
+                "MetaData": {"AudioStreamSet": [], "VideoStreamSet": []},
+                "SmartSubtitlesTaskResult": [
+                    {
+                        "AsrFullTextTask": {
+                            "Status": "FAIL",
+                            "ErrCode": 60000,
+                            "ErrCodeExt": "302",
+                            "Message": "Server returned 5XX Server Error reply",
+                        }
+                    }
+                ],
+            },
+        },
+    )
+
+    assert result.status == "FAILED"
+    assert "AsrFullTextTask" in result.message
+    assert "ErrCode=60000" in result.message
+    assert "ErrCodeExt=302" in result.message
+    assert "Server returned 5XX Server Error reply" in result.message
+    assert "Input video has no audio stream" not in result.message
+
+
 def test_subtitle_oss_keys(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("OSS_LOCAL_ROOT", str(tmp_path))
     monkeypatch.setenv("OSS_PREFIX", "GouMei-Video-Cut")
