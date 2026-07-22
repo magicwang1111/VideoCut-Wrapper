@@ -19,6 +19,10 @@ class MpsTaskResult:
     status: str
     subtitle_paths: list[str] = field(default_factory=list)
     message: str = ""
+    provider_status: str = ""
+    error_code: str | None = None
+    error_code_ext: str | None = None
+    provider_message: str | None = None
 
 
 class MpsClient:
@@ -78,11 +82,18 @@ class MpsClient:
     def describe(self, task_id: str) -> dict[str, Any]:
         return self._post("DescribeTaskDetail", {"TaskId": task_id})
 
-    def wait(self, task_id: str, on_progress: Callable[[int], None] | None = None) -> MpsTaskResult:
+    def wait(
+        self,
+        task_id: str,
+        on_progress: Callable[[int], None] | None = None,
+        on_status: Callable[[MpsTaskResult], None] | None = None,
+    ) -> MpsTaskResult:
         started = time.monotonic()
         while True:
             raw = self.describe(task_id)
             result = normalize_task_detail(task_id, raw)
+            if on_status is not None:
+                on_status(result)
             if on_progress is not None:
                 elapsed_ratio = min(1.0, (time.monotonic() - started) / self.settings.max_wait_seconds)
                 on_progress(20 + int(elapsed_ratio * 35))
@@ -123,6 +134,7 @@ def normalize_task_detail(task_id: str, raw: dict[str, Any]) -> MpsTaskResult:
     status = str(raw.get("Status") or workflow.get("Status") or "UNKNOWN").upper()
     subtitle_paths: list[str] = []
     failures: list[str] = []
+    failure_details: dict[str, str | None] | None = None
     for subtitle_task in workflow.get("SmartSubtitlesTaskResult") or []:
         if not isinstance(subtitle_task, dict):
             continue
@@ -132,6 +144,13 @@ def normalize_task_detail(task_id: str, raw: dict[str, Any]) -> MpsTaskResult:
                 continue
             if str(task.get("Status") or "").upper() in {"FAIL", "FAILED"}:
                 failures.append(_format_task_failure(name, task))
+                if failure_details is None:
+                    failure_details = {
+                        "provider_status": str(task.get("Status") or "").upper(),
+                        "error_code": str(task["ErrCode"]) if task.get("ErrCode") is not None else None,
+                        "error_code_ext": str(task["ErrCodeExt"]) if task.get("ErrCodeExt") is not None else None,
+                        "provider_message": str(task["Message"]) if task.get("Message") else None,
+                    }
             output = task.get("Output") if isinstance(task.get("Output"), dict) else {}
             path = output.get("SubtitlePath") or output.get("Path")
             if isinstance(path, str) and path.strip():
@@ -141,7 +160,16 @@ def normalize_task_detail(task_id: str, raw: dict[str, Any]) -> MpsTaskResult:
         message = "; ".join(failures)
         if audio_streams == []:
             message += "; Tencent MPS returned empty media metadata."
-        return MpsTaskResult(task_id, "FAILED", [], message)
+        details = failure_details or {}
+        return MpsTaskResult(
+            task_id, "FAILED", [], message,
+            provider_status=str(details.get("provider_status") or "FAILED"),
+            error_code=details.get("error_code"),
+            error_code_ext=details.get("error_code_ext"),
+            provider_message=details.get("provider_message"),
+        )
     if not subtitle_paths:
         subtitle_paths = [path for path in _collect_paths(raw) if path.lower().split("?", 1)[0].endswith((".vtt", ".srt"))]
-    return MpsTaskResult(task_id, status, list(dict.fromkeys(subtitle_paths)))
+    return MpsTaskResult(
+        task_id, status, list(dict.fromkeys(subtitle_paths)), provider_status=status
+    )

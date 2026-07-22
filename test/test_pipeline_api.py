@@ -1690,3 +1690,57 @@ def test_get_task_returns_failure_history(tmp_path, monkeypatch) -> None:
                 "createdAt": body["lastErrorAt"],
             }
         ]
+        assert body["externalJobs"] == []
+
+
+def test_get_task_returns_external_jobs(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    monkeypatch.setenv("API_KEYS", "test-key")
+    monkeypatch.setenv("OSS_LOCAL_ROOT", str(tmp_path / "oss"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "tasks.db"))
+    monkeypatch.setenv("TEMP_DIR", str(tmp_path / "temp"))
+    monkeypatch.setenv("PIPELINES_DIR", str(pipelines_root))
+    monkeypatch.setattr(api_app_module, "TaskQueue", FakeTaskQueue)
+
+    with TestClient(api_app_module.create_app()) as client:
+        store = client.app.state.store
+        task_id = "t_external_api"
+        store.create(api_app_module._create_store_record(task_id, "pipeline", "subtitle-burn", {"clips": []}))
+        store.upsert_external_job(
+            task_id,
+            provider="tencent_mps",
+            job_kind="smart_subtitles",
+            external_task_id="mps-api",
+            submitted_attempt=1,
+            status="failed",
+            provider_status="FAIL",
+            error_code="60000",
+            error_code_ext="302",
+            message="Server returned 5XX Server Error reply",
+            submitted_at="2026-07-22T10:00:00+08:00",
+            last_polled_at="2026-07-22T10:00:10+08:00",
+            completed_at="2026-07-22T10:00:10+08:00",
+        )
+
+        response = client.get(f"/tasks/{task_id}", headers={"X-Api-Key": "test-key"})
+        assert response.status_code == 200
+        assert response.json()["externalJobs"] == [
+            {
+                "provider": "tencent_mps",
+                "jobKind": "smart_subtitles",
+                "externalTaskId": "mps-api",
+                "submittedAttempt": 1,
+                "status": "failed",
+                "providerStatus": "FAIL",
+                "error": {
+                    "code": "60000",
+                    "extendedCode": "302",
+                    "message": "Server returned 5XX Server Error reply",
+                },
+                "submittedAt": "2026-07-22T10:00:00.000000",
+                "lastPolledAt": "2026-07-22T10:00:10.000000",
+                "completedAt": "2026-07-22T10:00:10.000000",
+            }
+        ]

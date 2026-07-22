@@ -82,6 +82,49 @@ def test_task_queue_dispatches_current_attempt(tmp_path) -> None:
     store.close()
 
 
+def test_task_queue_persists_external_job_and_reuses_record(tmp_path) -> None:
+    store = TaskStore(tmp_path / "tasks.db")
+    store.create(_make_task("t_subtitle"))
+    store.mark_rendering("t_subtitle")
+    queue = TaskQueue(store, object(), 1, lambda event: None, tmp_path)
+    queue.pool = RecordingPool()  # type: ignore[assignment]
+
+    queue._handle_message({
+        "type": "external_job",
+        "task_id": "t_subtitle",
+        "job": {
+            "external_task_id": "mps-queue",
+            "submitted_attempt": 1,
+            "status": "submitted",
+            "persist_state": True,
+        },
+    })
+    queue._handle_message({
+        "type": "external_job",
+        "task_id": "t_subtitle",
+        "job": {
+            "external_task_id": "mps-queue",
+            "status": "failed",
+            "provider_status": "FAIL",
+            "error_code": "60000",
+            "error_code_ext": "302",
+            "message": "Server returned 5XX Server Error reply",
+            "polled": True,
+            "completed": True,
+        },
+    })
+
+    task = store.get("t_subtitle")
+    assert task is not None
+    assert task.payload["subtitle_state"] == {"mps_task_id": "mps-queue"}
+    jobs = store.list_external_jobs("t_subtitle")
+    assert len(jobs) == 1
+    assert jobs[0].status == "failed"
+    assert jobs[0].error_code == "60000"
+    queue.upload_executor.shutdown(wait=True)
+    store.close()
+
+
 def test_blue_green_marker_skips_replay_once_then_restores_recovery(tmp_path, monkeypatch) -> None:
     store = TaskStore(tmp_path / "tasks.db")
     store.create(_make_task("t_handoff"))

@@ -176,6 +176,49 @@ VIDEOCUT_CPU_LIMIT=8 \
 
 CPU 配额不是预留资源。blue 和 green 短暂共存时仍然共享宿主机的 8 个 vCPU；发布前等待任务排空，可以避免两套 worker 同时争抢 CPU、内存和 4 GiB GPU 显存。
 
+### 包含数据库结构变更的发布
+
+发布包含 `task_external_jobs` 等 SQLite 迁移的新镜像前，先通过当前活动容器执行在线备份。不要直接复制正在使用的 `tasks.db`：
+
+```bash
+ACTIVE_CONTAINER=$(docker exec videocut-proxy sh -c \
+  "awk '{print \$2}' /etc/nginx/runtime/upstream.conf | cut -d: -f1 | tr -d ';'")
+
+docker exec -i "${ACTIVE_CONTAINER}" python - <<'PY'
+import sqlite3
+from datetime import datetime
+
+source = "/srv/videocut/data/tasks.db"
+target = f"{source}.bak-{datetime.now():%Y%m%d-%H%M%S}"
+with sqlite3.connect(source) as src, sqlite3.connect(target) as dst:
+    src.backup(dst)
+print(target)
+PY
+```
+
+备份文件会保存在宿主机 `/data/videocut/data/`。新容器启动时自动幂等建表并回填 `variables.subtitle_state.mps_task_id`，旧容器会忽略新增表。
+
+发布完成后检查数据库完整性和迁移结果：
+
+```bash
+ACTIVE_CONTAINER=$(docker exec videocut-proxy sh -c \
+  "awk '{print \$2}' /etc/nginx/runtime/upstream.conf | cut -d: -f1 | tr -d ';'")
+
+docker exec -i "${ACTIVE_CONTAINER}" python - <<'PY'
+import sqlite3
+
+db = "/srv/videocut/data/tasks.db"
+with sqlite3.connect(db) as conn:
+    print("integrity:", conn.execute("pragma integrity_check").fetchone()[0])
+    print("external_jobs:", conn.execute("select count(*) from task_external_jobs").fetchone()[0])
+    print("unknown_backfill:", conn.execute(
+        "select count(*) from task_external_jobs where status='unknown'"
+    ).fetchone()[0])
+PY
+```
+
+`integrity` 必须为 `ok`。若需要回滚旧镜像，不要删除 `task_external_jobs`；旧代码仍从 `variables.subtitle_state` 恢复 MPS 任务。
+
 CPU-only 服务器：
 
 ```bash

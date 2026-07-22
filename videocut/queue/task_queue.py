@@ -369,6 +369,36 @@ class TaskQueue:
             updates = message.get("updates")
             if isinstance(updates, dict):
                 self.store.patch_payload(task_id, updates)
+            return
+
+        if message_type == "external_job":
+            job = message.get("job")
+            if not isinstance(job, dict):
+                return
+            external_task_id = job.get("external_task_id")
+            status = job.get("status")
+            if not isinstance(external_task_id, str) or status not in {
+                "unknown", "submitted", "processing", "succeeded", "failed"
+            }:
+                return
+            now = now_beijing_iso()
+            self.store.upsert_external_job(
+                task_id,
+                provider="tencent_mps",
+                job_kind="smart_subtitles",
+                external_task_id=external_task_id,
+                submitted_attempt=job.get("submitted_attempt") if isinstance(job.get("submitted_attempt"), int) else None,
+                status=status,
+                provider_status=job.get("provider_status") if isinstance(job.get("provider_status"), str) else None,
+                error_code=job.get("error_code") if isinstance(job.get("error_code"), str) else None,
+                error_code_ext=job.get("error_code_ext") if isinstance(job.get("error_code_ext"), str) else None,
+                message=job.get("message") if isinstance(job.get("message"), str) else None,
+                submitted_at=now if job.get("status") == "submitted" else None,
+                last_polled_at=now if job.get("polled") is True else None,
+                completed_at=now if job.get("completed") is True else None,
+                payload_updates={"subtitle_state": {"mps_task_id": external_task_id}}
+                if job.get("persist_state") is True else None,
+            )
 
     def _upload_output(self, task_id: str, output_path: str, requested_oss_key: str | None = None) -> str:
         started_monotonic = time.monotonic()

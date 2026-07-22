@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 from dataclasses import dataclass
@@ -14,6 +15,9 @@ FileKind = Literal["asset", "user_audio"]
 TaskKind = Literal["template", "pipeline"]
 TaskStatus = Literal["pending", "rendering", "completed", "failed"]
 TASK_STATUSES: tuple[TaskStatus, ...] = ("pending", "rendering", "completed", "failed")
+ExternalJobStatus = Literal["unknown", "submitted", "processing", "succeeded", "failed"]
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -40,6 +44,25 @@ class TaskFailureRecord:
     attempt: int
     error: str
     created_at: str
+
+
+@dataclass(slots=True)
+class ExternalJobRecord:
+    task_id: str
+    provider: str
+    job_kind: str
+    external_task_id: str
+    submitted_attempt: int | None
+    status: ExternalJobStatus
+    provider_status: str | None
+    error_code: str | None
+    error_code_ext: str | None
+    message: str | None
+    submitted_at: str | None
+    last_polled_at: str | None
+    completed_at: str | None
+    created_at: str
+    updated_at: str
 
 
 @dataclass(slots=True)
@@ -115,6 +138,29 @@ class TaskStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_task_failures_task_created
                 ON task_failures(task_id, created_at);
+                CREATE TABLE IF NOT EXISTS task_external_jobs (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  task_id TEXT NOT NULL,
+                  provider TEXT NOT NULL,
+                  job_kind TEXT NOT NULL,
+                  external_task_id TEXT NOT NULL,
+                  submitted_attempt INTEGER,
+                  status TEXT NOT NULL DEFAULT 'unknown',
+                  provider_status TEXT,
+                  error_code TEXT,
+                  error_code_ext TEXT,
+                  message TEXT,
+                  submitted_at TEXT,
+                  last_polled_at TEXT,
+                  completed_at TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  UNIQUE(provider, external_task_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_external_jobs_task
+                ON task_external_jobs(task_id);
+                CREATE INDEX IF NOT EXISTS idx_external_jobs_status
+                ON task_external_jobs(provider, status);
                 """
             )
             columns = {
@@ -137,13 +183,46 @@ class TaskStore:
                 self._db.execute("ALTER TABLE files ADD COLUMN size_bytes INTEGER")
             if "expires_at" not in file_columns:
                 self._db.execute("ALTER TABLE files ADD COLUMN expires_at TEXT")
+            self._backfill_external_jobs()
             self._normalize_existing_timestamps()
             self._db.commit()
+
+    def _backfill_external_jobs(self) -> None:
+        recorded_at = now_beijing_iso()
+        rows = self._db.execute("SELECT id, variables FROM tasks").fetchall()
+        for row in rows:
+            try:
+                payload = json.loads(row["variables"] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                logger.warning("Skipping external job backfill for task %s: invalid variables JSON.", row["id"])
+                continue
+            if not isinstance(payload, dict):
+                continue
+            state = payload.get("subtitle_state")
+            if not isinstance(state, dict):
+                continue
+            external_task_id = str(state.get("mps_task_id") or "").strip()
+            if not external_task_id:
+                continue
+            self._db.execute(
+                """
+                INSERT OR IGNORE INTO task_external_jobs (
+                  task_id, provider, job_kind, external_task_id, submitted_attempt,
+                  status, provider_status, error_code, error_code_ext, message,
+                  submitted_at, last_polled_at, completed_at, created_at, updated_at
+                ) VALUES (?, 'tencent_mps', 'smart_subtitles', ?, NULL,
+                          'unknown', NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?)
+                """,
+                (str(row["id"]), external_task_id, recorded_at, recorded_at),
+            )
 
     def _normalize_existing_timestamps(self) -> None:
         timestamp_columns = {
             "tasks": ("last_error_at", "created_at", "started_at", "completed_at"),
             "task_failures": ("created_at",),
+            "task_external_jobs": (
+                "submitted_at", "last_polled_at", "completed_at", "created_at", "updated_at"
+            ),
             "files": ("expires_at", "created_at"),
             "pipelines": ("updated_at",),
         }
@@ -228,6 +307,73 @@ class TaskStore:
             )
             self._db.commit()
 
+    def upsert_external_job(
+        self,
+        task_id: str,
+        *,
+        provider: str,
+        job_kind: str,
+        external_task_id: str,
+        status: ExternalJobStatus,
+        provider_status: str | None = None,
+        submitted_attempt: int | None = None,
+        error_code: str | None = None,
+        error_code_ext: str | None = None,
+        message: str | None = None,
+        submitted_at: str | None = None,
+        last_polled_at: str | None = None,
+        completed_at: str | None = None,
+        payload_updates: dict[str, Any] | None = None,
+    ) -> None:
+        now = now_beijing_iso()
+        with self._lock:
+            task_row = self._db.execute("SELECT variables FROM tasks WHERE id=?", (task_id,)).fetchone()
+            if task_row is None:
+                return
+            if payload_updates:
+                payload = json.loads(task_row["variables"] or "{}")
+                payload.update(payload_updates)
+                self._db.execute(
+                    "UPDATE tasks SET variables=? WHERE id=?",
+                    (json.dumps(payload, ensure_ascii=False), task_id),
+                )
+            self._db.execute(
+                """
+                INSERT INTO task_external_jobs (
+                  task_id, provider, job_kind, external_task_id, submitted_attempt,
+                  status, provider_status, error_code, error_code_ext, message,
+                  submitted_at, last_polled_at, completed_at, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(provider, external_task_id) DO UPDATE SET
+                  status=excluded.status,
+                  provider_status=excluded.provider_status,
+                  submitted_attempt=COALESCE(task_external_jobs.submitted_attempt, excluded.submitted_attempt),
+                  error_code=excluded.error_code,
+                  error_code_ext=excluded.error_code_ext,
+                  message=excluded.message,
+                  submitted_at=COALESCE(task_external_jobs.submitted_at, excluded.submitted_at),
+                  last_polled_at=excluded.last_polled_at,
+                  completed_at=excluded.completed_at,
+                  updated_at=excluded.updated_at
+                WHERE task_external_jobs.task_id=excluded.task_id
+                """,
+                (
+                    task_id, provider, job_kind, external_task_id, submitted_attempt,
+                    status, provider_status, error_code, error_code_ext, message,
+                    to_beijing_iso(submitted_at), to_beijing_iso(last_polled_at),
+                    to_beijing_iso(completed_at), now, now,
+                ),
+            )
+            self._db.commit()
+
+    def list_external_jobs(self, task_id: str) -> list[ExternalJobRecord]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM task_external_jobs WHERE task_id=? ORDER BY id ASC",
+                (task_id,),
+            ).fetchall()
+        return [self._row_to_external_job(row) for row in rows]
+
     def mark_completed(self, task_id: str, oss_key: str) -> None:
         with self._lock:
             self._db.execute(
@@ -281,6 +427,15 @@ class TaskStore:
     def cleanup_old_tasks(self, ttl_days: int) -> int:
         cutoff = to_beijing_iso(now_beijing() - timedelta(days=ttl_days))
         with self._lock:
+            self._db.execute(
+                """
+                DELETE FROM task_external_jobs
+                WHERE task_id IN (
+                  SELECT id FROM tasks WHERE status IN ('completed','failed') AND created_at < ?
+                )
+                """,
+                (cutoff,),
+            )
             self._db.execute(
                 """
                 DELETE FROM task_failures
@@ -472,4 +627,27 @@ class TaskStore:
             created_at=str(row["created_at"]),
             started_at=row["started_at"],
             completed_at=row["completed_at"],
+        )
+
+    @staticmethod
+    def _row_to_external_job(row: sqlite3.Row) -> ExternalJobRecord:
+        status = str(row["status"])
+        if status not in {"unknown", "submitted", "processing", "succeeded", "failed"}:
+            status = "unknown"
+        return ExternalJobRecord(
+            task_id=str(row["task_id"]),
+            provider=str(row["provider"]),
+            job_kind=str(row["job_kind"]),
+            external_task_id=str(row["external_task_id"]),
+            submitted_attempt=int(row["submitted_attempt"]) if row["submitted_attempt"] is not None else None,
+            status=status,  # type: ignore[arg-type]
+            provider_status=row["provider_status"],
+            error_code=row["error_code"],
+            error_code_ext=row["error_code_ext"],
+            message=row["message"],
+            submitted_at=row["submitted_at"],
+            last_polled_at=row["last_polled_at"],
+            completed_at=row["completed_at"],
+            created_at=str(row["created_at"]),
+            updated_at=str(row["updated_at"]),
         )

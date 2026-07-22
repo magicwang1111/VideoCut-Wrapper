@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
+from types import SimpleNamespace
 
 import pytest
 
 from videocut.oss import OssClient
 from videocut.pipeline.config import parse_pipeline_config
 from videocut.subtitle.ass import render_ass
-from videocut.subtitle.mps import normalize_task_detail
+from videocut.subtitle.mps import MpsClient, normalize_task_detail
 from videocut.subtitle.parser import parse_subtitle, select_language, wrap_cues
 
 
@@ -106,6 +107,34 @@ def test_normalize_mps_failure_preserves_provider_error_with_empty_metadata() ->
     assert "ErrCodeExt=302" in result.message
     assert "Server returned 5XX Server Error reply" in result.message
     assert "Input video has no audio stream" not in result.message
+    assert result.provider_status == "FAIL"
+    assert result.error_code == "60000"
+    assert result.error_code_ext == "302"
+    assert result.provider_message == "Server returned 5XX Server Error reply"
+
+
+def test_mps_wait_reports_each_polled_status(monkeypatch) -> None:
+    client = MpsClient(SimpleNamespace(max_wait_seconds=60, poll_interval=0))  # type: ignore[arg-type]
+    responses = iter([
+        {"Status": "PROCESSING", "WorkflowTask": {"Status": "PROCESSING"}},
+        {
+            "Status": "FINISH",
+            "WorkflowTask": {
+                "Status": "FINISH",
+                "SmartSubtitlesTaskResult": [
+                    {"AsrFullTextTask": {"Status": "SUCCESS", "Output": {"SubtitlePath": "/subtitle.vtt"}}}
+                ],
+            },
+        },
+    ])
+    monkeypatch.setattr(client, "describe", lambda task_id: next(responses))
+    monkeypatch.setattr("videocut.subtitle.mps.time.sleep", lambda seconds: None)
+    statuses = []
+
+    result = client.wait("mps-poll", on_status=statuses.append)
+
+    assert [item.provider_status for item in statuses] == ["PROCESSING", "FINISH"]
+    assert result.subtitle_paths == ["/subtitle.vtt"]
 
 
 def test_subtitle_oss_keys(monkeypatch, tmp_path) -> None:

@@ -496,6 +496,7 @@ X-Api-Key: goumee-music
   "lastError": null,
   "lastErrorAt": null,
   "failureHistory": [],
+  "externalJobs": [],
   "taskKind": "pipeline",
   "sourceName": "bgm-concat"
 }
@@ -517,8 +518,11 @@ X-Api-Key: goumee-music
 | `lastError` | `string|null` | 最近一次失败原因 |
 | `lastErrorAt` | `string|null` | 最近一次失败时间，北京时间 |
 | `failureHistory` | `array` | 失败历史 |
+| `externalJobs` | `array` | 外部云任务；字幕任务包含腾讯 MPS ID、归一化状态、错误码和时间，其他任务为空数组 |
 | `taskKind` | `string` | 当前固定为 `pipeline` |
 | `sourceName` | `string` | pipeline 名称 |
+
+`externalJobs[].status` 取值为 `unknown`、`submitted`、`processing`、`succeeded` 或 `failed`。失败项的 `error` 包含 `code`、`extendedCode`、`message`；历史回填且无法确认状态的任务使用 `unknown`。
 
 轮询约定：
 

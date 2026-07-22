@@ -687,12 +687,15 @@ def run_subtitle_pipeline(task, source_oss_key, subtitle_config):
 - API 创建的 `taskId` 是整个处理链路的幂等标识。
 - 每次 worker 重试可以重新创建本地 attempt 目录。
 - MPS 提交成功后，应立即把 `mps_task_id` 写入可恢复的任务 metadata，避免 worker 重启后重复提交。
+- 同一事务把 `mps_task_id` 写入 `variables.subtitle_state`，并把腾讯任务写入 `task_external_jobs`；前者用于兼容旧镜像恢复，后者用于状态跟踪和 API 查询。
 - 如果任务恢复时已有未完成的 `mps_task_id`，优先继续查询原任务。
 - 最终 OSS key 由 `taskId` 决定，同一任务重试覆盖同一个 `final.mp4`，不产生多个业务结果。
 - 上传完成后再更新任务为 `completed`。
 - 如果任务记录已经是 `completed` 且 OSS 对象存在，不重新执行识别或压制。
 
-首期如果暂不改数据库保存 MPS 子任务状态，至少要在代码和测试中明确：worker 进程在 MPS 识别阶段崩溃可能造成一次重复识别和额外费用。
+`task_external_jobs` 使用 `unknown`、`submitted`、`processing`、`succeeded`、`failed` 五种归一化状态，同时保留腾讯原始状态、错误码、扩展错误码和错误消息。每次 MPS 查询更新 `last_polled_at`，成功或失败时写入 `completed_at`。历史 `variables.subtitle_state.mps_task_id` 在启动迁移时幂等回填，无法可靠还原的状态标记为 `unknown`。
+
+任务清理必须先删除对应 `task_external_jobs`。数据库只保存结构化诊断字段，不保存腾讯完整响应、OSS 签名 URL、Secret 或 Authorization header。
 
 ## 18. 安全要求
 

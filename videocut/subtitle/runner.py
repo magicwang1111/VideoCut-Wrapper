@@ -12,7 +12,7 @@ from videocut.subtitle.ass import write_ass
 from videocut.subtitle.burn import burn_ass
 from videocut.subtitle.config import SubtitleSettings
 from videocut.subtitle.cos import download_subtitle
-from videocut.subtitle.mps import MpsClient
+from videocut.subtitle.mps import MpsClient, MpsTaskResult
 from videocut.subtitle.parser import parse_subtitle, select_language, wrap_cues
 
 logger = logging.getLogger(__name__)
@@ -36,8 +36,9 @@ class SubtitlePipelineRunner:
     def run(self, *, task_id: str, source_oss_key: str, local_input: str | Path,
             task_dir: str | Path, config: PipelineSubtitleConfig, ffmpeg_path: str,
             ffprobe_path: str, existing_state: dict[str, object] | None = None,
+            attempt: int | None = None,
             on_progress: Callable[[int], None] | None = None,
-            on_state: Callable[[dict[str, object]], None] | None = None) -> SubtitleRunResult:
+            on_external_job: Callable[[dict[str, object]], None] | None = None) -> SubtitleRunResult:
         settings = SubtitleSettings.from_env()
         task_path = Path(task_dir)
         state = dict(existing_state or {})
@@ -50,10 +51,36 @@ class SubtitlePipelineRunner:
             signed_url = self.oss.signed_get_url(source_oss_key, settings.oss_signed_url_expires)
             mps_task_id = mps.submit(signed_url, config)
             state["mps_task_id"] = mps_task_id
-            if on_state is not None:
-                on_state({"mps_task_id": mps_task_id})
+            if on_external_job is not None:
+                on_external_job({
+                    "external_task_id": mps_task_id,
+                    "submitted_attempt": attempt,
+                    "status": "submitted",
+                    "persist_state": True,
+                })
             logger.info("subtitle stage=mps_submitted task_id=%s mps_task_id=%s", task_id, mps_task_id)
-        result = mps.wait(mps_task_id, on_progress=progress)
+
+        def report_status(item: MpsTaskResult) -> None:
+            if on_external_job is None:
+                return
+            if item.status in {"SUCCESS", "FINISH", "FINISHED"}:
+                status = "succeeded"
+            elif item.status in {"FAIL", "FAILED", "ABORTED"}:
+                status = "failed"
+            else:
+                status = "processing"
+            on_external_job({
+                "external_task_id": mps_task_id,
+                "status": status,
+                "provider_status": item.provider_status,
+                "error_code": item.error_code,
+                "error_code_ext": item.error_code_ext,
+                "message": item.provider_message,
+                "polled": True,
+                "completed": status in {"succeeded", "failed"},
+            })
+
+        result = mps.wait(mps_task_id, on_progress=progress, on_status=report_status)
         progress(60)
 
         remote_path = result.subtitle_paths[0]

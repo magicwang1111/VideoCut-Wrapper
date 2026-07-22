@@ -102,12 +102,12 @@ def worker_main(
                     ffmpeg_path=ffmpeg_path,
                     ffprobe_path=ffprobe_path,
                     existing_state=payload.get("subtitle_state") if isinstance(payload.get("subtitle_state"), dict) else None,
+                    attempt=attempt,
                     on_progress=lambda value: event_queue.put(
                         {"type": "progress", "worker_id": worker_id, "task_id": task_id, "progress": value}
                     ),
-                    on_state=lambda state: event_queue.put(
-                        {"type": "task_metadata", "worker_id": worker_id, "task_id": task_id,
-                         "updates": {"subtitle_state": state}}
+                    on_external_job=lambda job: event_queue.put(
+                        {"type": "external_job", "worker_id": worker_id, "task_id": task_id, "job": job}
                     ),
                 )
                 event_queue.put(

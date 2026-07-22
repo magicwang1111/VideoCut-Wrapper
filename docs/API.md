@@ -917,6 +917,7 @@ curl "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78" \
   "lastError": null,
   "lastErrorAt": null,
   "failureHistory": [],
+  "externalJobs": [],
   "taskKind": "pipeline",
   "sourceName": "trim-mixed-dissolve-v1"
 }
@@ -938,8 +939,34 @@ curl "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78" \
 | `lastError` | `string|null` | 最近一次失败原因，任务最终成功后仍可能保留 |
 | `lastErrorAt` | `string|null` | 最近一次失败时间，北京时间 |
 | `failureHistory` | `array` | 所有已记录的失败尝试 |
+| `externalJobs` | `array` | 外部云任务；普通任务为空数组，字幕任务包含腾讯 MPS ID、状态、结构化错误和时间 |
 | `taskKind` | `string` | 当前固定为 `pipeline` |
 | `sourceName` | `string` | pipeline 名称 |
+
+字幕任务的 `externalJobs` 示例：
+
+```json
+[
+  {
+    "provider": "tencent_mps",
+    "jobKind": "smart_subtitles",
+    "externalTaskId": "2600028868-WorkflowTask-...",
+    "submittedAttempt": 1,
+    "status": "failed",
+    "providerStatus": "FAIL",
+    "error": {
+      "code": "60000",
+      "extendedCode": "302",
+      "message": "Server returned 5XX Server Error reply"
+    },
+    "submittedAt": "2026-07-22T18:23:39.000000",
+    "lastPolledAt": "2026-07-22T18:23:46.000000",
+    "completedAt": "2026-07-22T18:23:46.000000"
+  }
+]
+```
+
+`externalJobs[].status` 为服务端归一化状态：`unknown`、`submitted`、`processing`、`succeeded` 或 `failed`。历史回填任务无法可靠还原腾讯状态时返回 `unknown`。此字段不会包含 OSS 签名 URL、密钥或腾讯原始响应。
 
 任务不存在：
 

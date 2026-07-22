@@ -41,7 +41,7 @@ from videocut.pipeline import PipelineRegistry
 from videocut.queue import TaskQueue, WorkerTask
 from videocut.render.task import generate_task_id
 from videocut.runtime_paths import resolve_runtime_path
-from videocut.store import PipelineRecord, TaskRecord, TaskStore
+from videocut.store import ExternalJobRecord, PipelineRecord, TaskRecord, TaskStore
 from videocut.time_utils import BEIJING_TZ, now_beijing, now_beijing_iso
 
 load_project_env()
@@ -136,6 +136,28 @@ def active_task_payload(task: TaskRecord) -> dict[str, Any]:
         "lastErrorAt": format_api_time(task.last_error_at),
         "taskKind": task.task_kind,
         "sourceName": task.source_name,
+    }
+
+
+def external_job_payload(job: ExternalJobRecord) -> dict[str, Any]:
+    error = None
+    if job.error_code or job.error_code_ext or job.message:
+        error = {
+            "code": job.error_code,
+            "extendedCode": job.error_code_ext,
+            "message": job.message,
+        }
+    return {
+        "provider": job.provider,
+        "jobKind": job.job_kind,
+        "externalTaskId": job.external_task_id,
+        "submittedAttempt": job.submitted_attempt,
+        "status": job.status,
+        "providerStatus": job.provider_status,
+        "error": error,
+        "submittedAt": format_api_time(job.submitted_at),
+        "lastPolledAt": format_api_time(job.last_polled_at),
+        "completedAt": format_api_time(job.completed_at),
     }
 
 
@@ -948,6 +970,7 @@ def create_app() -> FastAPI:
         if not task:
             raise api_http_exception(404, ApiErrorCode.TASK_NOT_FOUND, "Task not found.")
         failures = store.list_failures(task_id)
+        external_jobs = store.list_external_jobs(task_id)
         oss: OssClient = app.state.oss
         queue_obj: TaskQueue = app.state.task_queue
         output_url = task_output_url(oss, task)
@@ -971,6 +994,7 @@ def create_app() -> FastAPI:
                 }
                 for item in failures
             ],
+            "externalJobs": [external_job_payload(item) for item in external_jobs],
             "taskKind": task.task_kind,
             "sourceName": task.source_name,
         }
