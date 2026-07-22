@@ -39,9 +39,13 @@ def parse_subtitle_config(raw: Any) -> PipelineSubtitleConfig | None:
     font_size = raw.get("font_size", 40)
     font_color = raw.get("font_color", "#FFFFFF")
     font_alpha = raw.get("font_alpha", 0.9)
-    max_chars = raw.get("max_chars_per_line", 16)
+    max_chars = raw.get("max_chars_per_line", 10)
+    margin_v = raw.get("margin_v", 200)
+    strip_punctuation = raw.get("strip_punctuation", True)
+    max_chars_per_cue = raw.get("max_chars_per_cue", 10)
     for field, value in (("enabled", enabled), ("accurate_mode", raw.get("accurate_mode", True)),
-                         ("need_wordlist", raw.get("need_wordlist", False)), ("auto_wrap", raw.get("auto_wrap", True))):
+                         ("need_wordlist", raw.get("need_wordlist", True)), ("auto_wrap", raw.get("auto_wrap", True)),
+                         ("strip_punctuation", strip_punctuation)):
         if not isinstance(value, bool):
             raise VideoCutError(f"subtitle.{field} must be a boolean.")
     if not isinstance(definition, int) or isinstance(definition, bool) or definition <= 0:
@@ -62,6 +66,10 @@ def parse_subtitle_config(raw: Any) -> PipelineSubtitleConfig | None:
         raise VideoCutError("subtitle.font_alpha must be in (0, 1].")
     if not isinstance(max_chars, int) or isinstance(max_chars, bool) or not 4 <= max_chars <= 100:
         raise VideoCutError("subtitle.max_chars_per_line must be an integer between 4 and 100.")
+    if not isinstance(margin_v, int) or isinstance(margin_v, bool) or not 0 <= margin_v <= 1080:
+        raise VideoCutError("subtitle.margin_v must be an integer between 0 and 1080.")
+    if not isinstance(max_chars_per_cue, int) or isinstance(max_chars_per_cue, bool) or not 1 <= max_chars_per_cue <= 80:
+        raise VideoCutError("subtitle.max_chars_per_cue must be an integer between 1 and 80.")
     adapt_words = raw.get("adapt_words", "")
     if not isinstance(adapt_words, str):
         raise VideoCutError("subtitle.adapt_words must be a string.")
@@ -71,7 +79,7 @@ def parse_subtitle_config(raw: Any) -> PipelineSubtitleConfig | None:
         target_language=target_language.strip(),
         language_mode=language_mode,
         accurate_mode=raw.get("accurate_mode", True),
-        need_wordlist=raw.get("need_wordlist", False),
+        need_wordlist=raw.get("need_wordlist", True),
         adapt_words=adapt_words,
         font_name=font_name,
         font_size=font_size,
@@ -80,6 +88,9 @@ def parse_subtitle_config(raw: Any) -> PipelineSubtitleConfig | None:
         position=position,
         auto_wrap=raw.get("auto_wrap", True),
         max_chars_per_line=max_chars,
+        margin_v=margin_v,
+        strip_punctuation=strip_punctuation,
+        max_chars_per_cue=max_chars_per_cue,
     )
 
 

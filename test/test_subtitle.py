@@ -9,7 +9,14 @@ from videocut.oss import OssClient
 from videocut.pipeline.config import parse_pipeline_config
 from videocut.subtitle.ass import render_ass
 from videocut.subtitle.mps import MpsClient, normalize_task_detail
-from videocut.subtitle.parser import parse_subtitle, select_language, wrap_cues
+from videocut.subtitle.parser import (
+    SubtitleCue,
+    extract_word_timed_cues,
+    parse_subtitle,
+    select_language,
+    strip_punctuation,
+    wrap_cues,
+)
 
 
 def _subtitle_config():
@@ -31,6 +38,11 @@ def test_subtitle_config_defaults_to_simkai() -> None:
     assert config is not None
     assert config.font_name == "simkai.ttf"
     assert config.definition == 122
+    assert config.need_wordlist is True
+    assert config.max_chars_per_line == 10
+    assert config.margin_v == 200
+    assert config.strip_punctuation is True
+    assert config.max_chars_per_cue == 10
 
 
 def test_subtitle_config_rejects_untrusted_font_path() -> None:
@@ -47,6 +59,36 @@ def test_ass_maps_msyh_collection_to_ui_family() -> None:
     config.font_name = "msyh.ttc"
     ass = render_ass([], config)
     assert "Style: Default,Microsoft YaHei UI,40" in ass
+
+
+def test_ass_uses_configured_vertical_margin() -> None:
+    config = _subtitle_config()
+    assert config is not None
+    ass = render_ass([], config)
+    assert ",2,40,40,200,1" in ass
+
+
+def test_strip_punctuation_preserves_decimal_and_percent() -> None:
+    cues = strip_punctuation([SubtitleCue(0, 1, ["价格3.5%，真的！"])])
+    assert cues[0].lines == ["价格3.5%真的"]
+
+
+def test_extract_word_timed_cues_chunks_at_ten_characters() -> None:
+    wordlist = [
+        {"Word": char + ("，" if index == 4 else ""), "Start": index / 10, "End": (index + 1) / 10}
+        for index, char in enumerate("一二三四五六七八九十甲乙")
+    ]
+    response = {
+        "WorkflowTask": {
+            "SmartSubtitlesTaskResult": [{
+                "AsrFullTextTask": {"Output": {"SegmentSet": [{"Wordlist": wordlist}]}}
+            }]
+        }
+    }
+    cues = extract_word_timed_cues(response, 10, True)
+    assert [cue.lines for cue in cues] == [["一二三四五六七八九十"], ["甲乙"]]
+    assert (cues[0].start, cues[0].end) == pytest.approx((0.0, 1.0))
+    assert (cues[1].start, cues[1].end) == pytest.approx((1.0, 1.2))
 
 
 def test_parse_select_wrap_and_render_ass() -> None:
@@ -71,20 +113,22 @@ def test_ass_neutralizes_override_braces() -> None:
 
 
 def test_normalize_mps_subtitle_result() -> None:
+    raw = {
+        "Status": "FINISH",
+        "WorkflowTask": {
+            "Status": "FINISH",
+            "SmartSubtitlesTaskResult": [
+                {"AsrFullTextTask": {"Status": "SUCCESS", "Output": {"SubtitlePath": "https://bucket.cos.ap-guangzhou.myqcloud.com/subtitle-output/a.vtt"}}}
+            ],
+        },
+    }
     result = normalize_task_detail(
         "mps-1",
-        {
-            "Status": "FINISH",
-            "WorkflowTask": {
-                "Status": "FINISH",
-                "SmartSubtitlesTaskResult": [
-                    {"AsrFullTextTask": {"Status": "SUCCESS", "Output": {"SubtitlePath": "https://bucket.cos.ap-guangzhou.myqcloud.com/subtitle-output/a.vtt"}}}
-                ],
-            },
-        },
+        raw,
     )
     assert result.status == "FINISH"
     assert result.subtitle_paths == ["https://bucket.cos.ap-guangzhou.myqcloud.com/subtitle-output/a.vtt"]
+    assert result.raw is raw
 
 
 def test_normalize_mps_failure_preserves_provider_error_with_empty_metadata() -> None:

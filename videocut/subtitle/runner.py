@@ -13,7 +13,13 @@ from videocut.subtitle.burn import burn_ass
 from videocut.subtitle.config import SubtitleSettings
 from videocut.subtitle.cos import download_subtitle
 from videocut.subtitle.mps import MpsClient, MpsTaskResult
-from videocut.subtitle.parser import parse_subtitle, select_language, wrap_cues
+from videocut.subtitle.parser import (
+    extract_word_timed_cues,
+    parse_subtitle,
+    select_language,
+    strip_punctuation,
+    wrap_cues,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -89,8 +95,17 @@ class SubtitlePipelineRunner:
             suffix = ".vtt"
         raw_path = download_subtitle(settings, remote_path, task_path / f"subtitle_raw{suffix}")
         text = raw_path.read_text(encoding="utf-8-sig", errors="replace")
-        cues = parse_subtitle(text)
-        cues = select_language(cues, config.language_mode, config.target_language)
+        uses_source = config.language_mode == "source" or (
+            config.language_mode == "auto" and config.target_language.lower() == "auto"
+        )
+        cues = extract_word_timed_cues(
+            result.raw, config.max_chars_per_cue, config.strip_punctuation
+        ) if config.need_wordlist and uses_source else []
+        used_word_timing = bool(cues)
+        if not cues:
+            cues = select_language(parse_subtitle(text), config.language_mode, config.target_language)
+        if config.strip_punctuation:
+            cues = strip_punctuation(cues)
         if config.auto_wrap:
             cues = wrap_cues(cues, config.max_chars_per_line)
         progress(65)
@@ -105,5 +120,6 @@ class SubtitlePipelineRunner:
             output_path=str(output_path), mps_task_id=mps_task_id, subtitle_path=object_path,
             cue_count=len(cues), encoder=encoder,
             metadata={"mps_task_id": mps_task_id, "cos_subtitle_path": object_path,
-                      "subtitle_cue_count": len(cues), "ffmpeg_encoder": encoder},
+                      "subtitle_cue_count": len(cues), "ffmpeg_encoder": encoder,
+                      "word_timed_cues": used_word_timing},
         )

@@ -23,6 +23,7 @@ class MpsTaskResult:
     error_code: str | None = None
     error_code_ext: str | None = None
     provider_message: str | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
 
 
 class MpsClient:
@@ -167,9 +168,10 @@ def normalize_task_detail(task_id: str, raw: dict[str, Any]) -> MpsTaskResult:
             error_code=details.get("error_code"),
             error_code_ext=details.get("error_code_ext"),
             provider_message=details.get("provider_message"),
+            raw=raw,
         )
     if not subtitle_paths:
         subtitle_paths = [path for path in _collect_paths(raw) if path.lower().split("?", 1)[0].endswith((".vtt", ".srt"))]
     return MpsTaskResult(
-        task_id, status, list(dict.fromkeys(subtitle_paths)), provider_status=status
+        task_id, status, list(dict.fromkeys(subtitle_paths)), provider_status=status, raw=raw
     )

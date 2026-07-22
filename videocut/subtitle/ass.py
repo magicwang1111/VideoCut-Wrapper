@@ -34,7 +34,7 @@ def render_ass(cues: list[SubtitleCue], config: PipelineSubtitleConfig) -> str:
         f"WrapStyle: {0 if config.auto_wrap else 2}", "ScaledBorderAndShadow: yes", "",
         "[V4+ Styles]",
         "Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding",
-        f"Style: Default,{font_family},{config.font_size},{_color(config.font_color, config.font_alpha)},&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,{_ALIGNMENT[config.position]},40,40,40,1",
+        f"Style: Default,{font_family},{config.font_size},{_color(config.font_color, config.font_alpha)},&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,{_ALIGNMENT[config.position]},40,40,{config.margin_v},1",
         "", "[Events]", "Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text",
     ]
     for cue in cues:

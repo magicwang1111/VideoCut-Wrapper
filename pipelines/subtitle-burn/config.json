@@ -21,7 +21,7 @@
     "target_language": "auto",
     "language_mode": "source",
     "accurate_mode": true,
-    "need_wordlist": false,
+    "need_wordlist": true,
     "adapt_words": "",
     "font_name": "msyh.ttc",
     "font_size": 40,
@@ -29,6 +29,9 @@
     "font_alpha": 0.9,
     "position": "bottom",
     "auto_wrap": true,
-    "max_chars_per_line": 16
+    "max_chars_per_line": 10,
+    "margin_v": 200,
+    "strip_punctuation": true,
+    "max_chars_per_cue": 10
   }
 }

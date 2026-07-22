@@ -109,7 +109,7 @@ pipelines/subtitle-burn/config.json
     "target_language": "auto",
     "language_mode": "source",
     "accurate_mode": true,
-    "need_wordlist": false,
+    "need_wordlist": true,
     "adapt_words": "",
     "font_name": "msyh.ttc",
     "font_size": 40,
@@ -117,7 +117,10 @@ pipelines/subtitle-burn/config.json
     "font_alpha": 0.9,
     "position": "bottom",
     "auto_wrap": true,
-    "max_chars_per_line": 16
+    "max_chars_per_line": 10,
+    "margin_v": 200,
+    "strip_punctuation": true,
+    "max_chars_per_cue": 10
   },
   "output": {
     "filename": "final.mp4"
@@ -125,7 +128,7 @@ pipelines/subtitle-burn/config.json
 }
 ```
 
-以上字幕参数是 `subtitle-burn` 的固定业务配置，不通过 API 暴露，也不允许请求覆盖。当前固定为：高精度识别、自动识别语言、保留原文、`msyh.ttc`（内部 family 为 `Microsoft YaHei UI`）、40 号白字、0.9 文字透明度、底部位置、自动换行、每行最多 16 个字符。需要调整样式或识别策略时，只修改 pipeline 配置并随版本发布。
+以上字幕参数是 `subtitle-burn` 的固定业务配置，不通过 API 暴露，也不允许请求覆盖。当前固定为：高精度识别、输出词级时间戳、自动识别语言、保留原文、`msyh.ttc`（内部 family 为 `Microsoft YaHei UI`）、40 号白字、0.9 文字透明度、底部向上约 200 像素、去除标点、每个独立字幕段最多 10 个字符、每行最多 10 个字符。需要调整样式或识别策略时，只修改 pipeline 配置并随版本发布。
 
 截图中的 `subtitle_format=srt` 用于单独保存字幕文件；本 pipeline 不输出独立字幕文件，因此不设置该字段。MPS 原始 VTT/SRT 只作为中间文件，压制前统一转换为 ASS。
 
@@ -138,9 +141,12 @@ pipelines/subtitle-burn/config.json
 - `definition` 必须为正整数。
 - 当前发布配置必须保持 `target_language=auto`、`language_mode=source`、`accurate_mode=true`。
 - 当前发布配置必须保持 `font_name=msyh.ttc`、`font_size=40`、`font_color=#FFFFFF`、`font_alpha=0.9`。
-- 当前发布配置必须保持 `position=bottom`、`auto_wrap=true`、`max_chars_per_line=16`。
+- 当前发布配置必须保持 `position=bottom`、`margin_v=200`、`strip_punctuation=true`、`auto_wrap=true`、`max_chars_per_cue=10`、`max_chars_per_line=10`。
 - `font_alpha` 范围为 `0.0-1.0`。
 - `max_chars_per_line` 必须大于 `0`。
+- `max_chars_per_cue` 必须大于 `0`；启用 `need_wordlist` 时，使用腾讯词级 `Start/End` 时间戳按此长度生成独立字幕段。
+- `margin_v` 使用 ASS 设计画布单位；对当前 720×1280 竖屏，相比旧值 40 向上移动约 190 个输出像素。
+- `strip_punctuation` 在词级切段和自动换行前执行，保留小数点及百分号。
 
 ## 6. API 约定
 
@@ -465,7 +471,7 @@ WorkflowTask.SmartSubtitlesTaskResult[].OcrFullTextTask.Output.SubtitlePath
 
 ### 11.3 自动换行
 
-启用 `auto_wrap` 时，根据 `max_chars_per_line` 对每个文本行换行。ASS 中使用 `\N` 表示换行。
+启用 `need_wordlist` 时，优先读取 `SegmentSet[].Wordlist[]` 的 `Start`、`End` 和 `Word`，去除标点后按 `max_chars_per_cue` 生成独立时间段；词级信息不可用时回退到字幕文件原有时间段。启用 `auto_wrap` 时，再根据 `max_chars_per_line` 对每个文本行换行。ASS 中使用 `\N` 表示换行。
 
 首期沿用字符数换行策略，不做基于字体像素宽度的复杂排版。
 

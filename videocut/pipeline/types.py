@@ -50,7 +50,7 @@ class PipelineSubtitleConfig:
     target_language: str = "auto"
     language_mode: SubtitleLanguageMode = "source"
     accurate_mode: bool = True
-    need_wordlist: bool = False
+    need_wordlist: bool = True
     adapt_words: str = ""
     font_name: str = "simkai.ttf"
     font_size: int = 40
@@ -58,7 +58,10 @@ class PipelineSubtitleConfig:
     font_alpha: float = 0.9
     position: SubtitlePosition = "bottom"
     auto_wrap: bool = True
-    max_chars_per_line: int = 16
+    max_chars_per_line: int = 10
+    margin_v: int = 200
+    strip_punctuation: bool = True
+    max_chars_per_cue: int = 10
 
 
 @dataclass(slots=True)
