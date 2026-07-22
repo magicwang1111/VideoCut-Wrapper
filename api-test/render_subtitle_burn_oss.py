@@ -5,7 +5,7 @@ Server usage:
     python api-test/render_subtitle_burn_oss.py
 
 Optional overrides:
-    SUBTITLE_OSS_KEY=Happyhorse/subtitle-input/example.mp4 python api-test/render_subtitle_burn_oss.py
+    SUBTITLE_OSS_KEY=GouMei-Video-Cut/subtitle-input/example.mp4 python api-test/render_subtitle_burn_oss.py
     API_BASE_URL=http://127.0.0.1:3000 DOWNLOAD=0 python api-test/render_subtitle_burn_oss.py
 
 The server must provide the Tencent Cloud, Tencent COS, Alibaba OSS, and
@@ -69,7 +69,7 @@ API_KEY = resolve_api_key()
 PIPELINE = "subtitle-burn"
 SUBTITLE_OSS_KEY = os.getenv(
     "SUBTITLE_OSS_KEY",
-    "Happyhorse/subtitle-input/Seedance_20260720_165432_00001_.mp4",
+    "GouMei-Video-Cut/subtitle-input/Seedance_20260720_165432_00001_.mp4",
 ).strip()
 DOWNLOAD = os.getenv("DOWNLOAD", "1").strip().lower() not in {"0", "false", "no"}
 REQUEST_TIMEOUT = float(os.getenv("REQUEST_TIMEOUT", "60"))
