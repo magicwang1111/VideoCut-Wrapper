@@ -584,9 +584,12 @@ HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读
 | `400` | `2002` | `clips` 中存在本地路径、URL、非法 OSS key，或把用户音频当素材传入 | 改传合法素材 OSS key 或素材 `fileId` |
 | `400` | `2003` | pipeline 不存在 | 使用已注册 pipeline |
 | `404` | `2004` | 查询的 `taskId` 不存在 | 检查 `taskId` |
-| `400/404` | `2006` | `clips` 引用的上传 `fileId` 不存在，或 BGM 目录不存在 | 重新上传、修正素材 `fileId` 或检查 `BGM_DIR` |
+| `400/404` | `2006` | `clips` 引用的上传 `fileId` 不存在、BGM 目录不存在，或 `subtitle-burn` 输入 OSS 对象不存在 | 重新上传、修正素材引用，或检查对应 OSS key / `BGM_DIR` |
 | `400` | `2007` | `overrides.bgm` 字段结构、未知字段或混传错误 | 修正 BGM 参数 |
 | `400` | `2008` | `overrides.bgm.fileId` 不存在或不是用户音频 | 重新上传音频并传音频 `fileId` |
+| `400` | `2009` | `subtitle-burn` 的 `clips` 数量不是 1 | 只传一个视频 OSS key |
+| `400` | `2010` | `subtitle-burn` 传入了非空 `overrides` | 删除运行时覆盖参数或传空对象 `{}` |
+| `400` | `2011` | `subtitle-burn` 输入不在服务端配置的字幕输入前缀下 | 将视频上传到响应 `details.expectedPrefix` 指定的目录 |
 | `404` | `3001` | 下载时任务不存在、未完成或无输出 | 先轮询到 `completed` |
 | `503` | `3002` | 渲染队列已满 | 稍后重试 |
 | `500` | `3004` | 任务结果 URL 配置异常，例如 `OSS_PUBLIC_ENDPOINT` 误配为 internal endpoint，或路径分隔符被编码成 `%2F` | 检查 `OSS_PUBLIC_ENDPOINT` 和服务端日志里的 `outputUrlHost`、`outputUrlPath`、`ossKey` |
@@ -658,6 +661,72 @@ HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读
   }
 }
 ```
+
+`subtitle-burn` 参数错误示例：
+
+```json
+{
+  "error_code": 2009,
+  "message": "subtitle-burn requires exactly one input video.",
+  "details": {}
+}
+```
+
+```json
+{
+  "error_code": 2010,
+  "message": "subtitle-burn does not accept runtime overrides.",
+  "details": {}
+}
+```
+
+```json
+{
+  "error_code": 2011,
+  "message": "subtitle-burn input must be stored under the subtitle input prefix.",
+  "details": {
+    "expectedPrefix": "Happyhorse/subtitle-input/"
+  }
+}
+```
+
+```json
+{
+  "error_code": 2006,
+  "message": "Subtitle input object was not found.",
+  "details": {
+    "ossKey": "Happyhorse/subtitle-input/not-found.mp4"
+  }
+}
+```
+
+以上错误发生在 `POST /render` 创建任务之前，响应中没有 `taskId`。
+
+腾讯 MPS 提交/轮询、COS 字幕下载、字幕解析、FFmpeg 压制和最终 OSS 上传发生在任务创建之后。此类失败不会返回新的 HTTP `error_code`；查询 `GET /tasks/{taskId}` 时 HTTP 状态仍为 `200`，通过 `status="failed"`、`error`、`lastError` 和 `failureHistory` 判断：
+
+```json
+{
+  "taskId": "t_ab12cd34ef56ab78",
+  "status": "failed",
+  "progress": 20,
+  "attempt": 1,
+  "outputUrl": null,
+  "error": "Tencent MPS subtitle task failed.",
+  "lastError": "Tencent MPS subtitle task failed.",
+  "lastErrorAt": "2026-07-21T18:30:00.000000",
+  "failureHistory": [
+    {
+      "attempt": 1,
+      "error": "Tencent MPS subtitle task failed.",
+      "createdAt": "2026-07-21T18:30:00.000000"
+    }
+  ],
+  "taskKind": "pipeline",
+  "sourceName": "subtitle-burn"
+}
+```
+
+`error` 文本用于诊断，具体内容可能来自腾讯云、COS、FFmpeg 或 OSS，不应作为稳定错误码解析。客户端遇到 `status="failed"` 后应停止轮询并记录该 `taskId`，不要因一次查询网络错误而重新调用 `/render`。
 
 ```json
 {
@@ -912,6 +981,21 @@ with target.open("wb") as handle:
             handle.write(chunk)
 
 print(f"saved to {target}")
+```
+
+使用 `subtitle-burn` 生成硬字幕视频：
+
+```bash
+curl -X POST "http://127.0.0.1:3000/render" \
+  -H "X-Api-Key: goumee-music" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "pipeline": "subtitle-burn",
+    "clips": [
+      "GouMei-Video-Cut/subtitle-input/clip_001.mp4"
+    ],
+    "overrides": {}
+  }'
 ```
 
 查询任务：

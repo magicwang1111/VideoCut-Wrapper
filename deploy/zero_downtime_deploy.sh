@@ -7,6 +7,12 @@ if [ -z "${IMAGE}" ]; then
   exit 64
 fi
 
+if ! docker compose version >/dev/null 2>&1; then
+  echo "Docker Compose v2 is required, but 'docker compose' is unavailable." >&2
+  echo "Install docker-compose-plugin (Docker repository) or docker-compose-v2 (Ubuntu repository), then rerun." >&2
+  exit 69
+fi
+
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 PROJECT_DIR="$(CDPATH= cd -- "${SCRIPT_DIR}/.." && pwd)"
 BASE_COMPOSE="${PROJECT_DIR}/docker-compose.zero-downtime.yml"
@@ -141,7 +147,7 @@ if [ -n "${CURRENT}" ]; then
     work="$(local_work_count "${OLD_CONTAINER}")"
     if [ "${work}" = "0" ]; then
       echo "Old ${CURRENT} slot drained; stopping it gracefully."
-      docker stop --time "${STOP_TIMEOUT_SECONDS}" "${OLD_CONTAINER}" >/dev/null
+      docker stop --timeout "${STOP_TIMEOUT_SECONDS}" "${OLD_CONTAINER}" >/dev/null
       docker rm "${OLD_CONTAINER}" >/dev/null
       break
     fi

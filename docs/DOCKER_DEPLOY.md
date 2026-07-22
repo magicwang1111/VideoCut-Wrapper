@@ -146,6 +146,24 @@ deploy/zero_downtime_deploy.sh
 chmod +x /data/VideoCut-Wrapper/deploy/zero_downtime_deploy.sh
 ```
 
+蓝绿脚本要求 Docker Compose v2。服务器必须能执行：
+
+```bash
+docker compose version
+```
+
+如果不可用，在 Ubuntu 上安装 `docker-compose-plugin`；若当前使用 Ubuntu 自带 Docker 软件源且找不到该包，则安装 `docker-compose-v2`：
+
+```bash
+apt-get update
+apt-get install -y docker-compose-plugin || \
+  apt-get install -y docker-compose-v2
+
+docker compose version
+```
+
+旧版独立命令 `docker-compose` v1 不满足本部署脚本要求。
+
 ## 6. Linux 导入 v5.17
 
 登录服务器后执行：
@@ -219,7 +237,7 @@ PY
 ### 8.2 停止旧容器
 
 ```bash
-docker stop --time 600 videocut-wrapper
+docker stop --timeout 600 videocut-wrapper
 ```
 
 先不要删除，下一步还需要从容器复制数据。
@@ -324,16 +342,37 @@ docker exec videocut-proxy \
   cat /etc/nginx/runtime/upstream.conf
 ```
 
-查看应用日志，容器名按实际槽位选择：
+自动识别当前接收流量的应用容器：
 
 ```bash
-docker logs --tail 200 -f videocut-blue
+ACTIVE=$(docker exec videocut-proxy \
+  cat /etc/nginx/runtime/upstream.conf | \
+  sed -n 's/.*server \(videocut-\(blue\|green\)\):3000;.*/\1/p')
+
+test -n "${ACTIVE}" || {
+  echo "无法识别当前 blue/green 槽位" >&2
+  exit 1
+}
+
+echo "当前应用容器：${ACTIVE}"
+```
+
+查看当前应用日志：
+
+```bash
+docker logs --tail 200 -f "${ACTIVE}"
+```
+
+进入当前应用容器：
+
+```bash
+docker exec -it "${ACTIVE}" /bin/bash
 ```
 
 检查 GPU 编码器：
 
 ```bash
-docker exec videocut-blue python -m videocut check
+docker exec "${ACTIVE}" python -m videocut check
 ```
 
 接口冒烟测试：
@@ -455,6 +494,8 @@ docker rmi videocut-wrapper:v5.16
 
 ## 14. 常用排查命令
 
+蓝绿部署后不再存在名为 `videocut-wrapper` 的应用容器。`videocut-wrapper:vX.Y` 是镜像名，实际运行容器为 `videocut-blue` 或 `videocut-green`。
+
 查看所有蓝绿相关容器：
 
 ```bash
@@ -466,6 +507,39 @@ docker ps -a --filter name=videocut-
 ```bash
 docker exec videocut-proxy \
   cat /etc/nginx/runtime/upstream.conf
+```
+
+将当前槽位保存到变量，后续日志、检查和进入容器都使用该变量：
+
+```bash
+ACTIVE=$(docker exec videocut-proxy \
+  cat /etc/nginx/runtime/upstream.conf | \
+  sed -n 's/.*server \(videocut-\(blue\|green\)\):3000;.*/\1/p')
+
+test -n "${ACTIVE}" || {
+  echo "无法识别当前 blue/green 槽位" >&2
+  exit 1
+}
+
+echo "当前应用容器：${ACTIVE}"
+```
+
+查看当前应用日志：
+
+```bash
+docker logs --tail 200 -f "${ACTIVE}"
+```
+
+进入当前应用容器：
+
+```bash
+docker exec -it "${ACTIVE}" /bin/bash
+```
+
+检查当前应用运行环境：
+
+```bash
+docker exec "${ACTIVE}" python -m videocut check
 ```
 
 查看代理日志：
