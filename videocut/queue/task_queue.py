@@ -11,10 +11,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from videocut.aigc import embed_aigc_metadata
 from videocut.env import load_project_env
 from videocut.log import get_logger
 from videocut.oss import OssClient
 from videocut.queue.worker_process import worker_main
+from videocut.render import resolve_ffmpeg_path, resolve_ffprobe_path
 from videocut.runtime_paths import resolve_runtime_path
 from videocut.store import TaskStore
 from videocut.time_utils import now_beijing_iso
@@ -180,11 +182,14 @@ class TaskQueue:
         self.store = store
         self.oss = oss
         self.on_event = on_event
+        self.root_dir = Path(root_dir).resolve()
+        self.ffmpeg_path = resolve_ffmpeg_path(self.root_dir)
+        self.ffprobe_path = resolve_ffprobe_path(self.root_dir)
         self.queue: list[WorkerTask] = []
         self.progress_throttle: dict[str, float] = {}
         self.upload_diagnostics: dict[str, dict[str, Any]] = {}
         self._lock = threading.RLock()
-        self.pool = WorkerPool(worker_count, Path(root_dir).resolve(), self._handle_message, self._handle_worker_dead)
+        self.pool = WorkerPool(worker_count, self.root_dir, self._handle_message, self._handle_worker_dead)
         self.upload_worker_count = max(1, UPLOAD_WORKER_COUNT)
         self.upload_executor = ThreadPoolExecutor(max_workers=self.upload_worker_count, thread_name_prefix="videocut-upload")
 
@@ -403,10 +408,6 @@ class TaskQueue:
     def _upload_output(self, task_id: str, output_path: str, requested_oss_key: str | None = None) -> str:
         started_monotonic = time.monotonic()
         output_file = Path(output_path)
-        try:
-            output_size_bytes = output_file.stat().st_size
-        except OSError:
-            output_size_bytes = None
         queued_monotonic = self._get_raw_upload_diagnostics(task_id).get("_uploadQueuedMonotonic")
         queue_wait_seconds = None
         if isinstance(queued_monotonic, float):
@@ -415,8 +416,32 @@ class TaskQueue:
             task_id,
             uploadStartedAt=now_beijing_iso(),
             uploadQueueWaitSeconds=_round_elapsed(queue_wait_seconds),
-            outputSizeBytes=output_size_bytes,
         )
+        try:
+            if not self.ffmpeg_path or not self.ffprobe_path:
+                raise RuntimeError("AIGC metadata labeling requires FFmpeg and ffprobe.")
+            metadata = embed_aigc_metadata(
+                self.ffmpeg_path,
+                self.ffprobe_path,
+                output_file,
+                task_id,
+            )
+            output_size_bytes = output_file.stat().st_size
+            self._update_upload_diagnostics(
+                task_id,
+                outputSizeBytes=output_size_bytes,
+            )
+            logger.info("task %s AIGC metadata verified: produce_id=%s", task_id, metadata["ProduceID"])
+        except Exception as exc:
+            labeling_seconds = time.monotonic() - started_monotonic
+            self._update_upload_diagnostics(
+                task_id,
+                uploadFinishedAt=now_beijing_iso(),
+                uploadRunSeconds=_round_elapsed(labeling_seconds),
+                uploadError=str(exc),
+            )
+            raise RuntimeError(f"AIGC metadata labeling failed: {exc}") from exc
+
         oss_key = requested_oss_key or self.oss.output_key(task_id)
         last_error: Exception | None = None
         for attempt in range(1, max(1, UPLOAD_MAX_ATTEMPT) + 1):

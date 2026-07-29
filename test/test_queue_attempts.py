@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import threading
 from datetime import UTC, datetime
+from pathlib import Path
 
+import pytest
+
+import videocut.queue.task_queue as task_queue_module
+from videocut.aigc import build_aigc_metadata
 from videocut.queue.task_queue import TaskQueue, WorkerTask
 from videocut.queue.worker_process import _download_user_bgm, _task_temp_dir
 from videocut.store import TaskRecord, TaskStore
@@ -191,14 +196,33 @@ def test_task_queue_dispatches_next_render_before_output_upload_finishes(tmp_pat
     store.close()
 
 
-def test_task_queue_records_output_upload_diagnostics(tmp_path) -> None:
+def test_task_queue_records_output_upload_diagnostics(tmp_path, monkeypatch) -> None:
+    events: list[str] = []
+
+    class OrderedOss(FakeOss):
+        def upload(self, local_path, oss_key) -> None:
+            assert Path(local_path).read_bytes() == b"tagged-video-data"
+            events.append("upload")
+            super().upload(local_path, oss_key)
+
     store = TaskStore(tmp_path / "tasks.db")
     store.create(_make_task("t_rendered"))
     store.mark_rendering("t_rendered")
     output_path = tmp_path / "final.mp4"
     output_path.write_bytes(b"video-data")
+    calls: list[tuple[str, str]] = []
 
-    queue = TaskQueue(store, FakeOss(), 1, lambda event: None, tmp_path)
+    def fake_embed(ffmpeg_path, ffprobe_path, video_path, task_id):
+        calls.append((str(video_path), task_id))
+        Path(video_path).write_bytes(b"tagged-video-data")
+        events.append("label")
+        return build_aigc_metadata(task_id)
+
+    monkeypatch.setattr(task_queue_module, "embed_aigc_metadata", fake_embed)
+
+    queue = TaskQueue(store, OrderedOss(), 1, lambda event: None, tmp_path)
+    queue.ffmpeg_path = "ffmpeg"
+    queue.ffprobe_path = "ffprobe"
     queue.pool = RecordingPool()  # type: ignore[assignment]
     queue._handle_message({"type": "task_rendered", "task_id": "t_rendered", "output_path": str(output_path)})
     queue.upload_executor.shutdown(wait=True)
@@ -211,14 +235,53 @@ def test_task_queue_records_output_upload_diagnostics(tmp_path) -> None:
     assert diagnostics["uploadFinishedAt"]
     assert diagnostics["uploadQueueWaitSeconds"] >= 0
     assert diagnostics["uploadRunSeconds"] >= 0
-    assert diagnostics["outputSizeBytes"] == len(b"video-data")
+    assert diagnostics["outputSizeBytes"] == len(b"tagged-video-data")
     assert diagnostics["uploadBackend"] == "fake"
     assert diagnostics["endpoint"] == "oss-test"
     assert diagnostics["ossKey"] == "GouMei-Video-Cut/outputs/t_rendered/final.mp4"
+    assert calls == [(str(output_path), "t_rendered")]
+    assert events == ["label", "upload"]
 
     completed = store.get("t_rendered")
     assert completed is not None
     assert completed.status == "completed"
+    store.close()
+
+
+def test_aigc_labeling_failure_prevents_upload(tmp_path, monkeypatch) -> None:
+    class RejectingOss(FakeOss):
+        def __init__(self) -> None:
+            self.uploaded = False
+
+        def upload(self, local_path, oss_key) -> None:
+            self.uploaded = True
+
+    def fail_embed(ffmpeg_path, ffprobe_path, video_path, task_id):
+        raise RuntimeError("invalid AIGC metadata")
+
+    store = TaskStore(tmp_path / "tasks.db")
+    store.create(_make_task("t_unlabeled"))
+    store.mark_rendering("t_unlabeled")
+    output_path = tmp_path / "final.mp4"
+    output_path.write_bytes(b"video-data")
+    oss = RejectingOss()
+    monkeypatch.setattr(task_queue_module, "embed_aigc_metadata", fail_embed)
+
+    queue = TaskQueue(store, oss, 1, lambda event: None, tmp_path)
+    queue.ffmpeg_path = "ffmpeg"
+    queue.ffprobe_path = "ffprobe"
+    queue.pool = RecordingPool()  # type: ignore[assignment]
+    queue._handle_message({"type": "task_rendered", "task_id": "t_unlabeled", "output_path": str(output_path)})
+    queue.upload_executor.shutdown(wait=True)
+
+    task = store.get("t_unlabeled")
+    diagnostics = queue.get_upload_diagnostics("t_unlabeled")
+    assert task is not None
+    assert task.status == "failed"
+    assert "AIGC metadata labeling failed" in (task.error or "")
+    assert diagnostics is not None
+    assert diagnostics["uploadError"] == "invalid AIGC metadata"
+    assert oss.uploaded is False
     store.close()
 
 
