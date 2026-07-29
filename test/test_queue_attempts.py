@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 import videocut.queue.task_queue as task_queue_module
-from videocut.aigc import build_aigc_metadata
+from videocut.aigc import AigcMetadataError, build_aigc_metadata
 from videocut.queue.task_queue import TaskQueue, WorkerTask
 from videocut.queue.worker_process import _download_user_bgm, _task_temp_dir
 from videocut.store import TaskRecord, TaskStore
@@ -212,7 +212,7 @@ def test_task_queue_records_output_upload_diagnostics(tmp_path, monkeypatch) -> 
     output_path.write_bytes(b"video-data")
     calls: list[tuple[str, str]] = []
 
-    def fake_embed(ffmpeg_path, ffprobe_path, video_path, task_id):
+    def fake_embed(ffmpeg_path, ffprobe_path, video_path, task_id, **kwargs):
         calls.append((str(video_path), task_id))
         Path(video_path).write_bytes(b"tagged-video-data")
         events.append("label")
@@ -256,7 +256,7 @@ def test_aigc_labeling_failure_prevents_upload(tmp_path, monkeypatch) -> None:
         def upload(self, local_path, oss_key) -> None:
             self.uploaded = True
 
-    def fail_embed(ffmpeg_path, ffprobe_path, video_path, task_id):
+    def fail_embed(ffmpeg_path, ffprobe_path, video_path, task_id, **kwargs):
         raise RuntimeError("invalid AIGC metadata")
 
     store = TaskStore(tmp_path / "tasks.db")
@@ -278,10 +278,95 @@ def test_aigc_labeling_failure_prevents_upload(tmp_path, monkeypatch) -> None:
     diagnostics = queue.get_upload_diagnostics("t_unlabeled")
     assert task is not None
     assert task.status == "failed"
-    assert "AIGC metadata labeling failed" in (task.error or "")
+    assert "AIGC metadata labeling failed [3006/AIGC_METADATA_UNKNOWN] after 3 attempt(s)" in (task.error or "")
+    assert task.payload["_aigc_failure"]["code"] == 3006
+    assert task.payload["_aigc_failure"]["reason"] == "AIGC_METADATA_UNKNOWN"
+    assert len(task.payload["_aigc_failure"]["attempts"]) == 3
     assert diagnostics is not None
     assert diagnostics["uploadError"] == "invalid AIGC metadata"
+    assert diagnostics["aigcMetadataAttempt"] == 3
+    assert diagnostics["aigcMetadataStatus"] == "failed"
+    assert diagnostics["aigcMetadataErrorCode"] == 3006
+    assert diagnostics["aigcMetadataErrorReason"] == "AIGC_METADATA_UNKNOWN"
     assert oss.uploaded is False
+    store.close()
+
+
+def test_aigc_labeling_retries_then_uploads(tmp_path, monkeypatch) -> None:
+    calls = 0
+
+    def flaky_embed(ffmpeg_path, ffprobe_path, video_path, task_id, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls < 3:
+            raise AigcMetadataError(
+                "temporary ffmpeg failure",
+                reason="AIGC_FFMPEG_FAILED",
+                phase="write",
+            )
+        return build_aigc_metadata(task_id)
+
+    store = TaskStore(tmp_path / "tasks.db")
+    store.create(_make_task("t_retry"))
+    store.mark_rendering("t_retry")
+    output_path = tmp_path / "final.mp4"
+    output_path.write_bytes(b"video-data")
+    monkeypatch.setattr(task_queue_module, "embed_aigc_metadata", flaky_embed)
+    monkeypatch.setattr(task_queue_module.time, "sleep", lambda seconds: None)
+
+    queue = TaskQueue(store, FakeOss(), 1, lambda event: None, tmp_path)
+    queue.ffmpeg_path = "ffmpeg"
+    queue.ffprobe_path = "ffprobe"
+    queue.pool = RecordingPool()  # type: ignore[assignment]
+    queue._handle_message({"type": "task_rendered", "task_id": "t_retry", "output_path": str(output_path)})
+    queue.upload_executor.shutdown(wait=True)
+
+    task = store.get("t_retry")
+    diagnostics = queue.get_upload_diagnostics("t_retry")
+    assert calls == 3
+    assert task is not None
+    assert task.status == "completed"
+    assert task.payload["_aigc_failure"] is None
+    assert diagnostics is not None
+    assert diagnostics["aigcMetadataAttempt"] == 3
+    assert diagnostics["aigcMetadataStatus"] == "verified"
+    assert len(diagnostics["aigcMetadataErrors"]) == 2
+    store.close()
+
+
+def test_aigc_non_retryable_failure_stops_after_one_attempt(tmp_path, monkeypatch) -> None:
+    calls = 0
+
+    def fail_precheck(ffmpeg_path, ffprobe_path, video_path, task_id, **kwargs):
+        nonlocal calls
+        calls += 1
+        raise AigcMetadataError(
+            "source is missing",
+            reason="AIGC_SOURCE_MISSING_OR_EMPTY",
+            phase="precheck",
+            retryable=False,
+        )
+
+    store = TaskStore(tmp_path / "tasks.db")
+    store.create(_make_task("t_precheck"))
+    store.mark_rendering("t_precheck")
+    output_path = tmp_path / "final.mp4"
+    output_path.write_bytes(b"video-data")
+    monkeypatch.setattr(task_queue_module, "embed_aigc_metadata", fail_precheck)
+
+    queue = TaskQueue(store, FakeOss(), 1, lambda event: None, tmp_path)
+    queue.ffmpeg_path = "ffmpeg"
+    queue.ffprobe_path = "ffprobe"
+    queue.pool = RecordingPool()  # type: ignore[assignment]
+    queue._handle_message({"type": "task_rendered", "task_id": "t_precheck", "output_path": str(output_path)})
+    queue.upload_executor.shutdown(wait=True)
+
+    task = store.get("t_precheck")
+    assert calls == 1
+    assert task is not None
+    assert task.status == "failed"
+    assert task.payload["_aigc_failure"]["attempt"] == 1
+    assert task.payload["_aigc_failure"]["retryable"] is False
     store.close()
 
 

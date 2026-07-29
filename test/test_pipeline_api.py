@@ -1693,6 +1693,50 @@ def test_get_task_returns_failure_history(tmp_path, monkeypatch) -> None:
         assert body["externalJobs"] == []
 
 
+def test_get_task_returns_persisted_aigc_failure_details(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    monkeypatch.setenv("API_KEYS", "test-key")
+    monkeypatch.setenv("OSS_LOCAL_ROOT", str(tmp_path / "oss"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "tasks.db"))
+    monkeypatch.setenv("TEMP_DIR", str(tmp_path / "temp"))
+    monkeypatch.setenv("PIPELINES_DIR", str(pipelines_root))
+    monkeypatch.setattr(api_app_module, "TaskQueue", FakeTaskQueue)
+
+    with TestClient(api_app_module.create_app()) as client:
+        store = client.app.state.store
+        task_id = "t_aigc_failed"
+        store.create(
+            api_app_module._create_store_record(
+                task_id,
+                "pipeline",
+                "trim-mixed-dissolve-v1",
+                {"clips": ["GouMei-Video-Cut/inputs/file1.mp4"]},
+            )
+        )
+        failure = {
+            "code": 3006,
+            "reason": "AIGC_FFPROBE_TIMEOUT",
+            "phase": "verify",
+            "attempt": 3,
+            "maxAttempts": 3,
+            "retryable": True,
+            "message": "AIGC ffprobe verification timed out after 60 seconds.",
+            "attempts": [],
+        }
+        store.patch_payload(task_id, {"_aigc_failure": failure})
+        store.mark_failed(task_id, "AIGC metadata labeling failed [3006/AIGC_FFPROBE_TIMEOUT]")
+
+        response = client.get(f"/tasks/{task_id}", headers={"X-Api-Key": "test-key"})
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "failed"
+        assert body["failureCode"] == 3006
+        assert body["failureReason"] == "AIGC_FFPROBE_TIMEOUT"
+        assert body["failureDetails"] == failure
+
+
 def test_get_task_returns_external_jobs(tmp_path, monkeypatch) -> None:
     FakeTaskQueue.instances.clear()
     pipelines_root = tmp_path / "pipelines"

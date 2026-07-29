@@ -76,6 +76,7 @@ class ApiErrorCode(IntEnum):
     FILE_TOO_LARGE = 3003
     TASK_OUTPUT_URL_INVALID = 3004
     BGM_TEMPLATE_SYNC_RUNNING = 3005
+    AIGC_METADATA_FAILED = 3006
     BGM_TEMPLATE_SYNC_FAILED = 9002
     INTERNAL_ERROR = 9001
 
@@ -998,6 +999,11 @@ def create_app() -> FastAPI:
             "taskKind": task.task_kind,
             "sourceName": task.source_name,
         }
+        aigc_failure = task.payload.get("_aigc_failure")
+        if isinstance(aigc_failure, dict):
+            payload["failureCode"] = aigc_failure.get("code")
+            payload["failureReason"] = aigc_failure.get("reason")
+            payload["failureDetails"] = aigc_failure
         upload_diagnostics = queue_obj.get_upload_diagnostics(task.id)
         if upload_diagnostics:
             payload["uploadDiagnostics"] = upload_diagnostics

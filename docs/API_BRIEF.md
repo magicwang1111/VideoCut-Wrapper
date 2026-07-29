@@ -518,6 +518,9 @@ X-Api-Key: goumee-music
 | `lastError` | `string|null` | 最近一次失败原因 |
 | `lastErrorAt` | `string|null` | 最近一次失败时间，北京时间 |
 | `failureHistory` | `array` | 失败历史 |
+| `failureCode` | `number` | 可选；AIGC 元数据最终失败时为 `3006` |
+| `failureReason` | `string` | 可选；AIGC 元数据失败的稳定机器可读原因 |
+| `failureDetails` | `object` | 可选；包含失败阶段、尝试次数、是否可重试及逐次错误摘要 |
 | `externalJobs` | `array` | 外部云任务；字幕任务包含腾讯 MPS ID、归一化状态、错误码和时间，其他任务为空数组 |
 | `taskKind` | `string` | 当前固定为 `pipeline` |
 | `sourceName` | `string` | pipeline 名称 |
@@ -706,7 +709,7 @@ HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读
 
 以上错误发生在 `POST /render` 创建任务之前，响应中没有 `taskId`。
 
-腾讯 MPS 提交/轮询、COS 字幕下载、字幕解析、FFmpeg 压制和最终 OSS 上传发生在任务创建之后。此类失败不会返回新的 HTTP `error_code`；查询 `GET /tasks/{taskId}` 时 HTTP 状态仍为 `200`，通过 `status="failed"`、`error`、`lastError` 和 `failureHistory` 判断：
+腾讯 MPS 提交/轮询、COS 字幕下载、字幕解析、FFmpeg 压制、AIGC 元数据写入和最终 OSS 上传发生在任务创建之后。此类失败不会改变查询接口的 HTTP 状态；查询 `GET /tasks/{taskId}` 时 HTTP 状态仍为 `200`，通过 `status="failed"`、`error`、`lastError` 和 `failureHistory` 判断。AIGC 元数据最终失败还会返回 `failureCode=3006`、`failureReason` 和 `failureDetails`。
 
 ```json
 {
@@ -731,6 +734,45 @@ HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读
 ```
 
 `error` 文本用于诊断，具体内容可能来自腾讯云、COS、FFmpeg 或 OSS，不应作为稳定错误码解析。客户端遇到 `status="failed"` 后应停止轮询并记录该 `taskId`，不要因一次查询网络错误而重新调用 `/render`。
+
+AIGC 元数据写入默认最多尝试 3 次，每次写入均有 180 秒超时，并按 2 秒、4 秒线性退避。源文件缺失、输出不是 MP4、FFmpeg/ffprobe 不可用等前置错误不做无意义重试。达到上限后任务立即进入 `failed`，未标识视频不会上传。示例：
+
+```json
+{
+  "status": "failed",
+  "progress": 95,
+  "outputUrl": null,
+  "error": "AIGC metadata labeling failed [3006/AIGC_FFPROBE_TIMEOUT] after 3 attempt(s): ...",
+  "failureCode": 3006,
+  "failureReason": "AIGC_FFPROBE_TIMEOUT",
+  "failureDetails": {
+    "code": 3006,
+    "reason": "AIGC_FFPROBE_TIMEOUT",
+    "phase": "verify",
+    "attempt": 3,
+    "maxAttempts": 3,
+    "retryable": true,
+    "message": "AIGC ffprobe verification timed out after 60 seconds.",
+    "attempts": []
+  }
+}
+```
+
+常见 `failureReason`：
+
+| 原因 | 含义 |
+|---|---|
+| `AIGC_TOOL_UNAVAILABLE` | FFmpeg/ffprobe 缺失或无法启动 |
+| `AIGC_FFMPEG_TIMEOUT` / `AIGC_FFMPEG_FAILED` | metadata 写入超时或 FFmpeg 非零退出 |
+| `AIGC_TEMP_OUTPUT_MISSING_OR_EMPTY` | 临时 MP4 不存在或为空 |
+| `AIGC_FFPROBE_TIMEOUT` / `AIGC_FFPROBE_FAILED` | ffprobe 验证超时或非零退出 |
+| `AIGC_FFPROBE_OUTPUT_INVALID` | ffprobe 输出不是合法 JSON |
+| `AIGC_METADATA_MISSING` | 未读取到 `AIGC` 标签 |
+| `AIGC_METADATA_JSON_INVALID` | `AIGC` 标签内容不是合法 JSON |
+| `AIGC_METADATA_FIELDS_INVALID` | 七字段缺失、增加或顺序不符 |
+| `AIGC_METADATA_FIELD_TYPE_INVALID` | 字段值不是字符串 |
+| `AIGC_METADATA_VALUES_MISMATCH` | 字段值与当前任务预期不一致 |
+| `AIGC_ATOMIC_REPLACE_FAILED` | 验证通过后原子替换失败 |
 
 ```json
 {

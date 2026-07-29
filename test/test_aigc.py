@@ -56,7 +56,7 @@ def test_failed_write_preserves_original_file(tmp_path, monkeypatch) -> None:
     source = tmp_path / "final.mp4"
     source.write_bytes(b"original-video")
 
-    def fail_write(command, *, timeout, label):
+    def fail_write(command, **kwargs):
         raise AigcMetadataError("write failed")
 
     monkeypatch.setattr(aigc_module, "_run_process", fail_write)
@@ -73,7 +73,7 @@ def test_invalid_verification_preserves_original_file(tmp_path, monkeypatch) -> 
     source.write_bytes(b"original-video")
     calls = 0
 
-    def fake_process(command, *, timeout, label):
+    def fake_process(command, **kwargs):
         nonlocal calls
         calls += 1
         if calls == 1:
@@ -83,11 +83,32 @@ def test_invalid_verification_preserves_original_file(tmp_path, monkeypatch) -> 
 
     monkeypatch.setattr(aigc_module, "_run_process", fake_process)
 
-    with pytest.raises(AigcMetadataError, match="missing or invalid"):
+    with pytest.raises(AigcMetadataError, match="did not find"):
         embed_aigc_metadata("ffmpeg", "ffprobe", source, "0123456789abcdef")
 
     assert source.read_bytes() == b"original-video"
     assert list(tmp_path.glob("*.aigc_tmp.mp4")) == []
+
+
+def test_process_timeout_has_machine_readable_reason(monkeypatch) -> None:
+    def timeout_process(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd="ffmpeg", timeout=10)
+
+    monkeypatch.setattr(subprocess, "run", timeout_process)
+
+    with pytest.raises(AigcMetadataError) as caught:
+        aigc_module._run_process(
+            ["ffmpeg"],
+            timeout=10,
+            label="AIGC FFmpeg metadata write",
+            phase="write",
+            failure_reason="AIGC_FFMPEG_FAILED",
+            timeout_reason="AIGC_FFMPEG_TIMEOUT",
+        )
+
+    assert caught.value.reason == "AIGC_FFMPEG_TIMEOUT"
+    assert caught.value.phase == "write"
+    assert caught.value.retryable is True
 
 
 def test_real_ffmpeg_round_trip_preserves_streams(tmp_path) -> None:

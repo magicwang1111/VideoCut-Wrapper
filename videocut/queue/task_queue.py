@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from videocut.aigc import embed_aigc_metadata
+from videocut.aigc import AigcMetadataError, embed_aigc_metadata
 from videocut.env import load_project_env
 from videocut.log import get_logger
 from videocut.oss import OssClient
@@ -27,6 +27,10 @@ TASK_MAX_ATTEMPT = int(os.getenv("TASK_MAX_ATTEMPT", "3"))
 QUEUE_MAX = int(os.getenv("QUEUE_MAX", "200"))
 UPLOAD_MAX_ATTEMPT = int(os.getenv("UPLOAD_MAX_ATTEMPT", "3"))
 UPLOAD_WORKER_COUNT = int(os.getenv("UPLOAD_WORKER_COUNT", "2"))
+AIGC_METADATA_MAX_ATTEMPT = int(os.getenv("AIGC_METADATA_MAX_ATTEMPT", "3"))
+AIGC_METADATA_RETRY_DELAY_SECONDS = float(os.getenv("AIGC_METADATA_RETRY_DELAY_SECONDS", "2"))
+AIGC_METADATA_TIMEOUT_SECONDS = int(os.getenv("AIGC_METADATA_TIMEOUT_SECONDS", "180"))
+AIGC_METADATA_FAILURE_CODE = 3006
 
 TaskEventHandler = Callable[[dict[str, Any]], None]
 
@@ -417,30 +421,101 @@ class TaskQueue:
             uploadStartedAt=now_beijing_iso(),
             uploadQueueWaitSeconds=_round_elapsed(queue_wait_seconds),
         )
-        try:
-            if not self.ffmpeg_path or not self.ffprobe_path:
-                raise RuntimeError("AIGC metadata labeling requires FFmpeg and ffprobe.")
-            metadata = embed_aigc_metadata(
-                self.ffmpeg_path,
-                self.ffprobe_path,
-                output_file,
-                task_id,
-            )
-            output_size_bytes = output_file.stat().st_size
-            self._update_upload_diagnostics(
-                task_id,
-                outputSizeBytes=output_size_bytes,
-            )
-            logger.info("task %s AIGC metadata verified: produce_id=%s", task_id, metadata["ProduceID"])
-        except Exception as exc:
-            labeling_seconds = time.monotonic() - started_monotonic
-            self._update_upload_diagnostics(
-                task_id,
-                uploadFinishedAt=now_beijing_iso(),
-                uploadRunSeconds=_round_elapsed(labeling_seconds),
-                uploadError=str(exc),
-            )
-            raise RuntimeError(f"AIGC metadata labeling failed: {exc}") from exc
+        metadata_attempts: list[dict[str, Any]] = []
+        metadata_max_attempts = max(1, AIGC_METADATA_MAX_ATTEMPT)
+        metadata: dict[str, str] | None = None
+        for attempt in range(1, metadata_max_attempts + 1):
+            try:
+                if not self.ffmpeg_path or not self.ffprobe_path:
+                    raise AigcMetadataError(
+                        "AIGC metadata labeling requires FFmpeg and ffprobe.",
+                        reason="AIGC_TOOL_UNAVAILABLE",
+                        phase="precheck",
+                        retryable=False,
+                    )
+                metadata = embed_aigc_metadata(
+                    self.ffmpeg_path,
+                    self.ffprobe_path,
+                    output_file,
+                    task_id,
+                    timeout=max(1, AIGC_METADATA_TIMEOUT_SECONDS),
+                )
+                self._update_upload_diagnostics(
+                    task_id,
+                    aigcMetadataAttempt=attempt,
+                    aigcMetadataMaxAttempts=metadata_max_attempts,
+                    aigcMetadataStatus="verified",
+                    aigcMetadataErrorCode=None,
+                    aigcMetadataErrorReason=None,
+                    aigcMetadataErrors=metadata_attempts,
+                )
+                break
+            except Exception as exc:
+                failure = exc if isinstance(exc, AigcMetadataError) else AigcMetadataError(str(exc))
+                attempt_error = {
+                    "attempt": attempt,
+                    "reason": failure.reason,
+                    "phase": failure.phase,
+                    "retryable": failure.retryable,
+                    "message": str(failure),
+                    "createdAt": now_beijing_iso(),
+                }
+                metadata_attempts.append(attempt_error)
+                self._update_upload_diagnostics(
+                    task_id,
+                    aigcMetadataAttempt=attempt,
+                    aigcMetadataMaxAttempts=metadata_max_attempts,
+                    aigcMetadataStatus="retrying"
+                    if failure.retryable and attempt < metadata_max_attempts
+                    else "failed",
+                    aigcMetadataErrorCode=AIGC_METADATA_FAILURE_CODE,
+                    aigcMetadataErrorReason=failure.reason,
+                    aigcMetadataErrors=list(metadata_attempts),
+                    uploadError=str(failure),
+                )
+                if not failure.retryable or attempt >= metadata_max_attempts:
+                    labeling_seconds = time.monotonic() - started_monotonic
+                    failure_details = {
+                        "code": AIGC_METADATA_FAILURE_CODE,
+                        "reason": failure.reason,
+                        "phase": failure.phase,
+                        "attempt": attempt,
+                        "maxAttempts": metadata_max_attempts,
+                        "retryable": failure.retryable,
+                        "message": str(failure),
+                        "attempts": metadata_attempts,
+                    }
+                    self.store.patch_payload(task_id, {"_aigc_failure": failure_details})
+                    self._update_upload_diagnostics(
+                        task_id,
+                        uploadFinishedAt=now_beijing_iso(),
+                        uploadRunSeconds=_round_elapsed(labeling_seconds),
+                    )
+                    raise RuntimeError(
+                        "AIGC metadata labeling failed "
+                        f"[{AIGC_METADATA_FAILURE_CODE}/{failure.reason}] "
+                        f"after {attempt} attempt(s): {failure}"
+                    ) from exc
+                logger.warning(
+                    "task %s AIGC metadata attempt %d/%d failed [%s]: %s",
+                    task_id,
+                    attempt,
+                    metadata_max_attempts,
+                    failure.reason,
+                    failure,
+                )
+                time.sleep(min(10.0, max(0.0, AIGC_METADATA_RETRY_DELAY_SECONDS) * attempt))
+
+        if metadata is None:
+            raise RuntimeError("AIGC metadata labeling ended without a result.")
+        self.store.patch_payload(task_id, {"_aigc_failure": None})
+        output_size_bytes = output_file.stat().st_size
+        self._update_upload_diagnostics(
+            task_id,
+            outputSizeBytes=output_size_bytes,
+            uploadError=None,
+        )
+        logger.info("task %s AIGC metadata verified: produce_id=%s", task_id, metadata["ProduceID"])
 
         oss_key = requested_oss_key or self.oss.output_key(task_id)
         last_error: Exception | None = None
