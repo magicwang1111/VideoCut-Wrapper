@@ -1069,7 +1069,7 @@ HTTP 状态码为 `500`。检查 `OSS_PUBLIC_ENDPOINT`，真实 OSS 结果 URL �
 
 | Pipeline ID | 默认素材槽位 | 默认转场 | BGM | 备注 |
 |---|---:|---|---|---|
-| `avatar-bgm-concat` | 1 | `cut` | 是 | 单个 avatar 视频先裁掉开头 3 秒，再混入 BGM |
+| `avatar-bgm-concat` | 1 | `cut` | 是 | 单个 avatar 视频先裁掉开头 1 秒，再混入 BGM |
 | `bgm-concat` | 1 | `cut` | 是 | 纯拼接不做转场，最后混入 BGM；单个视频时用于给单视频添加 BGM |
 | `flash-black-concat` | 6 | `flash-black` | 是 | 闪黑转场拼接并混入 BGM |
 | `segment-5-6-then-3-5-concat` | 10 | `cut` | 是 | 固定使用 5 个输入视频，先取每段 5-6 秒，再取每段 3-5 秒，按顺序直切拼接并混入 BGM |

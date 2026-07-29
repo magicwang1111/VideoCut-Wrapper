@@ -79,7 +79,7 @@ videocut serve --host 0.0.0.0 --port 3000
 
 | Pipeline ID | 转场 | 主要变量 |
 |---|---|---|
-| `avatar-bgm-concat` | 直切 + BGM | 固定裁掉开头 3 秒 |
+| `avatar-bgm-concat` | 直切 + BGM | 固定裁掉开头 1 秒 |
 | `bgm-concat` | 直切 + BGM | — |
 | `segment-5-6-then-3-5-concat` | 直切 + BGM | 固定取 5 段素材的 5-6 秒和 3-5 秒 |
 | `subtitle-burn` | 腾讯 MPS 识别 + 本地 ASS 压制 | 单个 `subtitle-input/` OSS 视频；固定 `simkai.ttf` 样式 |

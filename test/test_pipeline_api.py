@@ -1281,7 +1281,7 @@ def test_avatar_bgm_concat_pipeline_config_parses() -> None:
     assert config.required_clip_count == 1
     assert len(config.clips) == 1
     assert config.clips[0].source_index == 0
-    assert config.clips[0].trim_start == 3
+    assert config.clips[0].trim_start == 1
     assert config.clips[0].trim_end == 0
     assert config.default_transition is not None
     assert config.default_transition.type == "cut"

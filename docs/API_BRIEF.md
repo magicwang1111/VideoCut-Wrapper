@@ -1063,7 +1063,7 @@ curl -L "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78/download" \
 
 | Pipeline ID | 含义 |
 |---|---|
-| `avatar-bgm-concat` | 单个 avatar 视频先裁掉开头 3 秒，再混入 BGM |
+| `avatar-bgm-concat` | 单个 avatar 视频先裁掉开头 1 秒，再混入 BGM |
 | `subtitle-burn` | 单个 OSS 视频经腾讯 MPS 生成字幕，再由本地 FFmpeg 使用 `msyh.ttc`（Microsoft YaHei UI）压制 |
 | `bgm-concat` | 多段素材直接拼接，不做转场，最后混入 BGM；单个视频时用于给单视频添加 BGM |
 | `segment-5-6-then-3-5-concat` | 固定使用 5 个输入视频，先取每段 5-6 秒，再取每段 3-5 秒，按顺序直切拼接并混入 BGM |
