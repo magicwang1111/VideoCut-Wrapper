@@ -7,6 +7,8 @@ Server usage:
 Optional overrides:
     SUBTITLE_OSS_KEY=GouMei-Video-Cut/subtitle-input/example.mp4 python api-test/render_subtitle_burn_oss.py
     API_BASE_URL=http://127.0.0.1:3000 DOWNLOAD=0 python api-test/render_subtitle_burn_oss.py
+    SUBTITLE_BGM_SOURCE=bgm-avatar SUBTITLE_BGM_CATEGORY=口播测试 SUBTITLE_BGM_FILENAME=1 \
+        python api-test/render_subtitle_burn_oss.py
 
 The server must provide the Tencent Cloud, Tencent COS, Alibaba OSS, and
 VideoCut API settings. This script never embeds or prints secret values.
@@ -71,6 +73,9 @@ SUBTITLE_OSS_KEY = os.getenv(
     "SUBTITLE_OSS_KEY",
     "GouMei-Video-Cut/subtitle-input/Seedance_20260720_165432_00001_.mp4",
 ).strip()
+SUBTITLE_BGM_SOURCE = os.getenv("SUBTITLE_BGM_SOURCE", "").strip()
+SUBTITLE_BGM_CATEGORY = os.getenv("SUBTITLE_BGM_CATEGORY", "").strip()
+SUBTITLE_BGM_FILENAME = os.getenv("SUBTITLE_BGM_FILENAME", "").strip()
 DOWNLOAD = os.getenv("DOWNLOAD", "1").strip().lower() not in {"0", "false", "no"}
 REQUEST_TIMEOUT = float(os.getenv("REQUEST_TIMEOUT", "60"))
 POLL_INTERVAL = float(os.getenv("POLL_INTERVAL", "5"))
@@ -102,10 +107,17 @@ def check_health(session: requests.Session) -> None:
 
 
 def submit_render(session: requests.Session) -> str:
+    overrides: dict[str, Any] = {}
+    if SUBTITLE_BGM_SOURCE:
+        overrides["bgm"] = {
+            "source": SUBTITLE_BGM_SOURCE,
+            "category": SUBTITLE_BGM_CATEGORY,
+            "filename": SUBTITLE_BGM_FILENAME,
+        }
     payload = {
         "pipeline": PIPELINE,
         "clips": [SUBTITLE_OSS_KEY],
-        "overrides": {},
+        "overrides": overrides,
     }
     print("Request:", json.dumps(payload, ensure_ascii=False, indent=2))
     response = session.post(
@@ -187,6 +199,13 @@ def print_configuration() -> None:
     print(f"API_KEY_SET={API_KEY != 'change-me'}")
     print(f"PIPELINE={PIPELINE}")
     print(f"SUBTITLE_OSS_KEY={SUBTITLE_OSS_KEY}")
+    if SUBTITLE_BGM_SOURCE:
+        print(
+            "SUBTITLE_BGM="
+            f"{SUBTITLE_BGM_SOURCE}/{SUBTITLE_BGM_CATEGORY}/{SUBTITLE_BGM_FILENAME}"
+        )
+    else:
+        print("SUBTITLE_BGM=(disabled)")
     print(f"DOWNLOAD={DOWNLOAD}")
     print(f"POLL_TIMEOUT={POLL_TIMEOUT:.0f}s")
     if LOADED_ENV_FILES:
@@ -200,6 +219,14 @@ def main() -> int:
     print_configuration()
     if not SUBTITLE_OSS_KEY:
         raise RuntimeError("SUBTITLE_OSS_KEY cannot be empty")
+    if SUBTITLE_BGM_SOURCE:
+        if SUBTITLE_BGM_SOURCE not in {"bgm-avatar", "template"}:
+            raise RuntimeError("SUBTITLE_BGM_SOURCE must be bgm-avatar or template")
+        if not SUBTITLE_BGM_CATEGORY or not SUBTITLE_BGM_FILENAME:
+            raise RuntimeError(
+                "SUBTITLE_BGM_CATEGORY and SUBTITLE_BGM_FILENAME are required when "
+                "SUBTITLE_BGM_SOURCE is set"
+            )
 
     started_at = time.monotonic()
     with requests.Session() as session:

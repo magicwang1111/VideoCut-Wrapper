@@ -14,6 +14,8 @@
 - [render_groups_1_5.py](D:/VideoCut-Wrapper/api-test/render_groups_1_5.py)
 - [render_groups_1_16.py](D:/VideoCut-Wrapper/api-test/render_groups_1_16.py)
 - [render_single_video_stress.py](D:/VideoCut-Wrapper/api-test/render_single_video_stress.py)
+- [render_subtitle_burn_oss.py](D:/VideoCut-Wrapper/api-test/render_subtitle_burn_oss.py)
+- [render_subtitle_burn_oss_with_bgm.py](D:/VideoCut-Wrapper/api-test/render_subtitle_burn_oss_with_bgm.py)
 - [render_trim_mixed.py](D:/VideoCut-Wrapper/api-test/render_trim_mixed.py)
 - [render_zoom_dissolve.py](D:/VideoCut-Wrapper/api-test/render_zoom_dissolve.py)
 
