@@ -146,8 +146,8 @@ def _parse_bgm_source(raw: object, base: PipelineBgmConfig | None = None) -> str
     if not isinstance(raw, dict) or "source" not in raw:
         return base.source if base else "catalog"
     source = _optional_str(raw.get("source"))
-    if source not in {"catalog", "template"}:
-        raise VideoCutError('bgm.source must be "catalog" or "template".')
+    if source not in {"catalog", "template", "bgm-avatar"}:
+        raise VideoCutError('bgm.source must be "catalog", "template", or "bgm-avatar".')
     return source
 
 

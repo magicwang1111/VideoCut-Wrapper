@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 PipelineJunctionType = Literal["flash-black", "dissolve", "cut", "zoom-dissolve"]
-BgmSource = Literal["catalog", "template"]
+BgmSource = Literal["catalog", "template", "bgm-avatar"]
 SubtitleLanguageMode = Literal["source", "translation", "bilingual", "auto"]
 SubtitlePosition = Literal[
     "bottom-left", "bottom", "bottom-right", "middle", "top-left", "top", "top-right"

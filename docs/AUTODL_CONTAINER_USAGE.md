@@ -248,7 +248,6 @@ set_kv TEMP_DIR /root/autodl-tmp/wangxi/videocut/runtime/temp
 set_kv BGM_DIR /root/autodl-tmp/wangxi/videocut/runtime/input/bgm
 set_kv SYNC_BGM_ON_STARTUP 1
 set_kv BGM_TEMPLATE_DIR /root/autodl-tmp/wangxi/videocut/runtime/input/bgm-templete
-set_kv SYNC_BGM_TEMPLATE_ON_STARTUP 1
 ```
 
 关键变量说明：
@@ -265,9 +264,8 @@ set_kv SYNC_BGM_TEMPLATE_ON_STARTUP 1
 | `DB_PATH` | SQLite 任务数据库路径 |
 | `TEMP_DIR` | 上传和渲染临时目录 |
 | `BGM_DIR` | BGM 同步和运行时扫描目录 |
-| `SYNC_BGM_ON_STARTUP` | `1` 表示服务启动前从 OSS 同步 BGM |
+| `SYNC_BGM_ON_STARTUP` | `1` 表示服务启动前统一同步普通、备份、模板和口播音乐 |
 | `BGM_TEMPLATE_DIR` | 隐藏模板音乐同步和运行时扫描目录 |
-| `SYNC_BGM_TEMPLATE_ON_STARTUP` | `1` 表示服务启动前从 OSS 全量增量同步模板音乐 |
 
 OSS 相关变量需要在 env 文件中配置，但不要写进文档、聊天记录或公开仓库：
 
@@ -284,7 +282,7 @@ BGM_TEMPLATE_OSS_URI=oss://<your-bucket>/<your-prefix>/bgm-templete/
 检查当前路径配置：
 
 ```bash
-grep -E "^(PORT|FFMPEG_ENCODER|WORKER_COUNT|BGM_DIR|BGM_TEMPLATE_DIR|DB_PATH|TEMP_DIR|SYNC_BGM_ON_STARTUP|SYNC_BGM_TEMPLATE_ON_STARTUP)=" \
+grep -E "^(PORT|FFMPEG_ENCODER|WORKER_COUNT|BGM_DIR|BGM_TEMPLATE_DIR|BGM_AVATAR_DIR|DB_PATH|TEMP_DIR|SYNC_BGM_ON_STARTUP)=" \
   /root/autodl-tmp/wangxi/videocut/env/videocut.env
 ```
 
@@ -364,7 +362,7 @@ screen -S videocut -X quit 2>/dev/null || true
 
 screen -dmS videocut bash -lc '
   cd /root/autodl-tmp/wangxi/videocut/app
-  unset PORT BGM_DIR BGM_TEMPLATE_DIR DB_PATH TEMP_DIR FFMPEG_PATH FFPROBE_PATH FFMPEG_ENCODER FFMPEG_HWACCEL WORKER_COUNT SYNC_BGM_ON_STARTUP SYNC_BGM_TEMPLATE_ON_STARTUP
+  unset PORT BGM_DIR BGM_TEMPLATE_DIR BGM_AVATAR_DIR DB_PATH TEMP_DIR FFMPEG_PATH FFPROBE_PATH FFMPEG_ENCODER FFMPEG_HWACCEL WORKER_COUNT SYNC_BGM_ON_STARTUP
   export VIDEOCUT_ENV_FILE=/root/autodl-tmp/wangxi/videocut/env/videocut.env
   sh docker/entrypoint.sh sh -c "python -m videocut serve --host 0.0.0.0 --port ${PORT:-3000}" \
     > /root/autodl-tmp/wangxi/videocut/runtime/logs/server.log 2>&1

@@ -89,18 +89,31 @@ def worker_main(
             if not ffmpeg_path or not ffprobe_path:
                 raise ValueError("Pipeline mode requires FFmpeg and ffprobe.")
 
+            user_bgm_path = _download_user_bgm(oss, payload, task_temp_dir)
+            ctx = build_pipeline_context(
+                config,
+                local_clips,
+                payload.get("pipeline_source_path") or message["source_name"],
+                payload.get("overrides") if isinstance(payload.get("overrides"), dict) else None,
+                user_bgm_path=user_bgm_path,
+            )
+
             if config.name == "subtitle-burn" and config.subtitle and config.subtitle.enabled:
                 if len(local_clips) != 1:
                     raise ValueError("subtitle-burn requires exactly one input video.")
+                bgm_path = pipeline_runner.resolve_bgm_path(ctx)
                 subtitle_runner = SubtitlePipelineRunner(root_dir, oss=oss)
                 result = subtitle_runner.run(
                     task_id=task_id,
                     source_oss_key=clip_keys[0],
                     local_input=local_clips[0],
                     task_dir=task_temp_dir,
-                    config=config.subtitle,
+                    config=ctx.config.subtitle,
                     ffmpeg_path=ffmpeg_path,
                     ffprobe_path=ffprobe_path,
+                    bgm_path=bgm_path,
+                    bgm_volume=ctx.config.bgm.volume if ctx.config.bgm else 1.0,
+                    bgm_fade_out=ctx.config.bgm.fade_out if ctx.config.bgm else 0.0,
                     existing_state=payload.get("subtitle_state") if isinstance(payload.get("subtitle_state"), dict) else None,
                     attempt=attempt,
                     on_progress=lambda value: event_queue.put(
@@ -125,15 +138,7 @@ def worker_main(
                 defer_temp_cleanup = True
                 continue
 
-            user_bgm_path = _download_user_bgm(oss, payload, task_temp_dir)
             event_queue.put({"type": "progress", "worker_id": worker_id, "task_id": task_id, "progress": 25})
-            ctx = build_pipeline_context(
-                config,
-                local_clips,
-                payload.get("pipeline_source_path") or message["source_name"],
-                payload.get("overrides") if isinstance(payload.get("overrides"), dict) else None,
-                user_bgm_path=user_bgm_path,
-            )
             result = pipeline_runner.run(ctx, ffmpeg_path, ffprobe_path, {}, task_id=task_id)
 
             if result.status == "failed" or not result.output_path:

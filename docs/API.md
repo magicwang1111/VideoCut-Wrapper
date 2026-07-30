@@ -22,6 +22,7 @@ videocut serve --host 0.0.0.0 --port 3000
 |---|---|---|---|
 | `GET` | `/health` | 否 | 服务和队列健康检查 |
 | `GET` | `/bgm` | 是 | 查询当前可用 BGM 分类和文件清单 |
+| `GET` | `/bgm-avatar` | 是 | 查询口播专用音乐分类和文件清单 |
 | `POST` | `/admin/bgm-template/sync` | 是 | 同步后台模板音乐到隐藏模板音乐目录 |
 | `POST` | `/upload` | 是 | 上传本地素材或临时用户音频，返回 `fileId` 和 `ossKey` |
 | `POST` | `/render` | 是 | 创建异步渲染任务，返回 `taskId` |
@@ -175,7 +176,7 @@ curl "http://127.0.0.1:3000/health"
   "ok": true,
   "workers": 4,
   "queueSize": 0,
-  "pipelines": 12
+  "pipelines": 14
 }
 ```
 
@@ -235,7 +236,24 @@ curl "http://127.0.0.1:3000/bgm" \
 }
 ```
 
-## 5.1 `POST /admin/bgm-template/sync`
+## 5.1 `GET /bgm-avatar`
+
+查询口播专用音乐。接口需要 `X-Api-Key`，响应结构与 `GET /bgm` 完全一致，但只扫描 `BGM_AVATAR_DIR`，并使用 `BGM_AVATAR_OSS_URI` 生成 `ossUrl`。
+
+```bash
+curl "http://127.0.0.1:3000/bgm-avatar" \
+  -H "X-Api-Key: goumee-music"
+```
+
+默认目录为 `/app/input/bgm-avatar`，默认 OSS 来源为：
+
+```text
+oss://goumee-coze/GouMei-Video-Cut/bgm-avatar/
+```
+
+返回的 `category` 和 `filename` 仅用于 `subtitle-burn` 的 `source="bgm-avatar"` 请求，不会混入 `GET /bgm`、模板或备份曲库。
+
+## 5.2 `POST /admin/bgm-template/sync`
 
 同步后台模板配置使用的隐藏音乐。模板音乐不会出现在 `GET /bgm`，也不会被前端查询到。
 
@@ -259,7 +277,7 @@ Content-Type: application/json
 X-Api-Key: goumee-music
 ```
 
-容器默认设置 `SYNC_BGM_TEMPLATE_ON_STARTUP=1`，entrypoint 会在 API 服务启动前执行一次模板音乐全量增量同步。后台发布模板后仍应调用本接口，以便运行中的容器立即获得最新音乐。
+容器默认设置 `SYNC_BGM_ON_STARTUP=1`，entrypoint 会在 API 服务启动前按普通、备份、模板、口播顺序统一增量同步。后台发布模板后仍应调用本接口，以便运行中的容器立即获得最新音乐。
 
 - 同一容器重启，或者 `BGM_TEMPLATE_DIR` 使用了宿主机目录/Docker volume 时，`-u` 会跳过相同文件。
 - 删除容器且没有持久化 `BGM_TEMPLATE_DIR` 时，本地音乐会随容器删除；新容器创建后会在启动阶段自动从 OSS 重新下载。
@@ -496,6 +514,26 @@ Content-Type: application/json
 ```
 
 `clips` 只放视频/图片素材；用户上传音频放在 `overrides.bgm.fileId`。传入 `fileId` 后，服务端使用该上传音频替代曲库音乐，最终视频不保留原声。
+
+`subtitle-burn` 是例外：用户音乐不会替换原音轨，而是在压制字幕的同一次 FFmpeg 执行中与原音轨混合。两路默认音量均为 `1.0`，不做自动 ducking；不传 `overrides.bgm` 时继续只压字幕并保留原声。
+
+口播音乐示例：
+
+```json
+{
+  "pipeline": "subtitle-burn",
+  "clips": ["GouMei-Video-Cut/subtitle-input/clip_001.mp4"],
+  "overrides": {
+    "bgm": {
+      "source": "bgm-avatar",
+      "category": "口播测试",
+      "filename": "1"
+    }
+  }
+}
+```
+
+模板音乐把 `source` 改为 `"template"` 并传模板目录下的 `category + filename`。用户上传音乐使用 `{"bgm":{"fileId":"audioFileId1"}}`。分类音乐必须显式传 `source`、`category`、`filename`；`subtitle-burn` 不支持 `source="catalog"`。
 
 成功响应：
 
@@ -1073,7 +1111,9 @@ HTTP 状态码为 `500`。检查 `OSS_PUBLIC_ENDPOINT`，真实 OSS 结果 URL �
 | `bgm-concat` | 1 | `cut` | 是 | 纯拼接不做转场，最后混入 BGM；单个视频时用于给单视频添加 BGM |
 | `flash-black-concat` | 6 | `flash-black` | 是 | 闪黑转场拼接并混入 BGM |
 | `segment-5-6-then-3-5-concat` | 10 | `cut` | 是 | 固定使用 5 个输入视频，先取每段 5-6 秒，再取每段 3-5 秒，按顺序直切拼接并混入 BGM |
-| `subtitle-burn` | 1 | `cut` | 否 | 腾讯 MPS 模板 122 生成字幕，本地 FFmpeg 使用 `msyh.ttc`（Microsoft YaHei UI）压制，保留原音轨 |
+| `avatar-bgm-concat-2s` | 1 | `cut` | 是 | 单个 avatar 视频裁掉开头 2 秒，再混入 BGM |
+| `avatar-bgm-concat-3s` | 1 | `cut` | 是 | 单个 avatar 视频裁掉开头 3 秒，再混入 BGM |
+| `subtitle-burn` | 1 | `cut` | 可选 | 腾讯 MPS 生成字幕；可混入口播、模板或用户上传音乐并保留原音轨 |
 | `trim-2-5-concat` | 5 | `cut` | 是 | 固定使用 5 个输入视频，取每段 2-5 秒，按顺序直切拼接并混入 BGM |
 | `trim-concat` | 6 | `cut` | 是 | 裁剪后直切拼接并混入 BGM |
 | `trim-mixed-concat` | 6 | `flash-black` | 是 | 配置内前 5 个转场交替闪黑和溶解，并混入 BGM |
@@ -1142,8 +1182,9 @@ BGM 配置：
 |---|---|---|
 | `BGM_DIR` | `input/bgm` | BGM 文件目录。设置后优先级高于 pipeline 配置里的 `bgm.dir` |
 | `BGM_BACKUP_DIR` | `input/bgm-backup` | 归档 BGM 文件目录。`GET /bgm` 不展示，只在精确指定歌曲找不到当前文件时兜底 |
-| `SYNC_BGM_ON_STARTUP` | `1` | Docker entrypoint 是否启动时同步 BGM |
-| `SYNC_BGM_TEMPLATE_ON_STARTUP` | `1` | Docker entrypoint 是否启动时全量增量同步模板音乐 |
+| `SYNC_BGM_ON_STARTUP` | `1` | Docker entrypoint 是否按普通、备份、模板、口播顺序统一增量同步全部音乐 |
+| `BGM_AVATAR_DIR` | `/app/input/bgm-avatar` | 口播专用音乐本地目录 |
+| `BGM_AVATAR_OSS_URI` | `oss://goumee-coze/GouMei-Video-Cut/bgm-avatar/` | 口播专用音乐 OSS 同步源 |
 | `BGM_OSS_URI` | `oss://goumee-coze/GouMei-Video-Cut/bgm/` | BGM 同步源 |
 | `BGM_BACKUP_OSS_URI` | `oss://goumee-coze/GouMei-Video-Cut/bgm-backup/` | 归档 BGM 同步源，目录结构需和当前 BGM 一致 |
 | `BGM_TEMPLATE_DIR` | `/app/input/bgm-templete` | 后台模板音乐本地目录。`GET /bgm` 不展示 |

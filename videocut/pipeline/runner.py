@@ -10,6 +10,7 @@ from pathlib import Path
 
 from videocut.bgm import (
     apply_bgm,
+    resolve_bgm_avatar_dir,
     resolve_bgm_backup_dir,
     resolve_bgm_dir,
     resolve_bgm_category_dir_optional,
@@ -241,6 +242,43 @@ class PipelineRunner:
         self.root_dir = Path(root_dir).resolve()
         self.output_dir = self.root_dir / "output"
 
+    def resolve_bgm_path(self, ctx: ParsedPipelineContext) -> Path | None:
+        config = ctx.config.bgm
+        if config is None or not config.enabled:
+            return None
+        if ctx.user_bgm_path:
+            return Path(ctx.user_bgm_path).resolve()
+
+        if config.source == "template":
+            bgm_dir = resolve_bgm_template_dir(self.root_dir)
+            backup_dir = None
+        elif config.source == "bgm-avatar":
+            bgm_dir = resolve_bgm_avatar_dir(self.root_dir)
+            backup_dir = None
+        else:
+            bgm_dir = resolve_bgm_dir(self.root_dir, config.dir)
+            backup_dir = resolve_bgm_backup_dir(self.root_dir)
+
+        if config.category and config.filename:
+            return resolve_bgm_category_file(
+                bgm_dir,
+                config.category,
+                config.filename,
+                backup_bgm_dir=backup_dir,
+            )
+        if config.category:
+            if backup_dir is not None:
+                if resolve_bgm_category_dir_optional(bgm_dir, config.category) is not None:
+                    files = scan_bgm_category_files(bgm_dir, config.category)
+                elif resolve_bgm_category_dir_optional(backup_dir, config.category) is not None:
+                    files = scan_bgm_category_files(backup_dir, config.category)
+                else:
+                    files = scan_bgm_category_files(bgm_dir, config.category)
+            else:
+                files = scan_bgm_category_files(bgm_dir, config.category)
+            return random.choice(files)
+        return random.choice(scan_bgm_files(bgm_dir))
+
     def run(
         self,
         ctx: ParsedPipelineContext,
@@ -378,49 +416,10 @@ class PipelineRunner:
 
             bgm_file_used = None
             if config.bgm and config.bgm.enabled:
-                if ctx.user_bgm_path:
-                    chosen = Path(ctx.user_bgm_path)
-                    chosen_label = chosen.name
-                else:
-                    if config.bgm.source == "template":
-                        bgm_dir_path = resolve_bgm_template_dir(self.root_dir)
-                        if config.bgm.category and config.bgm.filename:
-                            chosen = resolve_bgm_category_file(
-                                bgm_dir_path,
-                                config.bgm.category,
-                                config.bgm.filename,
-                            )
-                        elif config.bgm.category:
-                            bgm_files = scan_bgm_category_files(bgm_dir_path, config.bgm.category)
-                            chosen = random.choice(bgm_files)
-                        else:
-                            bgm_files = scan_bgm_files(bgm_dir_path)
-                            chosen = random.choice(bgm_files)
-                    else:
-                        bgm_dir_path = resolve_bgm_dir(self.root_dir, config.bgm.dir)
-                        if config.bgm.category and config.bgm.filename:
-                            chosen = resolve_bgm_category_file(
-                                bgm_dir_path,
-                                config.bgm.category,
-                                config.bgm.filename,
-                                backup_bgm_dir=resolve_bgm_backup_dir(self.root_dir),
-                            )
-                        elif config.bgm.category:
-                            backup_bgm_dir_path = resolve_bgm_backup_dir(self.root_dir)
-                            if resolve_bgm_category_dir_optional(bgm_dir_path, config.bgm.category) is not None:
-                                bgm_files = scan_bgm_category_files(bgm_dir_path, config.bgm.category)
-                            elif resolve_bgm_category_dir_optional(backup_bgm_dir_path, config.bgm.category) is not None:
-                                bgm_files = scan_bgm_category_files(backup_bgm_dir_path, config.bgm.category)
-                            else:
-                                bgm_files = scan_bgm_category_files(bgm_dir_path, config.bgm.category)
-                            chosen = random.choice(bgm_files)
-                        else:
-                            bgm_files = scan_bgm_files(bgm_dir_path)
-                            chosen = random.choice(bgm_files)
-                    try:
-                        chosen_label = str(chosen.relative_to(bgm_dir_path))
-                    except ValueError:
-                        chosen_label = str(chosen)
+                chosen = self.resolve_bgm_path(ctx)
+                if chosen is None:
+                    raise RenderError("BGM is enabled but no BGM file could be resolved.")
+                chosen_label = chosen.name if ctx.user_bgm_path else str(chosen)
                 logger.info("[2.5/3] 混入 BGM: %s (volume=%.2f)", chosen_label, config.bgm.volume)
                 apply_bgm(ffmpeg_path, ffprobe_path, output_path, chosen, config.bgm.volume, config.bgm.fade_out, task.id)
                 bgm_file_used = str(chosen)

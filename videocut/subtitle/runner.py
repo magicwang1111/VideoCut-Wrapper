@@ -41,7 +41,9 @@ class SubtitlePipelineRunner:
 
     def run(self, *, task_id: str, source_oss_key: str, local_input: str | Path,
             task_dir: str | Path, config: PipelineSubtitleConfig, ffmpeg_path: str,
-            ffprobe_path: str, existing_state: dict[str, object] | None = None,
+            ffprobe_path: str, bgm_path: str | Path | None = None,
+            bgm_volume: float = 1.0, bgm_fade_out: float = 0.0,
+            existing_state: dict[str, object] | None = None,
             attempt: int | None = None,
             on_progress: Callable[[int], None] | None = None,
             on_external_job: Callable[[dict[str, object]], None] | None = None) -> SubtitleRunResult:
@@ -112,7 +114,15 @@ class SubtitlePipelineRunner:
         ass_path = write_ass(task_path / "subtitle.ass", cues, config)
         progress(70)
         output_path, encoder = burn_ass(
-            local_input, ass_path, task_path / "final.mp4", ffmpeg_path, ffprobe_path, quality="high"
+            local_input,
+            ass_path,
+            task_path / "final.mp4",
+            ffmpeg_path,
+            ffprobe_path,
+            quality="high",
+            bgm_path=bgm_path,
+            bgm_volume=bgm_volume,
+            bgm_fade_out=bgm_fade_out,
         )
         progress(90)
         object_path = urlparse(remote_path).path or remote_path
@@ -121,5 +131,6 @@ class SubtitlePipelineRunner:
             cue_count=len(cues), encoder=encoder,
             metadata={"mps_task_id": mps_task_id, "cos_subtitle_path": object_path,
                       "subtitle_cue_count": len(cues), "ffmpeg_encoder": encoder,
-                      "word_timed_cues": used_word_timing},
+                      "word_timed_cues": used_word_timing,
+                      "bgm_file": str(bgm_path) if bgm_path is not None else None},
         )

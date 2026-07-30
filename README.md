@@ -80,9 +80,11 @@ videocut serve --host 0.0.0.0 --port 3000
 | Pipeline ID | 转场 | 主要变量 |
 |---|---|---|
 | `avatar-bgm-concat` | 直切 + BGM | 固定裁掉开头 1 秒 |
+| `avatar-bgm-concat-2s` | 直切 + BGM | 固定裁掉开头 2 秒 |
+| `avatar-bgm-concat-3s` | 直切 + BGM | 固定裁掉开头 3 秒 |
 | `bgm-concat` | 直切 + BGM | — |
 | `segment-5-6-then-3-5-concat` | 直切 + BGM | 固定取 5 段素材的 5-6 秒和 3-5 秒 |
-| `subtitle-burn` | 腾讯 MPS 识别 + 本地 ASS 压制 | 单个 `subtitle-input/` OSS 视频；固定 `simkai.ttf` 样式 |
+| `subtitle-burn` | 腾讯 MPS 识别 + 本地 ASS 压制 | 单个 `subtitle-input/` OSS 视频；可选口播、模板或用户上传音乐 |
 | `trim-2-5-concat` | 直切 + BGM | 固定取每段 2-5 秒 |
 | `trim-concat` | 直切 | `trim_start` |
 | `xfade-concat` | dissolve | `transition_duration` |
@@ -189,7 +191,7 @@ videocut serve --host 0.0.0.0 --port 3000
 
 `GET /bgm` 用来查询实时音乐清单，只展示 `BGM_DIR` 的当前歌曲，不展示 `BGM_BACKUP_DIR` 的归档歌曲；`overrides.bgm.category + filename` 用来指定某一首 BGM，其中 `filename` 是不带扩展名的歌曲 ID。只指定 `category` 时，会在该分类目录下随机选择一首；都不传时保持全目录随机选择。
 
-后台模板音乐使用隐藏目录 `BGM_TEMPLATE_DIR=/app/input/bgm-templete` 和 OSS 前缀 `BGM_TEMPLATE_OSS_URI=oss://goumee-coze/GouMei-Video-Cut/bgm-templete/`。默认 `SYNC_BGM_TEMPLATE_ON_STARTUP=1`，容器启动时会先执行模板音乐全量增量同步；后台发布模板后仍可调用 `POST /admin/bgm-template/sync` 立即同步。渲染时传 `overrides.bgm.source="template"`、`category` 和 `filename`；这类音乐不会出现在 `GET /bgm`。
+后台模板音乐使用隐藏目录 `BGM_TEMPLATE_DIR=/app/input/bgm-templete` 和 OSS 前缀 `BGM_TEMPLATE_OSS_URI=oss://goumee-coze/GouMei-Video-Cut/bgm-templete/`。口播音乐使用 `BGM_AVATAR_DIR=/app/input/bgm-avatar` 和 `BGM_AVATAR_OSS_URI=oss://goumee-coze/GouMei-Video-Cut/bgm-avatar/`。`SYNC_BGM_ON_STARTUP=1` 会按普通、备份、模板、口播顺序统一增量同步；后台发布模板后仍可调用 `POST /admin/bgm-template/sync` 立即同步。
 
 ## API
 
@@ -270,7 +272,7 @@ curl "http://127.0.0.1:3000/health"
   "ok": true,
   "workers": 4,
   "queueSize": 0,
-  "pipelines": 12
+  "pipelines": 14
 }
 ```
 
@@ -307,6 +309,15 @@ curl "http://127.0.0.1:3000/bgm" \
 ```
 
 `files[].category + files[].filename` 可直接用于 `/render` 的 `overrides.bgm`，`filename` 不带扩展名，`displayName` 是展示名，`files[].ossUrl` 是可直接下载的 OSS HTTPS 地址。
+
+### 2.1 查询口播音乐列表 `GET /bgm-avatar`
+
+```bash
+curl "http://127.0.0.1:3000/bgm-avatar" \
+  -H "X-Api-Key: goumee-music"
+```
+
+响应结构与 `GET /bgm` 相同，但只返回 `oss://goumee-coze/GouMei-Video-Cut/bgm-avatar/` 同步到本地口播目录的歌曲。`subtitle-burn` 使用时必须显式传 `source: "bgm-avatar"`、`category` 和 `filename`。
 
 ### 3. 查看已注册 Pipeline
 
@@ -661,6 +672,8 @@ videocut serve --port 3000
 - `OSS_LOCAL_ROOT`: 本地 OSS 模式根目录，设置后不会访问阿里云 OSS
 - `BGM_TEMPLATE_DIR`: 后台模板音乐本地目录，默认 `/app/input/bgm-templete`
 - `BGM_TEMPLATE_OSS_URI`: 后台模板音乐 OSS 同步源，默认 `oss://goumee-coze/GouMei-Video-Cut/bgm-templete/`
+- `BGM_AVATAR_DIR`: 口播音乐本地目录，默认 `/app/input/bgm-avatar`
+- `BGM_AVATAR_OSS_URI`: 口播音乐 OSS 同步源，默认 `oss://goumee-coze/GouMei-Video-Cut/bgm-avatar/`
 - `BGM_TEMPLATE_SYNC_TIMEOUT_SECONDS`: 模板音乐同步超时时间，默认 `600`
 - `WORKER_COUNT`
 - `QUEUE_MAX`
@@ -763,11 +776,11 @@ cp .env.example .env
   - 填好 `OSS_ACCESS_KEY_ID`
   - 填好 `OSS_ACCESS_KEY_SECRET`
   - 保持 `OSS_LOCAL_ROOT=` 为空
-  - 保持 `SYNC_BGM_ON_STARTUP=1` 和 `SYNC_BGM_TEMPLATE_ON_STARTUP=1`
+  - 保持 `SYNC_BGM_ON_STARTUP=1`，统一同步普通、备份、模板和口播音乐
 - 如果只是单机或联调：
   - 设置 `OSS_LOCAL_ROOT=/srv/videocut/oss-local`
   - OSS AK/SK 可以留空
-  - 如果不从真实 OSS 拉 BGM，同时设置 `SYNC_BGM_ON_STARTUP=0` 和 `SYNC_BGM_TEMPLATE_ON_STARTUP=0`
+  - 如果不从真实 OSS 拉 BGM，设置 `SYNC_BGM_ON_STARTUP=0`
 
 3. 先构建基础镜像：
 
@@ -817,6 +830,7 @@ docker compose logs -f videocut
 - `./input/bgm -> /app/input/bgm`
 - `./input/bgm-backup -> /app/input/bgm-backup`
 - `./input/bgm-templete -> /app/input/bgm-templete`
+- `./input/bgm-avatar -> /app/input/bgm-avatar`
 - `./output -> /app/output`
 - `./fonts -> /app/fonts`
 - `./oss-local -> /srv/videocut/oss-local`
@@ -827,6 +841,7 @@ docker compose logs -f videocut
 - `temp/` 保存上传临时文件和 worker 下载素材
 - `input/bgm/` 保存启动时从 OSS 同步的背景音乐
 - `input/bgm-templete/` 保存容器启动或后台接口同步的隐藏模板音乐
+- `input/bgm-avatar/` 保存容器启动时从 OSS 同步的口播专用音乐
 - `output/` 保存 worker 本地渲染产物，再上传到 OSS / 本地 OSS
 - `fonts/` 用于自定义字体
 - `oss-local/` 只在本地 OSS 模式下使用

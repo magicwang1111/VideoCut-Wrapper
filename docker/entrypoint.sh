@@ -68,11 +68,10 @@ sync_bgm_prefix() {
 }
 
 sync_bgm_from_oss() {
-  SYNC_PUBLIC_BGM="${SYNC_BGM_ON_STARTUP:-1}"
-  SYNC_TEMPLATE_BGM="${SYNC_BGM_TEMPLATE_ON_STARTUP:-1}"
+  SYNC_ALL_BGM="${SYNC_BGM_ON_STARTUP:-1}"
 
-  if [ "${SYNC_PUBLIC_BGM}" != "1" ] && [ "${SYNC_TEMPLATE_BGM}" != "1" ]; then
-    echo "[entrypoint] skip BGM sync because startup sync is disabled"
+  if [ "${SYNC_ALL_BGM}" != "1" ]; then
+    echo "[entrypoint] skip all BGM sync because SYNC_BGM_ON_STARTUP=${SYNC_ALL_BGM}"
     return
   fi
 
@@ -86,27 +85,21 @@ sync_bgm_from_oss() {
     exit 1
   fi
 
-  if [ "${SYNC_PUBLIC_BGM}" = "1" ]; then
-    BGM_DIR="${BGM_DIR:-/app/input/bgm}"
-    BGM_OSS_URI="${BGM_OSS_URI:-oss://goumee-coze/GouMei-Video-Cut/bgm/}"
-    BGM_BACKUP_DIR="${BGM_BACKUP_DIR:-/app/input/bgm-backup}"
-    if [ -z "${BGM_BACKUP_OSS_URI+x}" ]; then
-      BGM_BACKUP_OSS_URI="oss://goumee-coze/GouMei-Video-Cut/bgm-backup/"
-    fi
-
-    sync_bgm_prefix "${BGM_OSS_URI}" "${BGM_DIR}" "BGM"
-    sync_bgm_prefix "${BGM_BACKUP_OSS_URI}" "${BGM_BACKUP_DIR}" "BGM backup"
-  else
-    echo "[entrypoint] skip public BGM sync because SYNC_BGM_ON_STARTUP=${SYNC_PUBLIC_BGM}"
+  BGM_DIR="${BGM_DIR:-/app/input/bgm}"
+  BGM_OSS_URI="${BGM_OSS_URI:-oss://goumee-coze/GouMei-Video-Cut/bgm/}"
+  BGM_BACKUP_DIR="${BGM_BACKUP_DIR:-/app/input/bgm-backup}"
+  if [ -z "${BGM_BACKUP_OSS_URI+x}" ]; then
+    BGM_BACKUP_OSS_URI="oss://goumee-coze/GouMei-Video-Cut/bgm-backup/"
   fi
+  BGM_TEMPLATE_DIR="${BGM_TEMPLATE_DIR:-/app/input/bgm-templete}"
+  BGM_TEMPLATE_OSS_URI="${BGM_TEMPLATE_OSS_URI:-oss://goumee-coze/GouMei-Video-Cut/bgm-templete/}"
+  BGM_AVATAR_DIR="${BGM_AVATAR_DIR:-/app/input/bgm-avatar}"
+  BGM_AVATAR_OSS_URI="${BGM_AVATAR_OSS_URI:-oss://goumee-coze/GouMei-Video-Cut/bgm-avatar/}"
 
-  if [ "${SYNC_TEMPLATE_BGM}" = "1" ]; then
-    BGM_TEMPLATE_DIR="${BGM_TEMPLATE_DIR:-/app/input/bgm-templete}"
-    BGM_TEMPLATE_OSS_URI="${BGM_TEMPLATE_OSS_URI:-oss://goumee-coze/GouMei-Video-Cut/bgm-templete/}"
-    sync_bgm_prefix "${BGM_TEMPLATE_OSS_URI}" "${BGM_TEMPLATE_DIR}" "BGM template"
-  else
-    echo "[entrypoint] skip template BGM sync because SYNC_BGM_TEMPLATE_ON_STARTUP=${SYNC_TEMPLATE_BGM}"
-  fi
+  sync_bgm_prefix "${BGM_OSS_URI}" "${BGM_DIR}" "BGM"
+  sync_bgm_prefix "${BGM_BACKUP_OSS_URI}" "${BGM_BACKUP_DIR}" "BGM backup"
+  sync_bgm_prefix "${BGM_TEMPLATE_OSS_URI}" "${BGM_TEMPLATE_DIR}" "BGM template"
+  sync_bgm_prefix "${BGM_AVATAR_OSS_URI}" "${BGM_AVATAR_DIR}" "BGM avatar"
 }
 
 load_env_file

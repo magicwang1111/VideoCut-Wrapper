@@ -94,6 +94,7 @@ def _configure_api_env(
     bgm_dir: Path | None = None,
     bgm_backup_dir: Path | None = None,
     bgm_template_dir: Path | None = None,
+    bgm_avatar_dir: Path | None = None,
 ) -> None:
     monkeypatch.setenv("API_KEYS", "test-key")
     monkeypatch.setenv("OSS_LOCAL_ROOT", str(tmp_path / "oss"))
@@ -113,9 +114,14 @@ def _configure_api_env(
         monkeypatch.delenv("BGM_TEMPLATE_DIR", raising=False)
     else:
         monkeypatch.setenv("BGM_TEMPLATE_DIR", str(bgm_template_dir))
+    if bgm_avatar_dir is None:
+        monkeypatch.delenv("BGM_AVATAR_DIR", raising=False)
+    else:
+        monkeypatch.setenv("BGM_AVATAR_DIR", str(bgm_avatar_dir))
     monkeypatch.delenv("BGM_OSS_URI", raising=False)
     monkeypatch.delenv("BGM_BACKUP_OSS_URI", raising=False)
     monkeypatch.delenv("BGM_TEMPLATE_OSS_URI", raising=False)
+    monkeypatch.delenv("BGM_AVATAR_OSS_URI", raising=False)
     monkeypatch.delenv("BGM_TEMPLATE_SYNC_TIMEOUT_SECONDS", raising=False)
     monkeypatch.delenv("OSS_PUBLIC_ENDPOINT", raising=False)
     monkeypatch.setattr(api_app_module, "TaskQueue", FakeTaskQueue)
@@ -420,6 +426,103 @@ def test_subtitle_render_enforces_single_prefixed_input_and_no_overrides(tmp_pat
         queued = FakeTaskQueue.instances[-1].tasks[-1]
         assert queued.payload["clips"] == ["GouMei-Video-Cut/subtitle-input/a.mp4"]
         assert queued.payload["subtitle_output_oss_key"].endswith(f"/{queued.task_id}/final.mp4")
+
+
+def test_subtitle_render_accepts_avatar_template_and_uploaded_bgm(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    avatar_dir = tmp_path / "runtime" / "bgm-avatar"
+    template_dir = tmp_path / "runtime" / "bgm-templete"
+    payload = {
+        "name": "subtitle-burn",
+        "mode": "pipeline",
+        "required_clip_count": 1,
+        "clips": [{"source_index": 0}],
+        "subtitle": {"enabled": True, "definition": 122, "font_name": "simkai.ttf"},
+    }
+    _write_pipeline_config(pipelines_root, "subtitle-burn", payload)
+    (avatar_dir / "口播测试").mkdir(parents=True)
+    (avatar_dir / "口播测试" / "1.mp3").write_text("avatar", encoding="utf-8")
+    (template_dir / "模板测试").mkdir(parents=True)
+    (template_dir / "模板测试" / "1.mp3").write_text("template", encoding="utf-8")
+    _configure_api_env(
+        tmp_path,
+        monkeypatch,
+        pipelines_root,
+        bgm_template_dir=template_dir,
+        bgm_avatar_dir=avatar_dir,
+    )
+    source = tmp_path / "oss" / "GouMei-Video-Cut" / "subtitle-input" / "a.mp4"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_bytes(b"video")
+    headers = {"X-Api-Key": "test-key", "Content-Type": "application/json"}
+
+    with TestClient(api_app_module.create_app()) as client:
+        client.app.state.store.save_file(
+            "audio123def45",
+            "GouMei-Video-Cut/user-audio/audio123def45.mp3",
+            kind="user_audio",
+        )
+        requests = [
+            {"source": "bgm-avatar", "category": "口播测试", "filename": "1"},
+            {"source": "template", "category": "模板测试", "filename": "1"},
+            {"fileId": "audio123def45"},
+        ]
+        for bgm in requests:
+            response = client.post(
+                "/render",
+                headers=headers,
+                json={
+                    "pipeline": "subtitle-burn",
+                    "clips": ["GouMei-Video-Cut/subtitle-input/a.mp4"],
+                    "overrides": {"bgm": bgm},
+                },
+            )
+            assert response.status_code == 200, response.json()
+            queued_bgm = FakeTaskQueue.instances[-1].tasks[-1].payload["overrides"]["bgm"]
+            assert queued_bgm["volume"] == pytest.approx(1.0)
+            assert queued_bgm["fade_out"] == pytest.approx(0.0)
+
+
+@pytest.mark.parametrize(
+    "bgm",
+    [
+        {"category": "口播测试", "filename": "1"},
+        {"source": "catalog", "category": "口播测试", "filename": "1"},
+        {"source": "bgm-avatar", "category": "口播测试"},
+        {"source": "template", "filename": "1"},
+        {"source": "bgm-avatar", "category": "口播测试", "filename": "1", "dir": "input/bgm"},
+    ],
+)
+def test_subtitle_render_rejects_invalid_bgm_sources(tmp_path, monkeypatch, bgm) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    payload = {
+        "name": "subtitle-burn",
+        "mode": "pipeline",
+        "required_clip_count": 1,
+        "clips": [{"source_index": 0}],
+        "subtitle": {"enabled": True},
+    }
+    _write_pipeline_config(pipelines_root, "subtitle-burn", payload)
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root)
+    source = tmp_path / "oss" / "GouMei-Video-Cut" / "subtitle-input" / "a.mp4"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_bytes(b"video")
+
+    with TestClient(api_app_module.create_app()) as client:
+        response = client.post(
+            "/render",
+            headers={"X-Api-Key": "test-key", "Content-Type": "application/json"},
+            json={
+                "pipeline": "subtitle-burn",
+                "clips": ["GouMei-Video-Cut/subtitle-input/a.mp4"],
+                "overrides": {"bgm": bgm},
+            },
+        )
+        assert response.status_code == 400
+        assert response.json()["error_code"] == 2007
+        assert FakeTaskQueue.instances[-1].tasks == []
 
 
 def test_upload_audio_uses_user_audio_prefix_and_is_not_bgm_catalog(tmp_path, monkeypatch) -> None:
@@ -1199,6 +1302,77 @@ def test_bgm_endpoint_returns_file_not_found_for_missing_bgm_dir(tmp_path, monke
         }
 
 
+def test_bgm_avatar_endpoint_is_authenticated_and_isolated(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    avatar_dir = tmp_path / "runtime" / "bgm-avatar"
+    public_dir = tmp_path / "runtime" / "bgm"
+    _write_pipeline_config(pipelines_root, "subtitle-burn", {
+        "name": "subtitle-burn",
+        "mode": "pipeline",
+        "required_clip_count": 1,
+        "clips": [{"source_index": 0}],
+        "subtitle": {"enabled": True},
+    })
+    (avatar_dir / "口播测试").mkdir(parents=True)
+    (avatar_dir / "口播测试" / "1.mp3").write_text("avatar", encoding="utf-8")
+    (public_dir / "calm").mkdir(parents=True)
+    (public_dir / "calm" / "public.mp3").write_text("public", encoding="utf-8")
+    _configure_api_env(
+        tmp_path,
+        monkeypatch,
+        pipelines_root,
+        bgm_dir=public_dir,
+        bgm_avatar_dir=avatar_dir,
+    )
+
+    with TestClient(api_app_module.create_app()) as client:
+        assert client.get("/bgm-avatar").status_code == 401
+        response = client.get("/bgm-avatar", headers={"X-Api-Key": "test-key"})
+        assert response.status_code == 200
+        body = response.json()
+        assert body["bgmRoot"] == str(avatar_dir.resolve())
+        assert body["categories"] == [{"name": "口播测试", "displayName": "口播测试", "count": 1}]
+        assert body["files"] == [{
+            "category": "口播测试",
+            "displayName": "口播测试",
+            "filename": "1",
+            "ossUrl": (
+                "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/"
+                "GouMei-Video-Cut/bgm-avatar/%E5%8F%A3%E6%92%AD%E6%B5%8B%E8%AF%95/1.mp3"
+            ),
+        }]
+        assert all(item["filename"] != "public" for item in body["files"])
+
+
+def test_bgm_avatar_endpoint_handles_empty_and_missing_directories(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    avatar_dir = tmp_path / "runtime" / "bgm-avatar"
+    _write_pipeline_config(pipelines_root, "subtitle-burn", {
+        "name": "subtitle-burn",
+        "mode": "pipeline",
+        "required_clip_count": 1,
+        "clips": [{"source_index": 0}],
+        "subtitle": {"enabled": True},
+    })
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root, bgm_avatar_dir=avatar_dir)
+
+    with TestClient(api_app_module.create_app()) as client:
+        missing = client.get("/bgm-avatar", headers={"X-Api-Key": "test-key"})
+        assert missing.status_code == 404
+        assert missing.json()["error_code"] == 2006
+
+        avatar_dir.mkdir(parents=True)
+        empty = client.get("/bgm-avatar", headers={"X-Api-Key": "test-key"})
+        assert empty.status_code == 200
+        assert empty.json() == {
+            "bgmRoot": str(avatar_dir.resolve()),
+            "categories": [],
+            "files": [],
+        }
+
+
 def test_validate_variables_required_missing() -> None:
     schema = {"clip_count": PipelineVariableDef(type="number", required=True)}
     with pytest.raises(VideoCutError, match="required"):
@@ -1289,6 +1463,32 @@ def test_avatar_bgm_concat_pipeline_config_parses() -> None:
     assert config.bgm is not None
     assert config.bgm.enabled is True
     assert config.bgm.dir == "input/bgm"
+
+
+@pytest.mark.parametrize(
+    ("pipeline_name", "trim_start"),
+    [("avatar-bgm-concat-2s", 2.0), ("avatar-bgm-concat-3s", 3.0)],
+)
+def test_avatar_bgm_trim_pipeline_configs_parse(pipeline_name: str, trim_start: float) -> None:
+    config_path = Path(__file__).resolve().parents[1] / "pipelines" / pipeline_name / "config.json"
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+    config = parse_pipeline_config(payload, config_path, require_name=True)
+
+    assert config.name == pipeline_name
+    assert config.required_clip_count == 1
+    assert config.clips[0].source_index == 0
+    assert config.clips[0].trim_start == pytest.approx(trim_start)
+    assert config.bgm is not None and config.bgm.enabled is True
+
+
+def test_repository_registers_fourteen_pipelines() -> None:
+    registry = PipelineRegistry(Path(__file__).resolve().parents[1] / "pipelines")
+    registry.scan()
+
+    assert registry.size == 14
+    assert {"avatar-bgm-concat-2s", "avatar-bgm-concat-3s", "subtitle-burn"} <= {
+        item.name for item in registry.list_all()
+    }
 
 
 def test_bgm_category_override_clears_existing_filename_and_preserves_options(tmp_path) -> None:

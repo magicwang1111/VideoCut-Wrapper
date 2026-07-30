@@ -26,6 +26,8 @@ from videocut.bgm import (
     allowed_bgm_extensions,
     list_bgm_catalog,
     normalize_bgm_filename_stem,
+    resolve_bgm_avatar_dir,
+    resolve_bgm_avatar_oss_uri,
     resolve_bgm_backup_dir,
     resolve_bgm_category_dir_optional,
     resolve_bgm_category_file,
@@ -324,8 +326,8 @@ def _validate_optional_bgm_field_types(bgm: dict[str, Any]) -> None:
             raise _invalid_bgm_override({"field": f"overrides.bgm.{field}", "expected": "string"})
 
     source = bgm.get("source")
-    if "source" in bgm and source not in {"catalog", "template"}:
-        raise _invalid_bgm_override({"field": "overrides.bgm.source", "expected": "catalog|template"})
+    if "source" in bgm and source not in {"catalog", "template", "bgm-avatar"}:
+        raise _invalid_bgm_override({"field": "overrides.bgm.source", "expected": "catalog|template|bgm-avatar"})
 
     for field in ("volume", "fade_out"):
         value = bgm.get(field)
@@ -425,11 +427,13 @@ def _bgm_template_error_details(
     field: str = "overrides.bgm",
     error: str | None = None,
     extra: dict[str, Any] | None = None,
+    source: str = "template",
+    root_field: str = "templateBgmRoot",
 ) -> dict[str, Any]:
     details: dict[str, Any] = {
         "field": field,
-        "source": "template",
-        "templateBgmRoot": str(template_bgm_dir),
+        "source": source,
+        root_field: str(template_bgm_dir),
         "reason": reason,
     }
     if category is not None:
@@ -443,8 +447,15 @@ def _bgm_template_error_details(
     return details
 
 
-def _validate_bgm_template_override(root_dir: Path, bgm: dict[str, Any]) -> None:
-    template_bgm_dir = resolve_bgm_template_dir(root_dir)
+def _validate_bgm_template_override(
+    root_dir: Path,
+    bgm: dict[str, Any],
+    *,
+    source: str = "template",
+    source_dir: Path | None = None,
+    root_field: str = "templateBgmRoot",
+) -> None:
+    template_bgm_dir = source_dir or resolve_bgm_template_dir(root_dir)
     category = bgm.get("category")
     if not isinstance(category, str) or not category.strip():
         raise _invalid_bgm_override(
@@ -453,6 +464,8 @@ def _validate_bgm_template_override(root_dir: Path, bgm: dict[str, Any]) -> None
                 reason="category_required",
                 field="overrides.bgm.category",
                 extra={"expected": "non-empty string"},
+                source=source,
+                root_field=root_field,
             )
         )
     filename = bgm.get("filename")
@@ -464,6 +477,8 @@ def _validate_bgm_template_override(root_dir: Path, bgm: dict[str, Any]) -> None
                 category=category,
                 field="overrides.bgm.filename",
                 extra={"expected": "non-empty string"},
+                source=source,
+                root_field=root_field,
             )
         )
 
@@ -478,6 +493,8 @@ def _validate_bgm_template_override(root_dir: Path, bgm: dict[str, Any]) -> None
                 filename=filename,
                 field="overrides.bgm.category",
                 error=str(exc),
+                source=source,
+                root_field=root_field,
             )
         ) from exc
     if category_dir is None:
@@ -488,6 +505,8 @@ def _validate_bgm_template_override(root_dir: Path, bgm: dict[str, Any]) -> None
                 category=category,
                 filename=filename,
                 field="overrides.bgm.category",
+                source=source,
+                root_field=root_field,
             )
         )
 
@@ -502,6 +521,8 @@ def _validate_bgm_template_override(root_dir: Path, bgm: dict[str, Any]) -> None
                 filename=filename,
                 field="overrides.bgm.filename",
                 error=str(exc),
+                source=source,
+                root_field=root_field,
             )
         ) from exc
 
@@ -524,6 +545,8 @@ def _validate_bgm_template_override(root_dir: Path, bgm: dict[str, Any]) -> None
                     "matches": [item.name for item in invalid_matches],
                     "allowedExtensions": allowed_bgm_extensions(),
                 },
+                source=source,
+                root_field=root_field,
             )
         )
     if not valid_audio_files:
@@ -535,6 +558,8 @@ def _validate_bgm_template_override(root_dir: Path, bgm: dict[str, Any]) -> None
                 filename=filename_stem,
                 field="overrides.bgm.category",
                 extra={"allowedExtensions": allowed_bgm_extensions()},
+                source=source,
+                root_field=root_field,
             )
         )
     if len(valid_matches) > 1:
@@ -546,6 +571,8 @@ def _validate_bgm_template_override(root_dir: Path, bgm: dict[str, Any]) -> None
                 filename=filename_stem,
                 field="overrides.bgm.filename",
                 extra={"matches": [item.name for item in valid_matches]},
+                source=source,
+                root_field=root_field,
             )
         )
     if not valid_matches:
@@ -557,8 +584,54 @@ def _validate_bgm_template_override(root_dir: Path, bgm: dict[str, Any]) -> None
                 filename=filename_stem,
                 field="overrides.bgm.filename",
                 extra={"allowedExtensions": allowed_bgm_extensions()},
+                source=source,
+                root_field=root_field,
             )
         )
+
+
+def _validate_bgm_avatar_override(root_dir: Path, bgm: dict[str, Any]) -> None:
+    _validate_bgm_template_override(
+        root_dir,
+        bgm,
+        source="bgm-avatar",
+        source_dir=resolve_bgm_avatar_dir(root_dir),
+        root_field="bgmAvatarRoot",
+    )
+
+
+def _validate_subtitle_bgm_override(root_dir: Path, overrides: dict[str, Any]) -> None:
+    bgm = overrides.get("bgm")
+    if not isinstance(bgm, dict):
+        return
+    if "fileId" in bgm or bgm.get("enabled") is False:
+        return
+
+    unsupported_fields = sorted(field for field in bgm if field == "dir")
+    if unsupported_fields:
+        raise _invalid_bgm_override(
+            {"field": "overrides.bgm", "unsupported": unsupported_fields, "pipeline": "subtitle-burn"}
+        )
+
+    source = bgm.get("source")
+    if source not in {"template", "bgm-avatar"}:
+        raise _invalid_bgm_override(
+            {
+                "field": "overrides.bgm.source",
+                "expected": "template|bgm-avatar",
+                "actual": source,
+                "pipeline": "subtitle-burn",
+            }
+        )
+    if source == "template":
+        _validate_bgm_template_override(root_dir, bgm)
+    else:
+        _validate_bgm_avatar_override(root_dir, bgm)
+
+    if "volume" not in bgm:
+        bgm["volume"] = 1.0
+    if "fade_out" not in bgm:
+        bgm["fade_out"] = 0.0
 
 
 def _validate_bgm_catalog_override(root_dir: Path, pipeline_config: dict[str, Any], overrides: dict[str, Any]) -> None:
@@ -570,6 +643,14 @@ def _validate_bgm_catalog_override(root_dir: Path, pipeline_config: dict[str, An
     if bgm.get("source") == "template":
         _validate_bgm_template_override(root_dir, bgm)
         return
+    if bgm.get("source") == "bgm-avatar":
+        raise _invalid_bgm_override(
+            {
+                "field": "overrides.bgm.source",
+                "reason": "source_not_supported",
+                "source": "bgm-avatar",
+            }
+        )
     category = bgm.get("category")
     if not isinstance(category, str) or not category.strip():
         return
@@ -782,6 +863,18 @@ def create_app() -> FastAPI:
             )
         return list_bgm_catalog(bgm_dir)
 
+    @app.get("/bgm-avatar", dependencies=[Depends(auth_guard)])
+    async def list_bgm_avatar() -> dict[str, object]:
+        bgm_avatar_dir = resolve_bgm_avatar_dir(app.state.root_dir)
+        if not bgm_avatar_dir.is_dir():
+            raise api_http_exception(
+                404,
+                ApiErrorCode.FILE_NOT_FOUND,
+                "Avatar BGM directory not found.",
+                {"bgmRoot": str(bgm_avatar_dir)},
+            )
+        return list_bgm_catalog(bgm_avatar_dir, oss_uri_base=resolve_bgm_avatar_oss_uri())
+
     @app.post("/admin/bgm-template/sync", dependencies=[Depends(auth_guard)])
     async def sync_bgm_template(request: Request, body: BgmTemplateSyncBody | None = None) -> dict[str, Any]:
         if request_has_body(request):
@@ -889,10 +982,12 @@ def create_app() -> FastAPI:
         resolved_keys = _resolve_clip_refs(store, oss, body.clips, strict_pipeline=True)
         overrides = deepcopy(body.overrides)
         if pipeline_name == "subtitle-burn":
-            if overrides:
+            invalid_override_fields = sorted(field for field in overrides if field != "bgm")
+            if invalid_override_fields:
                 raise api_http_exception(
                     400, ApiErrorCode.INVALID_SUBTITLE_OVERRIDE,
-                    "subtitle-burn does not accept runtime overrides.",
+                    "subtitle-burn only accepts the BGM runtime override.",
+                    {"unsupported": invalid_override_fields},
                 )
             invalid_keys = [key for key in resolved_keys if not key.startswith(oss.subtitle_input_prefix)]
             if invalid_keys:
@@ -909,7 +1004,13 @@ def create_app() -> FastAPI:
                     {"ossKey": missing_keys[0]},
                 )
         user_bgm = _resolve_user_bgm(store, overrides)
-        _validate_bgm_catalog_override(app.state.root_dir, pipeline_record.config, overrides)
+        if pipeline_name == "subtitle-burn":
+            _validate_subtitle_bgm_override(app.state.root_dir, overrides)
+            if user_bgm and isinstance(overrides.get("bgm"), dict):
+                overrides["bgm"]["volume"] = 1.0
+                overrides["bgm"]["fade_out"] = 0.0
+        else:
+            _validate_bgm_catalog_override(app.state.root_dir, pipeline_record.config, overrides)
         task_id = generate_task_id(prefix="t_")
         payload = {
             "clips": resolved_keys,

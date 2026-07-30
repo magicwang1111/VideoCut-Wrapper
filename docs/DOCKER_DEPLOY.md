@@ -197,7 +197,8 @@ API_KEYS=替换成真实密钥
 WORKER_COUNT=6
 UPLOAD_WORKER_COUNT=6
 SYNC_BGM_ON_STARTUP=1
-SYNC_BGM_TEMPLATE_ON_STARTUP=1
+BGM_AVATAR_DIR=/app/input/bgm-avatar
+BGM_AVATAR_OSS_URI=oss://goumee-coze/GouMei-Video-Cut/bgm-avatar/
 ```
 
 不要把环境文件内容输出到日志或提交到 Git。

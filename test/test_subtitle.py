@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -8,6 +9,7 @@ import pytest
 from videocut.oss import OssClient
 from videocut.pipeline.config import parse_pipeline_config
 from videocut.subtitle.ass import render_ass
+from videocut.subtitle.burn import burn_ass
 from videocut.subtitle.mps import MpsClient, normalize_task_detail
 from videocut.subtitle.parser import (
     SubtitleCue,
@@ -196,3 +198,53 @@ def test_subtitle_oss_keys(monkeypatch, tmp_path) -> None:
     assert client.subtitle_input_key("sample", ".mp4") == "GouMei-Video-Cut/subtitle-input/sample.mp4"
     key = client.subtitle_output_key("t_123", datetime(2026, 7, 21, 17, 0, 0))
     assert key == "GouMei-Video-Cut/subtitle-output/20260721/20260721_170000/t_123/final.mp4"
+
+
+def test_burn_ass_mixes_original_audio_and_looped_bgm_without_normalization(monkeypatch, tmp_path) -> None:
+    source = tmp_path / "source.mp4"
+    subtitle = tmp_path / "subtitle.ass"
+    bgm = tmp_path / "bgm.mp3"
+    target = tmp_path / "final.mp4"
+    source.write_bytes(b"video")
+    subtitle.write_text("[Script Info]\n", encoding="utf-8")
+    bgm.write_bytes(b"music")
+    commands: list[list[str]] = []
+
+    monkeypatch.setattr("videocut.subtitle.burn.probe_media", lambda ffprobe, path: {"video": True, "audio": True})
+    monkeypatch.setattr("videocut.subtitle.burn.probe_duration", lambda ffprobe, path: 5.0)
+    monkeypatch.setattr(
+        "videocut.subtitle.burn.resolve_runtime_video_settings",
+        lambda ffmpeg, settings: SimpleNamespace(
+            encoder="libx264",
+            input_args=lambda: [],
+            output_args=lambda preset: ["-c:v", "libx264"],
+        ),
+    )
+    monkeypatch.setattr("videocut.subtitle.burn.resolve_video_settings", lambda: object())
+
+    def fake_run(command, **kwargs):
+        commands.append([str(item) for item in command])
+        Path(command[-1]).write_bytes(b"output")
+        return SimpleNamespace(returncode=0, stderr="", stdout="")
+
+    monkeypatch.setattr("videocut.subtitle.burn.subprocess.run", fake_run)
+
+    output, encoder = burn_ass(
+        source,
+        subtitle,
+        target,
+        "ffmpeg",
+        "ffprobe",
+        bgm_path=bgm,
+        bgm_volume=1.0,
+    )
+
+    assert output == target.resolve()
+    assert encoder == "libx264"
+    command = commands[-1]
+    assert command[command.index("-stream_loop") + 1] == "-1"
+    assert command[command.index("-i", command.index("-stream_loop")) + 1] == str(bgm.resolve())
+    filter_complex = command[command.index("-filter_complex") + 1]
+    assert "[0:a:0]volume=1.0000[original]" in filter_complex
+    assert "[1:a:0]volume=1.0000" in filter_complex
+    assert "amix=inputs=2:duration=first:dropout_transition=0:normalize=0" in filter_complex

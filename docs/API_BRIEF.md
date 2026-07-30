@@ -38,7 +38,7 @@ curl "http://127.0.0.1:3000/health"
   "ok": true,
   "workers": 4,
   "queueSize": 0,
-  "pipelines": 12
+  "pipelines": 14
 }
 ```
 
@@ -92,6 +92,15 @@ curl -X GET "http://127.0.0.1:3000/bgm" \
 - 按分类随机使用 `categories[].name` 作为 `overrides.bgm.category`。
 - 目录存在但没有音频时，`categories` 和 `files` 返回空数组。
 - `docs/BGM_MANIFEST.json` 是静态清单，适合离线对齐；运行时仍以 `GET /bgm` 为准。
+
+### 2.0.1 查询口播音乐
+
+```bash
+curl -X GET "http://127.0.0.1:3000/bgm-avatar" \
+  -H "X-Api-Key: goumee-music"
+```
+
+响应结构与 `/bgm` 相同，但只返回 `oss://goumee-coze/GouMei-Video-Cut/bgm-avatar/` 下同步的口播歌曲。提交 `subtitle-burn` 时必须显式传 `source="bgm-avatar"`、`category` 和 `filename`。
 
 ## 2.1 上传素材或用户音频
 
@@ -158,7 +167,7 @@ Content-Type: application/json
 X-Api-Key: goumee-music
 ```
 
-容器默认设置 `SYNC_BGM_TEMPLATE_ON_STARTUP=1`，每次启动 API 服务前都会自动执行一次模板音乐全量增量同步。后台发布模板后调用本接口，可以不重启容器立即拉取最新音乐。
+容器默认设置 `SYNC_BGM_ON_STARTUP=1`，每次启动 API 服务前都会按普通、备份、模板、口播顺序统一增量同步。后台发布模板后调用本接口，可以不重启容器立即拉取最新音乐。
 
 - 同一容器重启，或者 `BGM_TEMPLATE_DIR` 使用了宿主机目录/Docker volume 时，`-u` 会跳过相同文件。
 - 容器被删除且 `BGM_TEMPLATE_DIR` 未持久化时，本地音乐也会被删除；新容器启动时会自动从 OSS 重新下载。
@@ -233,9 +242,11 @@ ossutil sync "oss://goumee-coze/GouMei-Video-Cut/bgm-templete/测试1/" "/app/in
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `SYNC_BGM_TEMPLATE_ON_STARTUP` | `1` | 容器启动前是否执行模板音乐全量增量同步 |
+| `SYNC_BGM_ON_STARTUP` | `1` | 容器启动前是否统一同步普通、备份、模板和口播音乐 |
 | `BGM_TEMPLATE_DIR` | `/app/input/bgm-templete` | 模板音乐本地目录，不会被 `GET /bgm` 展示 |
 | `BGM_TEMPLATE_OSS_URI` | `oss://goumee-coze/GouMei-Video-Cut/bgm-templete/` | 模板音乐 OSS 同步源 |
+| `BGM_AVATAR_DIR` | `/app/input/bgm-avatar` | 口播音乐本地目录，只由 `GET /bgm-avatar` 展示 |
+| `BGM_AVATAR_OSS_URI` | `oss://goumee-coze/GouMei-Video-Cut/bgm-avatar/` | 口播音乐 OSS 同步源 |
 | `BGM_TEMPLATE_SYNC_TIMEOUT_SECONDS` | `600` | 同步接口等待 `ossutil sync` 的超时时间 |
 
 ## 3. 创建渲染任务
@@ -595,7 +606,7 @@ HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读
 | `400` | `2007` | `overrides.bgm` 字段结构、未知字段或混传错误 | 修正 BGM 参数 |
 | `400` | `2008` | `overrides.bgm.fileId` 不存在或不是用户音频 | 重新上传音频并传音频 `fileId` |
 | `400` | `2009` | `subtitle-burn` 的 `clips` 数量不是 1 | 只传一个视频 OSS key |
-| `400` | `2010` | `subtitle-burn` 传入了非空 `overrides` | 删除运行时覆盖参数或传空对象 `{}` |
+| `400` | `2010` | `subtitle-burn` 传入了 `bgm` 以外的 runtime override | 删除字幕、画质等覆盖项，仅保留可选的 `overrides.bgm` |
 | `400` | `2011` | `subtitle-burn` 输入不在服务端配置的字幕输入前缀下 | 将视频上传到响应 `details.expectedPrefix` 指定的目录 |
 | `404` | `3001` | 下载时任务不存在、未完成或无输出 | 先轮询到 `completed` |
 | `503` | `3002` | 渲染队列已满 | 稍后重试 |
@@ -682,8 +693,8 @@ HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读
 ```json
 {
   "error_code": 2010,
-  "message": "subtitle-burn does not accept runtime overrides.",
-  "details": {}
+  "message": "subtitle-burn only accepts the BGM runtime override.",
+  "details": {"unsupported": ["quality"]}
 }
 ```
 
@@ -1044,6 +1055,27 @@ curl -X POST "http://127.0.0.1:3000/render" \
   }'
 ```
 
+使用口播专用音乐：
+
+```bash
+curl -X POST "http://127.0.0.1:3000/render" \
+  -H "X-Api-Key: goumee-music" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "pipeline": "subtitle-burn",
+    "clips": ["GouMei-Video-Cut/subtitle-input/clip_001.mp4"],
+    "overrides": {
+      "bgm": {
+        "source": "bgm-avatar",
+        "category": "口播测试",
+        "filename": "1"
+      }
+    }
+  }'
+```
+
+模板音乐使用 `source="template"`；用户上传音乐使用 `{"bgm":{"fileId":"audio123def45"}}`。分类音乐必须同时提供 `source/category/filename`，且 `subtitle-burn` 不接受普通 `source="catalog"`。指定音乐时，FFmpeg 在压制字幕的同时以原声 `1.0`、BGM `1.0` 混音；不传音乐时仍只压字幕并保留原声。
+
 查询任务：
 
 ```bash
@@ -1064,7 +1096,9 @@ curl -L "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78/download" \
 | Pipeline ID | 含义 |
 |---|---|
 | `avatar-bgm-concat` | 单个 avatar 视频先裁掉开头 1 秒，再混入 BGM |
-| `subtitle-burn` | 单个 OSS 视频经腾讯 MPS 生成字幕，再由本地 FFmpeg 使用 `msyh.ttc`（Microsoft YaHei UI）压制 |
+| `avatar-bgm-concat-2s` | 单个 avatar 视频先裁掉开头 2 秒，再混入 BGM |
+| `avatar-bgm-concat-3s` | 单个 avatar 视频先裁掉开头 3 秒，再混入 BGM |
+| `subtitle-burn` | 单个 OSS 视频经腾讯 MPS 生成字幕，可选口播、模板或用户上传音乐，并保留原音轨 |
 | `bgm-concat` | 多段素材直接拼接，不做转场，最后混入 BGM；单个视频时用于给单视频添加 BGM |
 | `segment-5-6-then-3-5-concat` | 固定使用 5 个输入视频，先取每段 5-6 秒，再取每段 3-5 秒，按顺序直切拼接并混入 BGM |
 | `flash-black-concat` | 多段素材直接拼接，片段之间使用闪黑转场 |

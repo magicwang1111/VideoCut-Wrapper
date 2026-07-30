@@ -169,3 +169,24 @@ def test_pipeline_runner_template_bgm_uses_template_dir_only(tmp_path, monkeypat
 
     assert result.status == "completed"
     assert applied_bgm_files == [template_bgm.resolve()]
+
+
+def test_pipeline_runner_resolves_avatar_bgm_from_avatar_dir_only(tmp_path) -> None:
+    ctx = _make_context(tmp_path)
+    ctx.config.bgm = PipelineBgmConfig(
+        enabled=True,
+        source="bgm-avatar",
+        category="口播测试",
+        filename="1",
+        volume=1.0,
+    )
+    avatar_bgm = tmp_path / "input" / "bgm-avatar" / "口播测试" / "1.mp3"
+    public_bgm = tmp_path / "input" / "bgm" / "口播测试" / "1.mp3"
+    avatar_bgm.parent.mkdir(parents=True)
+    public_bgm.parent.mkdir(parents=True)
+    avatar_bgm.write_text("avatar", encoding="utf-8")
+    public_bgm.write_text("public", encoding="utf-8")
+
+    chosen = PipelineRunner(tmp_path).resolve_bgm_path(ctx)
+
+    assert chosen == avatar_bgm.resolve()

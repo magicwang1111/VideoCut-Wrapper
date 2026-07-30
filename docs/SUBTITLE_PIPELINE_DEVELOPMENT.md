@@ -128,7 +128,7 @@ pipelines/subtitle-burn/config.json
 }
 ```
 
-以上字幕参数是 `subtitle-burn` 的固定业务配置，不通过 API 暴露，也不允许请求覆盖。当前固定为：高精度识别、输出词级时间戳、自动识别语言、保留原文、`msyh.ttc`（内部 family 为 `Microsoft YaHei UI`）、40 号白字、0.9 文字透明度、底部向上约 200 像素、去除标点、每个独立字幕段最多 10 个字符、每行最多 10 个字符。需要调整样式或识别策略时，只修改 pipeline 配置并随版本发布。
+以上字幕参数是 `subtitle-burn` 的固定业务配置，不通过 API 暴露，也不允许请求覆盖。`overrides` 唯一允许的运行时能力是 `overrides.bgm`。当前字幕固定为：高精度识别、输出词级时间戳、自动识别语言、保留原文、`msyh.ttc`（内部 family 为 `Microsoft YaHei UI`）、40 号白字、0.9 文字透明度、底部向上约 200 像素、去除标点、每个独立字幕段最多 10 个字符、每行最多 10 个字符。
 
 截图中的 `subtitle_format=srt` 用于单独保存字幕文件；本 pipeline 不输出独立字幕文件，因此不设置该字段。MPS 原始 VTT/SRT 只作为中间文件，压制前统一转换为 ASS。
 
@@ -171,7 +171,15 @@ Content-Type: application/json
 }
 ```
 
-字幕参数不属于 API 契约。`subtitle-burn` 收到非空 `overrides` 时应直接返回参数错误，防止调用方绕过固定配置。
+字幕参数不属于 API 契约。`subtitle-burn` 收到 `overrides.bgm` 以外的运行时覆盖时直接返回 `2010`。不传 BGM 时只压字幕并保留原音轨；指定 BGM 时，MPS 仍识别原视频，FFmpeg 在压制字幕的同时以原声 `1.0`、BGM `1.0` 混合两路音频，不做 ducking。
+
+支持的音乐输入为：
+
+- `{"source":"bgm-avatar","category":"口播测试","filename":"1"}`：口播专用曲库。
+- `{"source":"template","category":"测试1","filename":"生活感"}`：隐藏模板曲库。
+- `{"fileId":"audio123def45"}`：用户通过 `/upload` 上传的临时音频。
+
+分类音乐必须显式提供 `source/category/filename`，不允许 `source="catalog"`。口播曲库来自 `oss://goumee-coze/GouMei-Video-Cut/bgm-avatar/`，前端通过鉴权接口 `GET /bgm-avatar` 获取清单。
 
 `clips[0]` 是 OSS object key，不是：
 
@@ -577,7 +585,7 @@ videocut/pipeline/types.py
 
 videocut/pipeline/config.py
   - 解析 subtitle 配置
-  - subtitle-burn 拒绝非空 overrides
+  - subtitle-burn 只允许 `overrides.bgm`
 
 videocut/oss/client.py
   - 在现有 OSS_PREFIX 下增加 subtitle_input_key 校验
@@ -765,7 +773,7 @@ failed
 
 - subtitle pipeline 配置解析和默认值。
 - 非单视频配置被拒绝。
-- subtitle-burn 对非空 overrides 的拒绝校验。
+- subtitle-burn 对 BGM 以外 runtime override 的拒绝校验，以及三种合法音乐来源校验。
 - VTT/SRT 时间轴解析。
 - `source`、`translation`、`bilingual`、`auto` 语言选择。
 - 中文、英文、双语自动换行。

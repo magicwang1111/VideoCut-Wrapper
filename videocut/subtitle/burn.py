@@ -24,8 +24,23 @@ def probe_media(ffprobe: str, path: str | Path) -> dict[str, bool]:
             "audio": any(item.get("codec_type") == "audio" for item in streams)}
 
 
+def probe_duration(ffprobe: str, path: str | Path) -> float:
+    result = subprocess.run(
+        [ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "json", str(path)],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"ffprobe duration failed: {(result.stderr or '')[-1000:]}")
+    duration = float(json.loads(result.stdout or "{}").get("format", {}).get("duration") or 0)
+    if duration <= 0:
+        raise RuntimeError("Input video duration is invalid.")
+    return duration
+
+
 def burn_ass(input_video: str | Path, ass_path: str | Path, output_video: str | Path,
-             ffmpeg: str, ffprobe: str, quality: str = "high", timeout: int = 3600) -> tuple[Path, str]:
+             ffmpeg: str, ffprobe: str, quality: str = "high", timeout: int = 3600,
+             bgm_path: str | Path | None = None, bgm_volume: float = 1.0,
+             bgm_fade_out: float = 0.0) -> tuple[Path, str]:
     source, subtitle, target = Path(input_video).resolve(), Path(ass_path).resolve(), Path(output_video).resolve()
     streams = probe_media(ffprobe, source)
     if not streams["video"]:
@@ -38,15 +53,43 @@ def burn_ass(input_video: str | Path, ass_path: str | Path, output_video: str | 
     ass_filter = f"ass=filename='{subtitle.name}'"
     if fonts_dir.is_dir():
         ass_filter += f":fontsdir='{_ass_filter_path(fonts_dir)}'"
-    command = [
-        ffmpeg, "-v", "error", "-y", *settings.input_args(), "-i", str(source),
-        "-map", "0:v:0", "-map", "0:a?", "-vf", ass_filter,
-        *settings.output_args(preset), "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(target),
-    ]
+    command = [ffmpeg, "-v", "error", "-y", *settings.input_args(), "-i", str(source)]
+    if bgm_path is not None:
+        bgm = Path(bgm_path).resolve()
+        if not bgm.is_file():
+            raise RuntimeError(f"BGM file does not exist: {bgm}")
+        duration = probe_duration(ffprobe, source)
+        bgm_filter = (
+            f"[1:a:0]volume={bgm_volume:.4f},"
+            f"atrim=end={duration:.6f}"
+        )
+        if bgm_fade_out > 0:
+            fade_start = max(0.0, duration - bgm_fade_out)
+            bgm_filter += f",afade=t=out:st={fade_start:.6f}:d={bgm_fade_out:.4f}"
+        bgm_filter += "[bgm];[0:a:0]volume=1.0000[original];"
+        bgm_filter += "[original][bgm]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[audio]"
+        command.extend(
+            [
+                "-stream_loop", "-1", "-i", str(bgm),
+                "-filter_complex", bgm_filter,
+                "-map", "0:v:0", "-map", "[audio]",
+            ]
+        )
+    else:
+        command.extend(["-map", "0:v:0", "-map", "0:a?"])
+    command.extend(
+        [
+            "-vf", ass_filter,
+            *settings.output_args(preset),
+            "-c:a", "aac", "-b:a", "192k",
+            "-movflags", "+faststart", str(target),
+        ]
+    )
     result = subprocess.run(command, cwd=subtitle.parent, capture_output=True, text=True,
                             encoding="utf-8", errors="replace", timeout=timeout)
     if result.returncode != 0:
         raise RuntimeError(f"FFmpeg subtitle burn failed: {(result.stderr or result.stdout or '')[-2000:]}")
-    if not target.is_file() or target.stat().st_size == 0 or not probe_media(ffprobe, target)["video"]:
+    output_streams = probe_media(ffprobe, target) if target.is_file() and target.stat().st_size > 0 else {}
+    if not output_streams.get("video") or not output_streams.get("audio"):
         raise RuntimeError("Subtitle burn output validation failed.")
     return target, settings.encoder

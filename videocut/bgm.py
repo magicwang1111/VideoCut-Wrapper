@@ -14,6 +14,7 @@ from videocut.errors import RenderError
 _BGM_EXTENSIONS = {".mp3", ".wav", ".aac", ".ogg", ".flac", ".m4a"}
 _DEFAULT_BGM_OSS_URI = "oss://goumee-coze/GouMei-Video-Cut/bgm/"
 _DEFAULT_BGM_TEMPLATE_OSS_URI = "oss://goumee-coze/GouMei-Video-Cut/bgm-templete/"
+_DEFAULT_BGM_AVATAR_OSS_URI = "oss://goumee-coze/GouMei-Video-Cut/bgm-avatar/"
 _DEFAULT_OSS_BUCKET = "goumee-coze"
 _DEFAULT_OSS_ENDPOINT = "oss-cn-hangzhou.aliyuncs.com"
 _BGM_CATEGORY_DISPLAY_NAMES = {
@@ -67,6 +68,15 @@ def resolve_bgm_template_dir(root_dir: str | Path) -> Path:
     return (Path(root_dir).resolve() / path_obj).resolve()
 
 
+def resolve_bgm_avatar_dir(root_dir: str | Path) -> Path:
+    env_dir = os.getenv("BGM_AVATAR_DIR")
+    raw_dir = env_dir.strip() if env_dir and env_dir.strip() else "input/bgm-avatar"
+    path_obj = Path(raw_dir).expanduser()
+    if path_obj.is_absolute():
+        return path_obj.resolve()
+    return (Path(root_dir).resolve() / path_obj).resolve()
+
+
 def scan_bgm_files(bgm_dir: Path) -> list[Path]:
     if not bgm_dir.is_dir():
         raise RenderError(f"BGM directory does not exist: {bgm_dir}")
@@ -95,6 +105,16 @@ def resolve_bgm_template_oss_uri(configured_uri: str | None = None) -> str:
         env_uri.strip()
         if env_uri and env_uri.strip()
         else (configured_uri.strip() if configured_uri and configured_uri.strip() else _DEFAULT_BGM_TEMPLATE_OSS_URI)
+    )
+    return raw_uri.rstrip("/") + "/"
+
+
+def resolve_bgm_avatar_oss_uri(configured_uri: str | None = None) -> str:
+    env_uri = os.getenv("BGM_AVATAR_OSS_URI")
+    raw_uri = (
+        env_uri.strip()
+        if env_uri and env_uri.strip()
+        else (configured_uri.strip() if configured_uri and configured_uri.strip() else _DEFAULT_BGM_AVATAR_OSS_URI)
     )
     return raw_uri.rstrip("/") + "/"
 
