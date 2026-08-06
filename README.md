@@ -317,7 +317,9 @@ curl "http://127.0.0.1:3000/bgm-avatar" \
   -H "X-Api-Key: goumee-music"
 ```
 
-响应结构与 `GET /bgm` 相同，但只返回 `oss://goumee-coze/GouMei-Video-Cut/bgm-avatar/` 同步到本地口播目录的歌曲。`subtitle-burn` 使用时必须显式传 `source: "bgm-avatar"`、`category` 和 `filename`。
+响应结构与 `GET /bgm` 相同，但只返回 `oss://goumee-coze/GouMei-Video-Cut/bgm-avatar/` 同步到本地口播目录的歌曲。`subtitle-burn` 或 `bgm-concat` 使用时必须显式传 `source: "bgm-avatar"`、`category` 和 `filename`。
+
+所有通过标准 PipelineRunner 执行的现有及新增 Pipeline 均统一支持四种 `overrides.bgm` 输入：公开曲库 `source="catalog"`（也可省略 `source`）、隐藏模板 `source="template"`、口播曲库 `source="bgm-avatar"`、用户上传音频 `fileId`。传入来源选择字段时默认启用 BGM，只有显式传 `enabled: false` 才禁用。
 
 ### 3. 查看已注册 Pipeline
 

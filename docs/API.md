@@ -251,7 +251,7 @@ curl "http://127.0.0.1:3000/bgm-avatar" \
 oss://goumee-coze/GouMei-Video-Cut/bgm-avatar/
 ```
 
-返回的 `category` 和 `filename` 仅用于 `subtitle-burn` 的 `source="bgm-avatar"` 请求，不会混入 `GET /bgm`、模板或备份曲库。
+返回的 `category` 和 `filename` 可用于 `subtitle-burn` 或 `bgm-concat` 的 `source="bgm-avatar"` 请求，不会混入 `GET /bgm`、模板或备份曲库。
 
 ## 5.2 `POST /admin/bgm-template/sync`
 
@@ -533,7 +533,7 @@ Content-Type: application/json
 }
 ```
 
-模板音乐把 `source` 改为 `"template"` 并传模板目录下的 `category + filename`。用户上传音乐使用 `{"bgm":{"fileId":"audioFileId1"}}`。分类音乐必须显式传 `source`、`category`、`filename`；`subtitle-burn` 不支持 `source="catalog"`。
+公开曲库音乐使用 `source="catalog"`（也可省略 `source`），模板音乐使用 `source="template"`，口播音乐使用 `source="bgm-avatar"`，用户上传音乐使用 `{"bgm":{"fileId":"audioFileId1"}}`。模板和口播音乐必须同时传 `category + filename`。
 
 成功响应：
 
@@ -631,7 +631,7 @@ other-prefix/input/a.mp4
 | `clip_overrides` | 覆盖单个素材的 `trim_start`、`trim_end`，单位秒 |
 | `transition_overrides` | 覆盖单个转场的类型、时长和缩放参数 |
 | `default_transition` | 覆盖默认转场 |
-| `bgm` | 覆盖 BGM 设置，常用 `{"enabled": false}` 禁用 BGM，`{"category": "calm"}` 按分类随机，`{"category": "calm", "filename": "1"}` 指定公开曲库音乐，`{"source": "template", "category": "测试1", "filename": "生活感"}` 指定后台模板音乐，或 `{"fileId": "audioFileId1"}` 使用用户上传音频 |
+| `bgm` | 覆盖 BGM 设置，常用 `{"enabled": false}` 禁用 BGM，`{"category": "calm"}` 按分类随机，`{"category": "calm", "filename": "1"}` 指定公开曲库音乐，`{"source": "template", "category": "测试1", "filename": "生活感"}` 指定后台模板音乐，`{"source": "bgm-avatar", "category": "口播测试", "filename": "1"}` 指定口播音乐，或 `{"fileId": "audioFileId1"}` 使用用户上传音频 |
 | `output` | 覆盖渲染临时输出文件名，API 最终 OSS key 使用 `outputs/<YYYYMMDD>/<YYYYMMDD_HHMMSS>/<taskId>/final.mp4`，时间戳为北京时间（Asia/Shanghai） |
 
 转场类型：
@@ -651,15 +651,18 @@ zoom-dissolve
 
 BGM 指定规则：
 
+- 所有通过标准 PipelineRunner 执行的现有及新增 Pipeline 均支持公开曲库、隐藏模板、口播曲库和用户上传音频四种 `overrides.bgm` 输入。来源选择字段会自动启用 BGM；显式 `enabled=false` 仍优先。
 - 对接方应先调用 `GET /bgm` 获取当前实时清单；`docs/BGM_MANIFEST.json` 是打包脚本可刷新的静态清单，适合离线对齐，不替代运行时扫描结果。
 - 用户上传音频不需要调用 `GET /bgm`。客户端先用 `/upload` 上传音频，再在 `/render` 的 `overrides.bgm.fileId` 里传音频 `fileId`。
 - 模板音乐不需要调用 `GET /bgm`。后台先调用 `POST /admin/bgm-template/sync`，再在 `/render` 的 `overrides.bgm` 中传 `source="template"`、`category` 和 `filename`。
+- 口播音乐通过 `GET /bgm-avatar` 查询；`bgm-concat` 使用时在 `overrides.bgm` 中传 `source="bgm-avatar"`、`category` 和 `filename`，只查 `BGM_AVATAR_DIR`，不回退公开或备份曲库。
 - `overrides.bgm.fileId` 场景只接受 `fileId` 一个字段，不能同时传 `category`、`filename`、`dir`、`volume`、`fade_out` 或其它 BGM 字段。音量使用 pipeline 默认配置。
 - 用户上传音频字段必须是驼峰 `fileId`；snake_case `file_id` 是非法字段，会返回 `error_code=2007`。
 - `overrides.bgm` 只接受 `fileId`、`enabled`、`source`、`dir`、`category`、`filename`、`volume`、`fade_out`，其它字段会返回 `error_code=2007`。
 - 使用 `overrides.bgm.fileId` 后，服务端直接使用用户上传音频，不扫描 `/input/bgm`，不随机选择曲库音乐。
-- `overrides.bgm.category` 是 `/app/input/bgm` 下的英文相对目录名，例如 `calm`。
+- 未传 `source` 或 `source="catalog"` 时，`overrides.bgm.category` 是 `/app/input/bgm` 下的英文相对目录名，例如 `calm`。
 - `source="template"` 时，`category` 是 `/app/input/bgm-templete` 下的相对目录名，例如 `测试1`；`filename` 是不带扩展名的文件名，例如 `生活感`。模板音乐只查模板目录，不查公开曲库或归档 backup。
+- `source="bgm-avatar"` 时，`category` 是 `/app/input/bgm-avatar` 下的相对目录名，例如 `口播测试`；`filename` 是不带扩展名的文件名，例如 `1`。
 - `overrides.bgm.filename` 是分类目录下不带扩展名的歌曲 ID，例如 `1`；真实文件仍可以是 `1.mp3`。
 - 传 `category + filename` 时，服务端精确选择该分类下的文件；只传 `category` 时，服务端只在该分类目录下随机选择一首。
 - 精确指定歌曲时使用 `GET /bgm` 响应里的 `files[].category + files[].filename`，按分类随机时使用 `categories[].name`。

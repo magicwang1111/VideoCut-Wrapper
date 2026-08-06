@@ -100,7 +100,7 @@ curl -X GET "http://127.0.0.1:3000/bgm-avatar" \
   -H "X-Api-Key: goumee-music"
 ```
 
-响应结构与 `/bgm` 相同，但只返回 `oss://goumee-coze/GouMei-Video-Cut/bgm-avatar/` 下同步的口播歌曲。提交 `subtitle-burn` 时必须显式传 `source="bgm-avatar"`、`category` 和 `filename`。
+响应结构与 `/bgm` 相同，但只返回 `oss://goumee-coze/GouMei-Video-Cut/bgm-avatar/` 下同步的口播歌曲。提交 `subtitle-burn` 或 `bgm-concat` 时必须显式传 `source="bgm-avatar"`、`category` 和 `filename`。
 
 ## 2.1 上传素材或用户音频
 
@@ -344,8 +344,9 @@ BGM 路径规则：
 - `GET /bgm` 返回实时清单；`docs/BGM_MANIFEST.json` 仅作为静态示例/历史清单参考。
 - 用户上传音频不属于曲库，使用 `overrides.bgm.fileId`，不需要调用 `GET /bgm`。
 - 模板音乐使用 `source="template"`，只查 `/app/input/bgm-templete`，不会出现在 `GET /bgm`，也不会回退公开曲库或 `BGM_BACKUP_DIR`。
+- 口播音乐使用 `source="bgm-avatar"`，只查 `/app/input/bgm-avatar`；`bgm-concat` 必须同时传 `category + filename`，不会回退公开曲库或 `BGM_BACKUP_DIR`。
 - 模板音乐必须同时传 `category + filename`；`filename` 不带扩展名。
-- `category` 只能是 `/app/input/bgm` 下的英文相对目录名，例如 `calm`。
+- 未传 `source` 或 `source="catalog"` 时，`category` 是 `/app/input/bgm` 下的英文相对目录名，例如 `calm`。
 - `category + filename` 可精确指定该分类下的文件，例如 `{"category": "calm", "filename": "测试1"}`；`filename` 是不带扩展名的歌曲 ID，真实文件仍可以是 `测试1.mp3`。
 - 只传 `bgm.category` 且不传 `bgm.filename` 时，服务端只在该分类目录下随机选择一首。
 - `filename` 不允许包含扩展名、`.`、`/`、`\`、绝对路径或 `..`；同一分类下不允许同名 stem 文件。
@@ -1074,7 +1075,7 @@ curl -X POST "http://127.0.0.1:3000/render" \
   }'
 ```
 
-模板音乐使用 `source="template"`；用户上传音乐使用 `{"bgm":{"fileId":"audio123def45"}}`。分类音乐必须同时提供 `source/category/filename`，且 `subtitle-burn` 不接受普通 `source="catalog"`。指定音乐时，FFmpeg 在压制字幕的同时以原声 `1.0`、BGM `1.0` 混音；不传音乐时仍只压字幕并保留原声。
+公开曲库音乐使用 `source="catalog"`（也可省略 `source`），模板音乐使用 `source="template"`，口播音乐使用 `source="bgm-avatar"`，用户上传音乐使用 `{"bgm":{"fileId":"audio123def45"}}`。模板和口播音乐必须同时提供 `category/filename`。指定音乐时，FFmpeg 在压制字幕的同时以原声 `1.0`、BGM `1.0` 混音；不传音乐时仍只压字幕并保留原声。
 
 查询任务：
 

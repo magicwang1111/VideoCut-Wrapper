@@ -160,8 +160,15 @@ def parse_bgm_config(raw: object, base: PipelineBgmConfig | None = None) -> Pipe
     filename = _optional_str(raw.get("filename")) if "filename" in raw else (base.filename if base else None)
     if "category" in raw and "filename" not in raw:
         filename = None
+    selects_bgm = any(field in raw for field in ("source", "category", "filename", "fileId"))
+    if "enabled" in raw:
+        enabled = bool(raw["enabled"])
+    elif selects_bgm:
+        enabled = True
+    else:
+        enabled = base.enabled if base else True
     return PipelineBgmConfig(
-        enabled=bool(raw["enabled"]) if "enabled" in raw else (base.enabled if base else True),
+        enabled=enabled,
         source=_parse_bgm_source(raw, base),  # type: ignore[arg-type]
         dir=_optional_str(raw.get("dir")) if "dir" in raw else (base.dir if base else None),
         category=category,

@@ -428,11 +428,12 @@ def test_subtitle_render_enforces_single_prefixed_input_and_no_overrides(tmp_pat
         assert queued.payload["subtitle_output_oss_key"].endswith(f"/{queued.task_id}/final.mp4")
 
 
-def test_subtitle_render_accepts_avatar_template_and_uploaded_bgm(tmp_path, monkeypatch) -> None:
+def test_subtitle_render_accepts_all_four_bgm_sources(tmp_path, monkeypatch) -> None:
     FakeTaskQueue.instances.clear()
     pipelines_root = tmp_path / "pipelines"
     avatar_dir = tmp_path / "runtime" / "bgm-avatar"
     template_dir = tmp_path / "runtime" / "bgm-templete"
+    bgm_dir = tmp_path / "runtime" / "bgm"
     payload = {
         "name": "subtitle-burn",
         "mode": "pipeline",
@@ -445,10 +446,13 @@ def test_subtitle_render_accepts_avatar_template_and_uploaded_bgm(tmp_path, monk
     (avatar_dir / "口播测试" / "1.mp3").write_text("avatar", encoding="utf-8")
     (template_dir / "模板测试").mkdir(parents=True)
     (template_dir / "模板测试" / "1.mp3").write_text("template", encoding="utf-8")
+    (bgm_dir / "公开测试").mkdir(parents=True)
+    (bgm_dir / "公开测试" / "1.mp3").write_text("catalog", encoding="utf-8")
     _configure_api_env(
         tmp_path,
         monkeypatch,
         pipelines_root,
+        bgm_dir=bgm_dir,
         bgm_template_dir=template_dir,
         bgm_avatar_dir=avatar_dir,
     )
@@ -464,6 +468,7 @@ def test_subtitle_render_accepts_avatar_template_and_uploaded_bgm(tmp_path, monk
             kind="user_audio",
         )
         requests = [
+            {"source": "catalog", "category": "公开测试", "filename": "1"},
             {"source": "bgm-avatar", "category": "口播测试", "filename": "1"},
             {"source": "template", "category": "模板测试", "filename": "1"},
             {"fileId": "audio123def45"},
@@ -487,14 +492,12 @@ def test_subtitle_render_accepts_avatar_template_and_uploaded_bgm(tmp_path, monk
 @pytest.mark.parametrize(
     "bgm",
     [
-        {"category": "口播测试", "filename": "1"},
-        {"source": "catalog", "category": "口播测试", "filename": "1"},
         {"source": "bgm-avatar", "category": "口播测试"},
         {"source": "template", "filename": "1"},
         {"source": "bgm-avatar", "category": "口播测试", "filename": "1", "dir": "input/bgm"},
     ],
 )
-def test_subtitle_render_rejects_invalid_bgm_sources(tmp_path, monkeypatch, bgm) -> None:
+def test_subtitle_render_rejects_invalid_bgm_overrides(tmp_path, monkeypatch, bgm) -> None:
     FakeTaskQueue.instances.clear()
     pipelines_root = tmp_path / "pipelines"
     payload = {
@@ -832,6 +835,37 @@ def test_render_endpoint_accepts_template_bgm_and_hides_it_from_catalog(tmp_path
                 "ossUrl": "https://goumee-coze.oss-cn-hangzhou.aliyuncs.com/GouMei-Video-Cut/bgm/catalog/public.mp3",
             }
         ]
+
+
+def test_bgm_concat_accepts_bgm_avatar_source(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    avatar_dir = tmp_path / "runtime" / "bgm-avatar"
+    _write_pipeline_config(pipelines_root, "bgm-concat", _make_pipeline_payload("bgm-concat"))
+    (avatar_dir / "口播测试").mkdir(parents=True)
+    (avatar_dir / "口播测试" / "1.mp3").write_text("music", encoding="utf-8")
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root, bgm_avatar_dir=avatar_dir)
+
+    with TestClient(api_app_module.create_app()) as client:
+        client.app.state.store.save_file("file1", "GouMei-Video-Cut/inputs/file1.mp4")
+        response = client.post(
+            "/render",
+            headers={"X-Api-Key": "test-key", "Content-Type": "application/json"},
+            json={
+                "pipeline": "bgm-concat",
+                "clips": ["file1"],
+                "overrides": {
+                    "bgm": {"source": "bgm-avatar", "category": "口播测试", "filename": "1"}
+                },
+            },
+        )
+
+        assert response.status_code == 200
+        assert FakeTaskQueue.instances[-1].tasks[-1].payload["overrides"]["bgm"] == {
+            "source": "bgm-avatar",
+            "category": "口播测试",
+            "filename": "1",
+        }
 
 
 def test_render_endpoint_rejects_invalid_template_bgm_before_enqueue(tmp_path, monkeypatch) -> None:
@@ -1541,6 +1575,39 @@ def test_bgm_category_filename_override_preserves_manifest_shape(tmp_path) -> No
     assert ctx.config.bgm.dir == "input/bgm"
     assert ctx.config.bgm.volume == pytest.approx(0.45)
     assert ctx.config.bgm.fade_out == pytest.approx(1.5)
+
+
+def test_bgm_source_override_enables_pipeline_with_bgm_disabled_by_default(tmp_path) -> None:
+    payload = _make_pipeline_payload()
+    payload["bgm"] = {"enabled": False}
+    config = parse_pipeline_config(payload, tmp_path / "config.json", require_name=True)
+
+    ctx = build_pipeline_context(
+        config,
+        ["/tmp/a.mp4", "/tmp/b.mp4", "/tmp/c.mp4"],
+        tmp_path / "config.json",
+        {"bgm": {"source": "bgm-avatar", "category": "口播测试", "filename": "1"}},
+    )
+
+    assert ctx.config.bgm is not None
+    assert ctx.config.bgm.enabled is True
+    assert ctx.config.bgm.source == "bgm-avatar"
+
+    disabled_ctx = build_pipeline_context(
+        config,
+        ["/tmp/a.mp4", "/tmp/b.mp4", "/tmp/c.mp4"],
+        tmp_path / "config.json",
+        {
+            "bgm": {
+                "enabled": False,
+                "source": "bgm-avatar",
+                "category": "口播测试",
+                "filename": "1",
+            }
+        },
+    )
+    assert disabled_ctx.config.bgm is not None
+    assert disabled_ctx.config.bgm.enabled is False
 
 
 def test_bgm_file_override_is_rejected(tmp_path) -> None:

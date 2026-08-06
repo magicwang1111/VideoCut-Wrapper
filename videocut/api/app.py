@@ -600,7 +600,7 @@ def _validate_bgm_avatar_override(root_dir: Path, bgm: dict[str, Any]) -> None:
     )
 
 
-def _validate_subtitle_bgm_override(root_dir: Path, overrides: dict[str, Any]) -> None:
+def _normalize_subtitle_bgm_override(overrides: dict[str, Any]) -> None:
     bgm = overrides.get("bgm")
     if not isinstance(bgm, dict):
         return
@@ -613,28 +613,13 @@ def _validate_subtitle_bgm_override(root_dir: Path, overrides: dict[str, Any]) -
             {"field": "overrides.bgm", "unsupported": unsupported_fields, "pipeline": "subtitle-burn"}
         )
 
-    source = bgm.get("source")
-    if source not in {"template", "bgm-avatar"}:
-        raise _invalid_bgm_override(
-            {
-                "field": "overrides.bgm.source",
-                "expected": "template|bgm-avatar",
-                "actual": source,
-                "pipeline": "subtitle-burn",
-            }
-        )
-    if source == "template":
-        _validate_bgm_template_override(root_dir, bgm)
-    else:
-        _validate_bgm_avatar_override(root_dir, bgm)
-
     if "volume" not in bgm:
         bgm["volume"] = 1.0
     if "fade_out" not in bgm:
         bgm["fade_out"] = 0.0
 
 
-def _validate_bgm_catalog_override(root_dir: Path, pipeline_config: dict[str, Any], overrides: dict[str, Any]) -> None:
+def _validate_pipeline_bgm_override(root_dir: Path, pipeline_config: dict[str, Any], overrides: dict[str, Any]) -> None:
     bgm = overrides.get("bgm")
     if not isinstance(bgm, dict) or "fileId" in bgm:
         return
@@ -644,13 +629,8 @@ def _validate_bgm_catalog_override(root_dir: Path, pipeline_config: dict[str, An
         _validate_bgm_template_override(root_dir, bgm)
         return
     if bgm.get("source") == "bgm-avatar":
-        raise _invalid_bgm_override(
-            {
-                "field": "overrides.bgm.source",
-                "reason": "source_not_supported",
-                "source": "bgm-avatar",
-            }
-        )
+        _validate_bgm_avatar_override(root_dir, bgm)
+        return
     category = bgm.get("category")
     if not isinstance(category, str) or not category.strip():
         return
@@ -1004,13 +984,12 @@ def create_app() -> FastAPI:
                     {"ossKey": missing_keys[0]},
                 )
         user_bgm = _resolve_user_bgm(store, overrides)
+        _validate_pipeline_bgm_override(app.state.root_dir, pipeline_record.config, overrides)
         if pipeline_name == "subtitle-burn":
-            _validate_subtitle_bgm_override(app.state.root_dir, overrides)
+            _normalize_subtitle_bgm_override(overrides)
             if user_bgm and isinstance(overrides.get("bgm"), dict):
                 overrides["bgm"]["volume"] = 1.0
                 overrides["bgm"]["fade_out"] = 0.0
-        else:
-            _validate_bgm_catalog_override(app.state.root_dir, pipeline_record.config, overrides)
         task_id = generate_task_id(prefix="t_")
         payload = {
             "clips": resolved_keys,
