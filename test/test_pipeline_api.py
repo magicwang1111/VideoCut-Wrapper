@@ -1359,6 +1359,8 @@ def test_bgm_avatar_endpoint_is_authenticated_and_isolated(tmp_path, monkeypatch
         bgm_dir=public_dir,
         bgm_avatar_dir=avatar_dir,
     )
+    monkeypatch.setenv("BGM_OSS_URI", "oss://goumee-coze/GouMei-Video-Cut/bgm/")
+    monkeypatch.setenv("BGM_AVATAR_OSS_URI", "oss://goumee-coze/GouMei-Video-Cut/bgm-avatar/")
 
     with TestClient(api_app_module.create_app()) as client:
         assert client.get("/bgm-avatar").status_code == 401

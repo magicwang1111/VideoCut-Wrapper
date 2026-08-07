@@ -134,7 +134,7 @@ def test_list_bgm_catalog_uses_relative_category_paths_and_plain_filenames(tmp_p
 
 
 def test_list_bgm_catalog_uses_configured_oss_uri_without_trailing_slash(tmp_path, monkeypatch) -> None:
-    monkeypatch.delenv("BGM_OSS_URI", raising=False)
+    monkeypatch.setenv("BGM_OSS_URI", "oss://bucket/env-bgm/")
     monkeypatch.delenv("OSS_PUBLIC_ENDPOINT", raising=False)
     bgm_dir = tmp_path / "input" / "bgm"
     (bgm_dir / "calm").mkdir(parents=True)
@@ -159,7 +159,7 @@ def test_list_bgm_catalog_uses_bgm_oss_uri_env(tmp_path, monkeypatch) -> None:
     (bgm_dir / "calm").mkdir(parents=True)
     (bgm_dir / "calm" / "1.mp3").write_text("calm", encoding="utf-8")
 
-    catalog = list_bgm_catalog(bgm_dir, oss_uri_base="oss://bucket/configured")
+    catalog = list_bgm_catalog(bgm_dir)
 
     assert catalog["files"] == [
         {

@@ -177,7 +177,11 @@ def list_bgm_catalog(bgm_dir: Path, *, oss_uri_base: str | None = None) -> dict[
     if not base_dir.is_dir():
         raise RenderError(f"BGM directory does not exist: {base_dir}")
 
-    resolved_oss_uri = resolve_bgm_oss_uri(oss_uri_base)
+    resolved_oss_uri = (
+        oss_uri_base.strip().rstrip("/") + "/"
+        if oss_uri_base and oss_uri_base.strip()
+        else resolve_bgm_oss_uri()
+    )
     files: list[dict[str, str]] = []
     category_counts: dict[str, int] = {}
     audio_files = sorted(
