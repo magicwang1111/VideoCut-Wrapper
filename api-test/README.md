@@ -14,10 +14,19 @@
 - [render_groups_1_5.py](D:/VideoCut-Wrapper/api-test/render_groups_1_5.py)
 - [render_groups_1_16.py](D:/VideoCut-Wrapper/api-test/render_groups_1_16.py)
 - [render_single_video_stress.py](D:/VideoCut-Wrapper/api-test/render_single_video_stress.py)
+- [render_bgm_concat_preserve_audio.py](D:/VideoCut-Wrapper/api-test/render_bgm_concat_preserve_audio.py)
 - [render_subtitle_burn_oss.py](D:/VideoCut-Wrapper/api-test/render_subtitle_burn_oss.py)
 - [render_subtitle_burn_oss_with_bgm.py](D:/VideoCut-Wrapper/api-test/render_subtitle_burn_oss_with_bgm.py)
 - [render_trim_mixed.py](D:/VideoCut-Wrapper/api-test/render_trim_mixed.py)
 - [render_zoom_dissolve.py](D:/VideoCut-Wrapper/api-test/render_zoom_dissolve.py)
+
+`render_bgm_concat_preserve_audio.py` 默认使用
+`GouMei-Video-Cut/subtitle-input/Seedance_20260720_165432_00001_.mp4`，提交一次
+`bgm-concat` 请求，并指定 `bgm-avatar / 口播测试 / 走播音乐`，用于验证输入原声与 BGM 叠加。`filename` 不带 `.mp3` 扩展名；也可以通过 `BGM_FILENAME=走播音乐2` 或 `BGM_FILENAME=走播音乐3` 切换：
+
+```bash
+python api-test/render_bgm_concat_preserve_audio.py
+```
 
 当前已注册的 pipeline 清单可在这里查看：
 

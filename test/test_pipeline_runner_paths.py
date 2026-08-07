@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import videocut.pipeline.runner as runner_module
@@ -111,7 +112,10 @@ def test_pipeline_runner_random_bgm_can_use_backup_category(tmp_path, monkeypatc
     def fake_concat(ffmpeg_path, clips, junctions, output_path, qual_preset, res_preset, video_settings, task):
         Path(output_path).write_text("video", encoding="utf-8")
 
-    def fake_apply_bgm(ffmpeg_path, ffprobe_path, video_path, bgm_file, volume, fade_out, task_id=None):
+    def fake_apply_bgm(
+        ffmpeg_path, ffprobe_path, video_path, bgm_file, volume, fade_out, task_id=None,
+        original_audio_segments=None,
+    ):
         applied_bgm_files.append(Path(bgm_file))
 
     monkeypatch.setattr(runner_module, "ffmpeg_pipeline_concat", fake_concat)
@@ -148,7 +152,9 @@ def test_pipeline_runner_template_bgm_uses_template_dir_only(tmp_path, monkeypat
     monkeypatch.setattr(
         runner_module,
         "probe_single_video",
-        lambda ffprobe_path, video_path: {"duration": 5.0, "width": 1080, "height": 1920, "fps": 24},
+        lambda ffprobe_path, video_path: {
+            "duration": 5.0, "width": 1080, "height": 1920, "fps": 24, "has_audio": True
+        },
     )
     monkeypatch.setattr(
         runner_module,
@@ -159,8 +165,14 @@ def test_pipeline_runner_template_bgm_uses_template_dir_only(tmp_path, monkeypat
     def fake_concat(ffmpeg_path, clips, junctions, output_path, qual_preset, res_preset, video_settings, task):
         Path(output_path).write_text("video", encoding="utf-8")
 
-    def fake_apply_bgm(ffmpeg_path, ffprobe_path, video_path, bgm_file, volume, fade_out, task_id=None):
+    applied_audio_segments = []
+
+    def fake_apply_bgm(
+        ffmpeg_path, ffprobe_path, video_path, bgm_file, volume, fade_out, task_id=None,
+        original_audio_segments=None,
+    ):
         applied_bgm_files.append(Path(bgm_file))
+        applied_audio_segments.extend(original_audio_segments or [])
 
     monkeypatch.setattr(runner_module, "ffmpeg_pipeline_concat", fake_concat)
     monkeypatch.setattr(runner_module, "apply_bgm", fake_apply_bgm)
@@ -169,6 +181,9 @@ def test_pipeline_runner_template_bgm_uses_template_dir_only(tmp_path, monkeypat
 
     assert result.status == "completed"
     assert applied_bgm_files == [template_bgm.resolve()]
+    assert len(applied_audio_segments) == 1
+    assert applied_audio_segments[0].path == ctx.resolved_srcs[0]
+    assert applied_audio_segments[0].has_audio is True
 
 
 def test_pipeline_runner_resolves_avatar_bgm_from_avatar_dir_only(tmp_path) -> None:
@@ -190,3 +205,98 @@ def test_pipeline_runner_resolves_avatar_bgm_from_avatar_dir_only(tmp_path) -> N
     chosen = PipelineRunner(tmp_path).resolve_bgm_path(ctx)
 
     assert chosen == avatar_bgm.resolve()
+
+
+def test_probe_single_video_reports_audio_stream_presence(monkeypatch) -> None:
+    monkeypatch.setattr(
+        runner_module.subprocess,
+        "check_output",
+        lambda *args, **kwargs: json.dumps(
+            {
+                "streams": [
+                    {"codec_type": "video", "duration": "5", "width": 1080, "height": 1920, "r_frame_rate": "24/1"},
+                    {"codec_type": "audio"},
+                ],
+                "format": {"duration": "5"},
+            }
+        ),
+    )
+
+    result = runner_module.probe_single_video("ffprobe", "clip.mp4")
+
+    assert result["has_audio"] is True
+
+    monkeypatch.setattr(
+        runner_module.subprocess,
+        "check_output",
+        lambda *args, **kwargs: json.dumps(
+            {
+                "streams": [
+                    {"codec_type": "video", "duration": "5", "width": 1080, "height": 1920, "r_frame_rate": "24/1"}
+                ],
+                "format": {"duration": "5"},
+            }
+        ),
+    )
+
+    silent_result = runner_module.probe_single_video("ffprobe", "silent.mp4")
+
+    assert silent_result["has_audio"] is False
+
+
+def test_all_standard_pipelines_collect_each_input_audio_segment(tmp_path, monkeypatch) -> None:
+    ctx = _make_context(tmp_path)
+    ctx.config.name = "trim-concat"
+    ctx.config.clips = [
+        PipelineClipConfig(trim_start=1.0, trim_end=1.0),
+        PipelineClipConfig(trim_start=0.0, trim_duration=3.0),
+        PipelineClipConfig(trim_start=2.0, trim_end=0.0),
+    ]
+    ctx.config.bgm = PipelineBgmConfig(enabled=True, dir="input/bgm", volume=1.0)
+    ctx.resolved_srcs = [str(tmp_path / f"clip-{index}.mp4") for index in range(3)]
+    ctx.junctions = [
+        PipelineTransitionConfig(type="cut", duration=0),
+        PipelineTransitionConfig(type="cut", duration=0),
+    ]
+    bgm = tmp_path / "input" / "bgm" / "music.mp3"
+    bgm.parent.mkdir(parents=True)
+    bgm.write_text("music", encoding="utf-8")
+    probe_results = {
+        ctx.resolved_srcs[0]: {"duration": 6.0, "width": 1080, "height": 1920, "fps": 24, "has_audio": True},
+        ctx.resolved_srcs[1]: {"duration": 5.0, "width": 1080, "height": 1920, "fps": 24, "has_audio": False},
+        ctx.resolved_srcs[2]: {"duration": 7.0, "width": 1080, "height": 1920, "fps": 24, "has_audio": True},
+    }
+    captured_segments = []
+
+    monkeypatch.setattr(
+        runner_module,
+        "resolve_runtime_video_settings",
+        lambda ffmpeg_path, configured: FFmpegVideoSettings(encoder="libx264"),
+    )
+    monkeypatch.setattr(runner_module, "probe_single_video", lambda ffprobe, path: probe_results[path])
+    monkeypatch.setattr(
+        runner_module,
+        "normalize_clips",
+        lambda root_dir, ffmpeg_path, clips, qual_preset, res_preset, video_settings: (clips, lambda: None),
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "ffmpeg_pipeline_concat",
+        lambda ffmpeg_path, clips, junctions, output_path, qual_preset, res_preset, video_settings, task:
+            Path(output_path).write_text("video", encoding="utf-8"),
+    )
+
+    def fake_apply_bgm(
+        ffmpeg_path, ffprobe_path, video_path, bgm_file, volume, fade_out, task_id=None,
+        original_audio_segments=None,
+    ):
+        captured_segments.extend(original_audio_segments or [])
+
+    monkeypatch.setattr(runner_module, "apply_bgm", fake_apply_bgm)
+
+    result = PipelineRunner(tmp_path).run(ctx, "ffmpeg", "ffprobe", {}, task_id="t_multi_audio")
+
+    assert result.status == "completed"
+    assert [segment.has_audio for segment in captured_segments] == [True, False, True]
+    assert [segment.trim_start for segment in captured_segments] == [1.0, 0.0, 2.0]
+    assert [segment.duration for segment in captured_segments] == [4.0, 3.0, 5.0]

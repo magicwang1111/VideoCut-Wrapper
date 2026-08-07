@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from videocut.bgm import (
+    OriginalAudioSegment,
     apply_bgm,
     resolve_bgm_avatar_dir,
     resolve_bgm_backup_dir,
@@ -30,7 +31,7 @@ from videocut.render.transitions.shared import normalize_clips, run_ffmpeg_check
 from videocut.render.types import RenderResult, VideoClip
 
 
-def probe_single_video(ffprobe_path: str, video_path: str) -> dict[str, float | int]:
+def probe_single_video(ffprobe_path: str, video_path: str) -> dict[str, float | int | bool]:
     raw = subprocess.check_output(
         [
             ffprobe_path,
@@ -40,15 +41,14 @@ def probe_single_video(ffprobe_path: str, video_path: str) -> dict[str, float | 
             "json",
             "-show_streams",
             "-show_format",
-            "-select_streams",
-            "v:0",
             video_path,
         ],
         encoding="utf-8",
         timeout=10,
     )
     info = json.loads(raw)
-    stream = (info.get("streams") or [None])[0] or {}
+    streams = info.get("streams") or []
+    stream = next((item for item in streams if item.get("codec_type") == "video"), {})
     duration = float(stream.get("duration") or info.get("format", {}).get("duration") or 0)
     num_str, den_str = str(stream.get("r_frame_rate") or "30/1").split("/")
     num = float(num_str)
@@ -58,6 +58,7 @@ def probe_single_video(ffprobe_path: str, video_path: str) -> dict[str, float | 
         "width": int(stream.get("width") or 0),
         "height": int(stream.get("height") or 0),
         "fps": int(round(num / den) if den else num or 30),
+        "has_audio": any(item.get("codec_type") == "audio" for item in streams),
     }
 
 
@@ -317,6 +318,7 @@ class PipelineRunner:
             logger.info("[1/3] Probing and validating %d clips...", len(resolved_srcs))
             res_preset = None
             resolved_clips: list[ResolvedPipelineClip] = []
+            original_audio_segments: list[OriginalAudioSegment] = []
             for index, src in enumerate(resolved_srcs):
                 clip_cfg = config.clips[index]
                 trim_start = clip_cfg.trim_start
@@ -360,6 +362,14 @@ class PipelineRunner:
                         trim_end=trim_end,
                         trim_duration=trim_duration,
                         effective_duration=effective_duration,
+                    )
+                )
+                original_audio_segments.append(
+                    OriginalAudioSegment(
+                        path=src,
+                        trim_start=trim_start,
+                        duration=effective_duration,
+                        has_audio=bool(probed.get("has_audio", False)),
                     )
                 )
 
@@ -421,7 +431,16 @@ class PipelineRunner:
                     raise RenderError("BGM is enabled but no BGM file could be resolved.")
                 chosen_label = chosen.name if ctx.user_bgm_path else str(chosen)
                 logger.info("[2.5/3] 混入 BGM: %s (volume=%.2f)", chosen_label, config.bgm.volume)
-                apply_bgm(ffmpeg_path, ffprobe_path, output_path, chosen, config.bgm.volume, config.bgm.fade_out, task.id)
+                apply_bgm(
+                    ffmpeg_path,
+                    ffprobe_path,
+                    output_path,
+                    chosen,
+                    config.bgm.volume,
+                    config.bgm.fade_out,
+                    task.id,
+                    original_audio_segments=original_audio_segments,
+                )
                 bgm_file_used = str(chosen)
 
             elapsed = time.time() - start_time

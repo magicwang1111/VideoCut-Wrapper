@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from urllib.parse import quote, urlparse
 from uuid import uuid4
@@ -25,6 +26,14 @@ _BGM_MANIFEST_PATH_RULE = (
     "API overrides.bgm.category + overrides.bgm.filename uses the category and extensionless filename fields below, "
     "relative to /app/input/bgm."
 )
+
+
+@dataclass(frozen=True, slots=True)
+class OriginalAudioSegment:
+    path: str
+    trim_start: float
+    duration: float
+    has_audio: bool
 
 
 class BgmTemplateSyncError(RuntimeError):
@@ -461,6 +470,7 @@ def apply_bgm(
     volume: float,
     fade_out: float,
     task_id: str | None = None,
+    original_audio_segments: list[OriginalAudioSegment] | None = None,
 ) -> None:
     video_file = Path(video_path)
     tmp_token = task_id or "bgm"
@@ -472,30 +482,71 @@ def apply_bgm(
     )
     video_duration = float(json.loads(raw)["format"]["duration"])
 
-    audio_filter = (
-        f"[1:a]aloop=loop=-1:size=2000000000,"
+    segments = original_audio_segments or []
+    has_original_audio = any(segment.has_audio for segment in segments)
+    input_args = [ffmpeg_path, "-i", video_path]
+    filter_parts: list[str] = []
+    segment_labels: list[str] = []
+    next_input_index = 1
+
+    if has_original_audio:
+        for index, segment in enumerate(segments):
+            label = f"original{index}"
+            segment_labels.append(f"[{label}]")
+            if segment.has_audio:
+                input_args.extend(["-i", segment.path])
+                filter_parts.append(
+                    f"[{next_input_index}:a:0]atrim=start={segment.trim_start:.6f}:duration={segment.duration:.6f},"
+                    f"asetpts=PTS-STARTPTS,aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,"
+                    f"apad=whole_dur={segment.duration:.6f},atrim=duration={segment.duration:.6f}[{label}]"
+                )
+                next_input_index += 1
+            else:
+                filter_parts.append(
+                    f"anullsrc=r=48000:cl=stereo,atrim=duration={segment.duration:.6f},"
+                    f"asetpts=PTS-STARTPTS[{label}]"
+                )
+
+        if len(segment_labels) == 1:
+            filter_parts.append(
+                f"{segment_labels[0]}apad=whole_dur={video_duration:.6f},"
+                f"atrim=duration={video_duration:.6f}[original]"
+            )
+        else:
+            filter_parts.append(
+                f"{''.join(segment_labels)}concat=n={len(segment_labels)}:v=0:a=1,"
+                f"apad=whole_dur={video_duration:.6f},atrim=duration={video_duration:.6f}[original]"
+            )
+
+    bgm_input_index = next_input_index
+    input_args.extend(["-i", str(bgm_file)])
+    bgm_filter = (
+        f"[{bgm_input_index}:a:0]aloop=loop=-1:size=2000000000,"
         f"volume={volume:.4f},"
         f"atrim=end={video_duration:.6f}"
     )
     if fade_out > 0:
         fade_start = max(0.0, video_duration - fade_out)
-        audio_filter += f",afade=t=out:st={fade_start:.6f}:d={fade_out:.4f}"
-    audio_filter += "[bgm]"
+        bgm_filter += f",afade=t=out:st={fade_start:.6f}:d={fade_out:.4f}"
+    bgm_filter += "[bgm]"
+    filter_parts.append(bgm_filter)
+    output_audio_label = "[bgm]"
+    if has_original_audio:
+        filter_parts.append(
+            "[original][bgm]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[audio]"
+        )
+        output_audio_label = "[audio]"
 
     try:
         subprocess.run(
             [
-                ffmpeg_path,
-                "-i",
-                video_path,
-                "-i",
-                str(bgm_file),
+                *input_args,
                 "-filter_complex",
-                audio_filter,
+                ";".join(filter_parts),
                 "-map",
                 "0:v",
                 "-map",
-                "[bgm]",
+                output_audio_label,
                 "-c:v",
                 "copy",
                 "-c:a",

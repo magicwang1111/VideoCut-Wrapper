@@ -294,7 +294,7 @@ X-Api-Key: goumee-music
 }
 ```
 
-`overrides.bgm.fileId` 只接受 `fileId` 一个字段，不能同时传 `category`、`filename`、`dir`、`volume`、`fade_out` 或其它 BGM 字段。音量使用 pipeline 默认配置。传了 `fileId` 后，服务端直接使用用户音频，不扫描 `/input/bgm`，最终视频不保留原声。字段名必须是驼峰 `fileId`，`file_id` 是非法字段。
+`overrides.bgm.fileId` 只接受 `fileId` 一个字段，不能同时传 `category`、`filename`、`dir`、`volume`、`fade_out` 或其它 BGM 字段。音量使用 pipeline 默认配置。传了 `fileId` 后，服务端直接使用用户音频，不扫描 `/input/bgm`；输入视频存在音轨时会保留原声并与用户音乐叠加。字段名必须是驼峰 `fileId`，`file_id` 是非法字段。
 
 如果要指定某一首 BGM，先调用 `GET /bgm` 查询清单，再在 `overrides.bgm` 里传返回的 `category + filename`：
 
@@ -341,6 +341,7 @@ oss://goumee-coze/GouMei-Video-Cut/bgm-templete/测试1/生活感.mp3
 
 BGM 路径规则：
 
+- 所有标准 Pipeline 都会逐段检测输入音轨；有原声则按裁剪区间保留，无原声则补等长静音，最后把拼接后的原声与 BGM 叠加。全部输入均无原声时只写入 BGM。
 - `GET /bgm` 返回实时清单；`docs/BGM_MANIFEST.json` 仅作为静态示例/历史清单参考。
 - 用户上传音频不属于曲库，使用 `overrides.bgm.fileId`，不需要调用 `GET /bgm`。
 - 模板音乐使用 `source="template"`，只查 `/app/input/bgm-templete`，不会出现在 `GET /bgm`，也不会回退公开曲库或 `BGM_BACKUP_DIR`。

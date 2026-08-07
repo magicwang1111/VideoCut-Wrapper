@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 import videocut.bgm as bgm_module
-from videocut.bgm import apply_bgm
+from videocut.bgm import OriginalAudioSegment, apply_bgm
 from videocut.bgm import build_bgm_manifest
 from videocut.bgm import list_bgm_catalog
 from videocut.bgm import resolve_bgm_backup_dir
@@ -378,6 +378,96 @@ def test_apply_bgm_uses_task_unique_tmp_and_replaces_video(tmp_path, monkeypatch
     assert written_tmp_paths[0].name.startswith("final.mp4.t_demo.")
     assert written_tmp_paths[0].name.endswith(".bgm_tmp.mp4")
     assert not list(tmp_path.glob("*.bgm_tmp.mp4"))
+
+
+def test_apply_bgm_concatenates_original_audio_and_silence_before_mixing(tmp_path, monkeypatch) -> None:
+    video = tmp_path / "final.mp4"
+    video.write_text("video", encoding="utf-8")
+    first = tmp_path / "first.mp4"
+    first.write_text("first", encoding="utf-8")
+    third = tmp_path / "third.mp4"
+    third.write_text("third", encoding="utf-8")
+    bgm_file = tmp_path / "music.mp3"
+    bgm_file.write_text("music", encoding="utf-8")
+    captured_args: list[str] = []
+
+    monkeypatch.setattr(
+        bgm_module.subprocess,
+        "check_output",
+        lambda *args, **kwargs: '{"format": {"duration": "12.0"}}',
+    )
+
+    def fake_run(args, **kwargs):
+        captured_args.extend(args)
+        Path(args[-1]).write_text("mixed", encoding="utf-8")
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr(bgm_module.subprocess, "run", fake_run)
+
+    apply_bgm(
+        "ffmpeg",
+        "ffprobe",
+        str(video),
+        bgm_file,
+        0.3,
+        1.0,
+        "t_demo",
+        original_audio_segments=[
+            OriginalAudioSegment(str(first), trim_start=1.0, duration=4.0, has_audio=True),
+            OriginalAudioSegment(str(tmp_path / "silent.mp4"), trim_start=0.0, duration=3.0, has_audio=False),
+            OriginalAudioSegment(str(third), trim_start=2.0, duration=5.0, has_audio=True),
+        ],
+    )
+
+    filter_complex = captured_args[captured_args.index("-filter_complex") + 1]
+    assert captured_args.count("-i") == 4
+    assert "[1:a:0]atrim=start=1.000000:duration=4.000000" in filter_complex
+    assert "anullsrc=r=48000:cl=stereo,atrim=duration=3.000000" in filter_complex
+    assert "[2:a:0]atrim=start=2.000000:duration=5.000000" in filter_complex
+    assert "[original0][original1][original2]concat=n=3:v=0:a=1" in filter_complex
+    assert "[original][bgm]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[audio]" in filter_complex
+    assert captured_args[captured_args.index("-map", captured_args.index("-map") + 1) + 1] == "[audio]"
+
+
+def test_apply_bgm_uses_bgm_only_when_all_input_segments_are_silent(tmp_path, monkeypatch) -> None:
+    video = tmp_path / "final.mp4"
+    video.write_text("video", encoding="utf-8")
+    bgm_file = tmp_path / "music.mp3"
+    bgm_file.write_text("music", encoding="utf-8")
+    captured_args: list[str] = []
+
+    monkeypatch.setattr(
+        bgm_module.subprocess,
+        "check_output",
+        lambda *args, **kwargs: '{"format": {"duration": "5.0"}}',
+    )
+
+    def fake_run(args, **kwargs):
+        captured_args.extend(args)
+        Path(args[-1]).write_text("bgm only", encoding="utf-8")
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr(bgm_module.subprocess, "run", fake_run)
+
+    apply_bgm(
+        "ffmpeg",
+        "ffprobe",
+        str(video),
+        bgm_file,
+        0.3,
+        0.0,
+        "t_demo",
+        original_audio_segments=[
+            OriginalAudioSegment(str(tmp_path / "first.mp4"), 0.0, 2.0, False),
+            OriginalAudioSegment(str(tmp_path / "second.mp4"), 0.0, 3.0, False),
+        ],
+    )
+
+    filter_complex = captured_args[captured_args.index("-filter_complex") + 1]
+    assert captured_args.count("-i") == 2
+    assert "anullsrc" not in filter_complex
+    assert "amix=" not in filter_complex
+    assert captured_args[captured_args.index("-map", captured_args.index("-map") + 1) + 1] == "[bgm]"
 
 
 def test_apply_bgm_cleans_task_unique_tmp_on_failure(tmp_path, monkeypatch) -> None:

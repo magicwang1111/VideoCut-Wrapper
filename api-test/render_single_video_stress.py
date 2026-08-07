@@ -40,6 +40,7 @@ REQUEST_COUNT = int(os.getenv("REQUEST_COUNT", "16"))
 CONCURRENCY = max(1, int(os.getenv("CONCURRENCY", "8")))
 BGM_CATEGORY = os.getenv("BGM_CATEGORY", "").strip() or None
 BGM_FILENAME = os.getenv("BGM_FILENAME", "").strip() or None
+BGM_SOURCE = os.getenv("BGM_SOURCE", "").strip() or None
 DOWNLOAD = os.getenv("DOWNLOAD", "0").strip().lower() not in {"0", "false", "no", "off"}
 REQUEST_TIMEOUT_SECONDS = int(os.getenv("REQUEST_TIMEOUT_SECONDS", "60"))
 POLL_INTERVAL_SECONDS = float(os.getenv("POLL_INTERVAL_SECONDS", "5"))
@@ -73,8 +74,12 @@ def raise_for_error(response: requests.Response, label: str) -> None:
 
 def build_payload() -> dict[str, Any]:
     overrides: dict[str, Any] = {}
-    if BGM_CATEGORY:
-        overrides["bgm"] = {"category": BGM_CATEGORY}
+    if BGM_SOURCE or BGM_CATEGORY:
+        overrides["bgm"] = {}
+        if BGM_SOURCE:
+            overrides["bgm"]["source"] = BGM_SOURCE
+        if BGM_CATEGORY:
+            overrides["bgm"]["category"] = BGM_CATEGORY
         if BGM_FILENAME:
             overrides["bgm"]["filename"] = BGM_FILENAME
     return {
@@ -228,12 +233,17 @@ def poll_submitted_tasks(submitted: list[dict[str, Any]]) -> list[dict[str, Any]
 
 
 def main() -> int:
+    if BGM_SOURCE not in {None, "catalog", "template", "bgm-avatar"}:
+        raise RuntimeError("BGM_SOURCE must be catalog, template, or bgm-avatar")
+    if BGM_SOURCE in {"template", "bgm-avatar"} and (not BGM_CATEGORY or not BGM_FILENAME):
+        raise RuntimeError("BGM_CATEGORY and BGM_FILENAME are required for template and bgm-avatar")
     print(f"[config] API_BASE_URL={API_BASE_URL}")
     print(f"[config] API_KEY_SET={bool(API_KEY and API_KEY != 'change-me')}")
     print(f"[config] pipeline={PIPELINE}")
     print(f"[config] single_video_oss_key={SINGLE_VIDEO_OSS_KEY}")
     print(f"[config] request_count={REQUEST_COUNT}, concurrency={CONCURRENCY}, download={DOWNLOAD}")
-    print(f"[config] bgm={BGM_CATEGORY + '/' + BGM_FILENAME if BGM_CATEGORY and BGM_FILENAME else (BGM_CATEGORY or '<random>')}")
+    bgm_name = BGM_CATEGORY + "/" + BGM_FILENAME if BGM_CATEGORY and BGM_FILENAME else (BGM_CATEGORY or "<random>")
+    print(f"[config] bgm={(BGM_SOURCE + '/') if BGM_SOURCE else ''}{bgm_name}")
 
     test_health()
     max_workers = min(CONCURRENCY, REQUEST_COUNT)

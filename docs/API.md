@@ -513,9 +513,9 @@ Content-Type: application/json
 }
 ```
 
-`clips` 只放视频/图片素材；用户上传音频放在 `overrides.bgm.fileId`。传入 `fileId` 后，服务端使用该上传音频替代曲库音乐，最终视频不保留原声。
+`clips` 只放视频/图片素材；用户上传音频放在 `overrides.bgm.fileId`。传入 `fileId` 后，服务端使用该上传音频替代曲库音乐，但不会替换输入视频的原声；输入存在音轨时会把原声与该音乐叠加。
 
-`subtitle-burn` 是例外：用户音乐不会替换原音轨，而是在压制字幕的同一次 FFmpeg 执行中与原音轨混合。两路默认音量均为 `1.0`，不做自动 ducking；不传 `overrides.bgm` 时继续只压字幕并保留原声。
+`subtitle-burn` 通过独立链路在压制字幕的同一次 FFmpeg 执行中混合原声和音乐。两路默认音量均为 `1.0`，不做自动 ducking；不传 `overrides.bgm` 时继续只压字幕并保留原声。
 
 口播音乐示例：
 
@@ -652,6 +652,7 @@ zoom-dissolve
 BGM 指定规则：
 
 - 所有通过标准 PipelineRunner 执行的现有及新增 Pipeline 均支持公开曲库、隐藏模板、口播曲库和用户上传音频四种 `overrides.bgm` 输入。来源选择字段会自动启用 BGM；显式 `enabled=false` 仍优先。
+- 添加 BGM 前会逐段检测输入音轨：有原声的片段按 `trim_start` 和有效时长裁剪原声，无原声的片段补等长静音；所有片段音频按视频顺序拼接后与 BGM 叠加。全部输入均无原声时只输出 BGM 音轨。
 - 对接方应先调用 `GET /bgm` 获取当前实时清单；`docs/BGM_MANIFEST.json` 是打包脚本可刷新的静态清单，适合离线对齐，不替代运行时扫描结果。
 - 用户上传音频不需要调用 `GET /bgm`。客户端先用 `/upload` 上传音频，再在 `/render` 的 `overrides.bgm.fileId` 里传音频 `fileId`。
 - 模板音乐不需要调用 `GET /bgm`。后台先调用 `POST /admin/bgm-template/sync`，再在 `/render` 的 `overrides.bgm` 中传 `source="template"`、`category` 和 `filename`。
