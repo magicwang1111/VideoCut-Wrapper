@@ -176,11 +176,11 @@ Content-Type: application/json
 支持的音乐输入为：
 
 - `{"source":"catalog","category":"calm","filename":"1"}`：公开曲库；`source` 可省略。
-- `{"source":"bgm-avatar","category":"口播测试","filename":"1"}`：口播专用曲库。
+- `{"source":"bgm-avatar","category":"口播测试","filename":"1"}`：精确选择口播专用曲库歌曲；省略 `filename` 时只在 `口播测试` 分类内随机选择。
 - `{"source":"template","category":"测试1","filename":"生活感"}`：隐藏模板曲库。
 - `{"fileId":"audio123def45"}`：用户通过 `/upload` 上传的临时音频。
 
-模板和口播音乐必须显式提供 `source/category/filename`。口播曲库来自 `oss://goumee-coze/GouMei-Video-Cut/bgm-avatar/`，前端通过鉴权接口 `GET /bgm-avatar` 获取清单。
+模板音乐必须显式提供 `source/category/filename`。口播音乐必须显式提供 `source/category`，`filename` 可选；省略时仅在对应口播分类内随机选择。口播曲库来自 `oss://goumee-coze/GouMei-Video-Cut/bgm-avatar/`，前端通过鉴权接口 `GET /bgm-avatar` 获取清单。
 
 `clips[0]` 是 OSS object key，不是：
 

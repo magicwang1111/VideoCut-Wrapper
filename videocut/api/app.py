@@ -454,6 +454,7 @@ def _validate_bgm_template_override(
     source: str = "template",
     source_dir: Path | None = None,
     root_field: str = "templateBgmRoot",
+    require_filename: bool = True,
 ) -> None:
     template_bgm_dir = source_dir or resolve_bgm_template_dir(root_dir)
     category = bgm.get("category")
@@ -469,7 +470,8 @@ def _validate_bgm_template_override(
             )
         )
     filename = bgm.get("filename")
-    if not isinstance(filename, str) or not filename.strip():
+    has_filename = isinstance(filename, str) and bool(filename.strip())
+    if require_filename and not has_filename:
         raise _invalid_bgm_override(
             _bgm_template_error_details(
                 template_bgm_dir=template_bgm_dir,
@@ -510,6 +512,24 @@ def _validate_bgm_template_override(
             )
         )
 
+    allowed_extensions = set(allowed_bgm_extensions())
+    files = sorted(p for p in category_dir.iterdir() if p.is_file())
+    valid_audio_files = [p for p in files if p.suffix.lower() in allowed_extensions]
+    if not has_filename:
+        if not valid_audio_files:
+            raise _invalid_bgm_override(
+                _bgm_template_error_details(
+                    template_bgm_dir=template_bgm_dir,
+                    reason="no_audio_files",
+                    category=category,
+                    field="overrides.bgm.category",
+                    extra={"allowedExtensions": allowed_bgm_extensions()},
+                    source=source,
+                    root_field=root_field,
+                )
+            )
+        return
+
     try:
         filename_stem = normalize_bgm_filename_stem(filename)
     except RenderError as exc:
@@ -526,9 +546,6 @@ def _validate_bgm_template_override(
             )
         ) from exc
 
-    allowed_extensions = set(allowed_bgm_extensions())
-    files = sorted(p for p in category_dir.iterdir() if p.is_file())
-    valid_audio_files = [p for p in files if p.suffix.lower() in allowed_extensions]
     stem_matches = [p for p in files if p.stem == filename_stem]
     valid_matches = [p for p in stem_matches if p.suffix.lower() in allowed_extensions]
     invalid_matches = [p for p in stem_matches if p.suffix.lower() not in allowed_extensions]
@@ -597,6 +614,7 @@ def _validate_bgm_avatar_override(root_dir: Path, bgm: dict[str, Any]) -> None:
         source="bgm-avatar",
         source_dir=resolve_bgm_avatar_dir(root_dir),
         root_field="bgmAvatarRoot",
+        require_filename=False,
     )
 
 

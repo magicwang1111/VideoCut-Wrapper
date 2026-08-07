@@ -207,6 +207,40 @@ def test_pipeline_runner_resolves_avatar_bgm_from_avatar_dir_only(tmp_path) -> N
     assert chosen == avatar_bgm.resolve()
 
 
+def test_pipeline_runner_randomly_resolves_avatar_bgm_from_category(tmp_path, monkeypatch) -> None:
+    ctx = _make_context(tmp_path)
+    ctx.config.bgm = PipelineBgmConfig(
+        enabled=True,
+        source="bgm-avatar",
+        category="口播测试",
+        volume=1.0,
+    )
+    category_dir = tmp_path / "input" / "bgm-avatar" / "口播测试"
+    first = category_dir / "1.mp3"
+    second = category_dir / "2.mp3"
+    other_category = tmp_path / "input" / "bgm-avatar" / "其他分类" / "other.mp3"
+    public_bgm = tmp_path / "input" / "bgm" / "口播测试" / "public.mp3"
+    category_dir.mkdir(parents=True)
+    other_category.parent.mkdir(parents=True)
+    public_bgm.parent.mkdir(parents=True)
+    first.write_text("avatar 1", encoding="utf-8")
+    second.write_text("avatar 2", encoding="utf-8")
+    other_category.write_text("other category", encoding="utf-8")
+    public_bgm.write_text("public", encoding="utf-8")
+    candidates: list[Path] = []
+
+    def choose_last(files: list[Path]) -> Path:
+        candidates.extend(files)
+        return files[-1]
+
+    monkeypatch.setattr(runner_module.random, "choice", choose_last)
+
+    chosen = PipelineRunner(tmp_path).resolve_bgm_path(ctx)
+
+    assert chosen == second.resolve()
+    assert candidates == [first.resolve(), second.resolve()]
+
+
 def test_probe_single_video_reports_audio_stream_presence(monkeypatch) -> None:
     monkeypatch.setattr(
         runner_module.subprocess,

@@ -469,6 +469,7 @@ def test_subtitle_render_accepts_all_four_bgm_sources(tmp_path, monkeypatch) -> 
         )
         requests = [
             {"source": "catalog", "category": "公开测试", "filename": "1"},
+            {"source": "bgm-avatar", "category": "口播测试"},
             {"source": "bgm-avatar", "category": "口播测试", "filename": "1"},
             {"source": "template", "category": "模板测试", "filename": "1"},
             {"fileId": "audio123def45"},
@@ -492,7 +493,6 @@ def test_subtitle_render_accepts_all_four_bgm_sources(tmp_path, monkeypatch) -> 
 @pytest.mark.parametrize(
     "bgm",
     [
-        {"source": "bgm-avatar", "category": "口播测试"},
         {"source": "template", "filename": "1"},
         {"source": "bgm-avatar", "category": "口播测试", "filename": "1", "dir": "input/bgm"},
     ],
@@ -865,6 +865,34 @@ def test_bgm_concat_accepts_bgm_avatar_source(tmp_path, monkeypatch) -> None:
             "source": "bgm-avatar",
             "category": "口播测试",
             "filename": "1",
+        }
+
+
+def test_bgm_concat_accepts_random_bgm_avatar_category(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    avatar_dir = tmp_path / "runtime" / "bgm-avatar"
+    _write_pipeline_config(pipelines_root, "bgm-concat", _make_pipeline_payload("bgm-concat"))
+    (avatar_dir / "口播测试").mkdir(parents=True)
+    (avatar_dir / "口播测试" / "1.mp3").write_text("music", encoding="utf-8")
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root, bgm_avatar_dir=avatar_dir)
+
+    with TestClient(api_app_module.create_app()) as client:
+        client.app.state.store.save_file("file1", "GouMei-Video-Cut/inputs/file1.mp4")
+        response = client.post(
+            "/render",
+            headers={"X-Api-Key": "test-key", "Content-Type": "application/json"},
+            json={
+                "pipeline": "bgm-concat",
+                "clips": ["file1"],
+                "overrides": {"bgm": {"source": "bgm-avatar", "category": "口播测试"}},
+            },
+        )
+
+        assert response.status_code == 200
+        assert FakeTaskQueue.instances[-1].tasks[-1].payload["overrides"]["bgm"] == {
+            "source": "bgm-avatar",
+            "category": "口播测试",
         }
 
 

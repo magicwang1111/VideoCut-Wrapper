@@ -533,7 +533,7 @@ Content-Type: application/json
 }
 ```
 
-公开曲库音乐使用 `source="catalog"`（也可省略 `source`），模板音乐使用 `source="template"`，口播音乐使用 `source="bgm-avatar"`，用户上传音乐使用 `{"bgm":{"fileId":"audioFileId1"}}`。模板和口播音乐必须同时传 `category + filename`。
+公开曲库音乐使用 `source="catalog"`（也可省略 `source`），模板音乐使用 `source="template"`，口播音乐使用 `source="bgm-avatar"`，用户上传音乐使用 `{"bgm":{"fileId":"audioFileId1"}}`。模板音乐必须同时传 `category + filename`；口播音乐必须传 `category`，省略 `filename` 时在该口播分类内随机选择。
 
 成功响应：
 
@@ -656,14 +656,14 @@ BGM 指定规则：
 - 对接方应先调用 `GET /bgm` 获取当前实时清单；`docs/BGM_MANIFEST.json` 是打包脚本可刷新的静态清单，适合离线对齐，不替代运行时扫描结果。
 - 用户上传音频不需要调用 `GET /bgm`。客户端先用 `/upload` 上传音频，再在 `/render` 的 `overrides.bgm.fileId` 里传音频 `fileId`。
 - 模板音乐不需要调用 `GET /bgm`。后台先调用 `POST /admin/bgm-template/sync`，再在 `/render` 的 `overrides.bgm` 中传 `source="template"`、`category` 和 `filename`。
-- 口播音乐通过 `GET /bgm-avatar` 查询；`bgm-concat` 使用时在 `overrides.bgm` 中传 `source="bgm-avatar"`、`category` 和 `filename`，只查 `BGM_AVATAR_DIR`，不回退公开或备份曲库。
+- 口播音乐通过 `GET /bgm-avatar` 查询；使用时在 `overrides.bgm` 中传 `source="bgm-avatar"` 和 `category`，可选传 `filename`。省略 `filename` 时只在 `BGM_AVATAR_DIR/<category>` 内随机选择，不跨分类，也不回退公开或备份曲库。
 - `overrides.bgm.fileId` 场景只接受 `fileId` 一个字段，不能同时传 `category`、`filename`、`dir`、`volume`、`fade_out` 或其它 BGM 字段。音量使用 pipeline 默认配置。
 - 用户上传音频字段必须是驼峰 `fileId`；snake_case `file_id` 是非法字段，会返回 `error_code=2007`。
 - `overrides.bgm` 只接受 `fileId`、`enabled`、`source`、`dir`、`category`、`filename`、`volume`、`fade_out`，其它字段会返回 `error_code=2007`。
 - 使用 `overrides.bgm.fileId` 后，服务端直接使用用户上传音频，不扫描 `/input/bgm`，不随机选择曲库音乐。
 - 未传 `source` 或 `source="catalog"` 时，`overrides.bgm.category` 是 `/app/input/bgm` 下的英文相对目录名，例如 `calm`。
 - `source="template"` 时，`category` 是 `/app/input/bgm-templete` 下的相对目录名，例如 `测试1`；`filename` 是不带扩展名的文件名，例如 `生活感`。模板音乐只查模板目录，不查公开曲库或归档 backup。
-- `source="bgm-avatar"` 时，`category` 是 `/app/input/bgm-avatar` 下的相对目录名，例如 `口播测试`；`filename` 是不带扩展名的文件名，例如 `1`。
+- `source="bgm-avatar"` 时，`category` 是 `/app/input/bgm-avatar` 下的相对目录名，例如 `口播测试`；可选的 `filename` 是不带扩展名的文件名，例如 `1`。省略 `filename` 时仅在该 `category` 下随机选择。
 - `overrides.bgm.filename` 是分类目录下不带扩展名的歌曲 ID，例如 `1`；真实文件仍可以是 `1.mp3`。
 - 传 `category + filename` 时，服务端精确选择该分类下的文件；只传 `category` 时，服务端只在该分类目录下随机选择一首。
 - 精确指定歌曲时使用 `GET /bgm` 响应里的 `files[].category + files[].filename`，按分类随机时使用 `categories[].name`。

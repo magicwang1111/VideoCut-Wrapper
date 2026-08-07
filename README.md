@@ -317,9 +317,9 @@ curl "http://127.0.0.1:3000/bgm-avatar" \
   -H "X-Api-Key: goumee-music"
 ```
 
-响应结构与 `GET /bgm` 相同，但只返回 `oss://goumee-coze/GouMei-Video-Cut/bgm-avatar/` 同步到本地口播目录的歌曲。`subtitle-burn` 或 `bgm-concat` 使用时必须显式传 `source: "bgm-avatar"`、`category` 和 `filename`。
+响应结构与 `GET /bgm` 相同，但只返回 `oss://goumee-coze/GouMei-Video-Cut/bgm-avatar/` 同步到本地口播目录的歌曲。`subtitle-burn` 或 `bgm-concat` 使用时必须显式传 `source: "bgm-avatar"` 和 `category`；省略 `filename` 时只在该 `category` 目录内随机选择一首，提供 `filename` 时精确选择歌曲。
 
-所有通过标准 PipelineRunner 执行的现有及新增 Pipeline 均统一支持四种 `overrides.bgm` 输入：公开曲库 `source="catalog"`（也可省略 `source`）、隐藏模板 `source="template"`、口播曲库 `source="bgm-avatar"`、用户上传音频 `fileId`。传入来源选择字段时默认启用 BGM，只有显式传 `enabled: false` 才禁用。
+所有通过标准 PipelineRunner 执行的现有及新增 Pipeline 均统一支持四种 `overrides.bgm` 输入：公开曲库 `source="catalog"`（也可省略 `source`）、隐藏模板 `source="template"`、口播曲库 `source="bgm-avatar"`、用户上传音频 `fileId`。口播曲库可用 `category + filename` 精确选择，或只传 `category` 在该口播分类内随机选择。传入来源选择字段时默认启用 BGM，只有显式传 `enabled: false` 才禁用。
 
 添加 BGM 时会在视频标准化前逐段检测输入音轨。有原声的片段按其裁剪区间保留原声，无原声的片段补等长静音以保持多段时间轴，随后将整条原声音轨与 BGM 叠加；全部输入均无原声时只写入 BGM。该行为适用于所有通过标准 PipelineRunner 执行的现有及新增 Pipeline。
 
