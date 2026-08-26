@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from concurrent.futures import Future
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -245,6 +246,71 @@ def test_task_queue_records_output_upload_diagnostics(tmp_path, monkeypatch) -> 
     completed = store.get("t_rendered")
     assert completed is not None
     assert completed.status == "completed"
+    assert not output_path.exists()
+    store.close()
+
+
+def test_local_output_cleanup_failure_does_not_reverse_completed_task(tmp_path, caplog) -> None:
+    events: list[dict] = []
+    store = TaskStore(tmp_path / "tasks.db")
+    store.create(_make_task("t_cleanup_warning"))
+    store.mark_rendering("t_cleanup_warning")
+    output_path = tmp_path / "final.mp4"
+    output_path.mkdir()
+    future: Future[str] = Future()
+    future.set_result("GouMei-Video-Cut/outputs/t_cleanup_warning/final.mp4")
+
+    queue = TaskQueue(store, FakeOss(), 1, events.append, tmp_path)
+    queue.pool = RecordingPool()  # type: ignore[assignment]
+    queue._handle_upload_done("t_cleanup_warning", future, str(output_path))
+    queue.upload_executor.shutdown(wait=True)
+
+    completed = store.get("t_cleanup_warning")
+    assert completed is not None
+    assert completed.status == "completed"
+    assert completed.oss_key == "GouMei-Video-Cut/outputs/t_cleanup_warning/final.mp4"
+    assert output_path.exists()
+    assert events == [
+        {
+            "type": "completed",
+            "taskId": "t_cleanup_warning",
+            "ossKey": "GouMei-Video-Cut/outputs/t_cleanup_warning/final.mp4",
+        }
+    ]
+    assert "local output cleanup failed" in caplog.text
+    store.close()
+
+
+def test_output_upload_failure_retains_local_output(tmp_path, monkeypatch) -> None:
+    class FailingOss(FakeOss):
+        def upload(self, local_path, oss_key) -> None:
+            raise RuntimeError("simulated OSS failure")
+
+    def fake_embed(ffmpeg_path, ffprobe_path, video_path, task_id, **kwargs):
+        return build_aigc_metadata(task_id)
+
+    store = TaskStore(tmp_path / "tasks.db")
+    store.create(_make_task("t_upload_failed"))
+    store.mark_rendering("t_upload_failed")
+    output_path = tmp_path / "final.mp4"
+    output_path.write_bytes(b"video-data")
+    monkeypatch.setattr(task_queue_module, "embed_aigc_metadata", fake_embed)
+    monkeypatch.setattr(task_queue_module, "UPLOAD_MAX_ATTEMPT", 1)
+
+    queue = TaskQueue(store, FailingOss(), 1, lambda event: None, tmp_path)
+    queue.ffmpeg_path = "ffmpeg"
+    queue.ffprobe_path = "ffprobe"
+    queue.pool = RecordingPool()  # type: ignore[assignment]
+    queue._handle_message(
+        {"type": "task_rendered", "task_id": "t_upload_failed", "output_path": str(output_path)}
+    )
+    queue.upload_executor.shutdown(wait=True)
+
+    failed = store.get("t_upload_failed")
+    assert failed is not None
+    assert failed.status == "failed"
+    assert "simulated OSS failure" in (failed.error or "")
+    assert output_path.exists()
     store.close()
 
 
@@ -289,6 +355,7 @@ def test_aigc_labeling_failure_prevents_upload(tmp_path, monkeypatch) -> None:
     assert diagnostics["aigcMetadataErrorCode"] == 3006
     assert diagnostics["aigcMetadataErrorReason"] == "AIGC_METADATA_UNKNOWN"
     assert oss.uploaded is False
+    assert output_path.exists()
     store.close()
 
 

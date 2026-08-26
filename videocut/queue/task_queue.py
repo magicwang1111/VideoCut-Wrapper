@@ -340,7 +340,9 @@ class TaskQueue:
                 future = self.upload_executor.submit(self._upload_output, task_id, output_path, requested_oss_key)
             cleanup_dir = message.get("cleanup_dir") if isinstance(message.get("cleanup_dir"), str) else None
             future.add_done_callback(
-                lambda item, task_id=task_id, cleanup_dir=cleanup_dir: self._handle_upload_done(task_id, item, cleanup_dir)
+                lambda item, task_id=task_id, output_path=output_path, cleanup_dir=cleanup_dir: self._handle_upload_done(
+                    task_id, item, output_path, cleanup_dir
+                )
             )
             self._drain()
             return
@@ -562,7 +564,13 @@ class TaskQueue:
         )
         raise RuntimeError(f"Output upload failed after {max(1, UPLOAD_MAX_ATTEMPT)} attempt(s): {last_error}")
 
-    def _handle_upload_done(self, task_id: str, future: Future[str], cleanup_dir: str | None = None) -> None:
+    def _handle_upload_done(
+        self,
+        task_id: str,
+        future: Future[str],
+        output_path: str,
+        cleanup_dir: str | None = None,
+    ) -> None:
         try:
             oss_key = future.result()
         except Exception as exc:
@@ -574,6 +582,10 @@ class TaskQueue:
             return
         self.store.mark_completed(task_id, oss_key)
         self.on_event({"type": "completed", "taskId": task_id, "ossKey": oss_key})
+        try:
+            Path(output_path).unlink(missing_ok=True)
+        except OSError:
+            logger.warning("task %s completed but local output cleanup failed: %s", task_id, output_path, exc_info=True)
         if cleanup_dir:
             shutil.rmtree(cleanup_dir, ignore_errors=True)
 
