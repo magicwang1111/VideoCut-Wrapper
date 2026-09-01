@@ -466,19 +466,25 @@ def sync_bgm_template_from_oss(root_dir: str | Path, *, category: str | None = N
     }
 
 
-def apply_bgm(
+def apply_audio(
     ffmpeg_path: str,
     ffprobe_path: str,
     video_path: str,
-    bgm_file: Path,
-    volume: float,
-    fade_out: float,
+    bgm_file: Path | None = None,
+    volume: float = 0.3,
+    fade_out: float = 0.0,
     task_id: str | None = None,
     original_audio_segments: list[OriginalAudioSegment] | None = None,
+    preserve_original_audio: bool = True,
 ) -> None:
     video_file = Path(video_path)
-    tmp_token = task_id or "bgm"
-    tmp_path = video_file.with_name(f"{video_file.name}.{tmp_token}.{uuid4().hex}.bgm_tmp.mp4")
+    segments = original_audio_segments or []
+    has_original_audio = preserve_original_audio and any(segment.has_audio for segment in segments)
+    if not has_original_audio and bgm_file is None:
+        return
+
+    tmp_token = task_id or "audio"
+    tmp_path = video_file.with_name(f"{video_file.name}.{tmp_token}.{uuid4().hex}.audio_tmp.mp4")
     raw = subprocess.check_output(
         [ffprobe_path, "-v", "error", "-print_format", "json", "-show_format", video_path],
         encoding="utf-8",
@@ -486,8 +492,6 @@ def apply_bgm(
     )
     video_duration = float(json.loads(raw)["format"]["duration"])
 
-    segments = original_audio_segments or []
-    has_original_audio = any(segment.has_audio for segment in segments)
     input_args = [ffmpeg_path, "-i", video_path]
     filter_parts: list[str] = []
     segment_labels: list[str] = []
@@ -522,20 +526,23 @@ def apply_bgm(
                 f"apad=whole_dur={video_duration:.6f},atrim=duration={video_duration:.6f}[original]"
             )
 
-    bgm_input_index = next_input_index
-    input_args.extend(["-i", str(bgm_file)])
-    bgm_filter = (
-        f"[{bgm_input_index}:a:0]aloop=loop=-1:size=2000000000,"
-        f"volume={volume:.4f},"
-        f"atrim=end={video_duration:.6f}"
-    )
-    if fade_out > 0:
-        fade_start = max(0.0, video_duration - fade_out)
-        bgm_filter += f",afade=t=out:st={fade_start:.6f}:d={fade_out:.4f}"
-    bgm_filter += "[bgm]"
-    filter_parts.append(bgm_filter)
-    output_audio_label = "[bgm]"
-    if has_original_audio:
+    has_bgm = bgm_file is not None
+    if has_bgm:
+        bgm_input_index = next_input_index
+        input_args.extend(["-i", str(bgm_file)])
+        bgm_filter = (
+            f"[{bgm_input_index}:a:0]aloop=loop=-1:size=2000000000,"
+            f"volume={volume:.4f},"
+            f"atrim=end={video_duration:.6f}"
+        )
+        if fade_out > 0:
+            fade_start = max(0.0, video_duration - fade_out)
+            bgm_filter += f",afade=t=out:st={fade_start:.6f}:d={fade_out:.4f}"
+        bgm_filter += "[bgm]"
+        filter_parts.append(bgm_filter)
+
+    output_audio_label = "[original]" if has_original_audio else "[bgm]"
+    if has_original_audio and has_bgm:
         filter_parts.append(
             "[original][bgm]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[audio]"
         )

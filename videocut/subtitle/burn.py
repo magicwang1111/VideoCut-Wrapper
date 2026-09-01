@@ -40,7 +40,7 @@ def probe_duration(ffprobe: str, path: str | Path) -> float:
 def burn_ass(input_video: str | Path, ass_path: str | Path, output_video: str | Path,
              ffmpeg: str, ffprobe: str, quality: str = "high", timeout: int = 3600,
              bgm_path: str | Path | None = None, bgm_volume: float = 1.0,
-             bgm_fade_out: float = 0.0) -> tuple[Path, str]:
+             bgm_fade_out: float = 0.0, preserve_original_audio: bool = True) -> tuple[Path, str]:
     source, subtitle, target = Path(input_video).resolve(), Path(ass_path).resolve(), Path(output_video).resolve()
     streams = probe_media(ffprobe, source)
     if not streams["video"]:
@@ -66,30 +66,38 @@ def burn_ass(input_video: str | Path, ass_path: str | Path, output_video: str | 
         if bgm_fade_out > 0:
             fade_start = max(0.0, duration - bgm_fade_out)
             bgm_filter += f",afade=t=out:st={fade_start:.6f}:d={bgm_fade_out:.4f}"
-        bgm_filter += "[bgm];[0:a:0]volume=1.0000[original];"
-        bgm_filter += "[original][bgm]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[audio]"
+        bgm_filter += "[bgm]"
+        output_audio_label = "[bgm]"
+        if preserve_original_audio:
+            bgm_filter += ";[0:a:0]volume=1.0000[original];"
+            bgm_filter += "[original][bgm]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[audio]"
+            output_audio_label = "[audio]"
         command.extend(
             [
                 "-stream_loop", "-1", "-i", str(bgm),
                 "-filter_complex", bgm_filter,
-                "-map", "0:v:0", "-map", "[audio]",
+                "-map", "0:v:0", "-map", output_audio_label,
             ]
         )
-    else:
+    elif preserve_original_audio:
         command.extend(["-map", "0:v:0", "-map", "0:a?"])
+    else:
+        command.extend(["-map", "0:v:0", "-an"])
+    expected_audio = preserve_original_audio or bgm_path is not None
     command.extend(
         [
             "-vf", ass_filter,
             *settings.output_args(preset),
-            "-c:a", "aac", "-b:a", "192k",
-            "-movflags", "+faststart", str(target),
         ]
     )
+    if expected_audio:
+        command.extend(["-c:a", "aac", "-b:a", "192k"])
+    command.extend(["-movflags", "+faststart", str(target)])
     result = subprocess.run(command, cwd=subtitle.parent, capture_output=True, text=True,
                             encoding="utf-8", errors="replace", timeout=timeout)
     if result.returncode != 0:
         raise RuntimeError(f"FFmpeg subtitle burn failed: {(result.stderr or result.stdout or '')[-2000:]}")
     output_streams = probe_media(ffprobe, target) if target.is_file() and target.stat().st_size > 0 else {}
-    if not output_streams.get("video") or not output_streams.get("audio"):
+    if not output_streams.get("video") or bool(output_streams.get("audio")) != expected_audio:
         raise RuntimeError("Subtitle burn output validation failed.")
     return target, settings.encoder

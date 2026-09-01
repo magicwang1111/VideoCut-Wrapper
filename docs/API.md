@@ -513,9 +513,9 @@ Content-Type: application/json
 }
 ```
 
-`clips` 只放视频/图片素材；用户上传音频放在 `overrides.bgm.fileId`。传入 `fileId` 后，服务端使用该上传音频替代曲库音乐，但不会替换输入视频的原声；输入存在音轨时会把原声与该音乐叠加。
+`clips` 只放视频/图片素材；用户上传音频放在 `overrides.bgm.fileId`。传入 `fileId` 后，服务端使用该上传音频替代曲库音乐。默认会把输入原声与该音乐叠加；同时传 `overrides.preserve_original_audio=false` 时只输出用户音乐。
 
-`subtitle-burn` 通过独立链路在压制字幕的同一次 FFmpeg 执行中混合原声和音乐。两路默认音量均为 `1.0`，不做自动 ducking；不传 `overrides.bgm` 时继续只压字幕并保留原声。
+`subtitle-burn` 通过独立链路在压制字幕的同一次 FFmpeg 执行中处理音频。保留原声并选择音乐时，两路默认音量均为 `1.0`，不做自动 ducking；`preserve_original_audio` 同样支持四种统一音频输出行为。
 
 口播音乐示例：
 
@@ -632,6 +632,7 @@ other-prefix/input/a.mp4
 | `transition_overrides` | 覆盖单个转场的类型、时长和缩放参数 |
 | `default_transition` | 覆盖默认转场 |
 | `bgm` | 覆盖 BGM 设置，常用 `{"enabled": false}` 禁用 BGM，`{"category": "calm"}` 按分类随机，`{"category": "calm", "filename": "1"}` 指定公开曲库音乐，`{"source": "template", "category": "测试1", "filename": "生活感"}` 指定后台模板音乐，`{"source": "bgm-avatar", "category": "口播测试", "filename": "1"}` 指定口播音乐，或 `{"fileId": "audioFileId1"}` 使用用户上传音频 |
+| `preserve_original_audio` | 是否保留输入视频原音轨，必须是布尔值，默认 `true`；设为 `false` 时最终成片只保留 BGM，没有 BGM 时输出无音轨视频 |
 | `output` | 覆盖渲染临时输出文件名，API 最终 OSS key 使用 `outputs/<YYYYMMDD>/<YYYYMMDD_HHMMSS>/<taskId>/final.mp4`，时间戳为北京时间（Asia/Shanghai） |
 
 转场类型：
@@ -652,7 +653,8 @@ zoom-dissolve
 BGM 指定规则：
 
 - 所有通过标准 PipelineRunner 执行的现有及新增 Pipeline 均支持公开曲库、隐藏模板、口播曲库和用户上传音频四种 `overrides.bgm` 输入。来源选择字段会自动启用 BGM；显式 `enabled=false` 仍优先。
-- 添加 BGM 前会逐段检测输入音轨：有原声的片段按 `trim_start` 和有效时长裁剪原声，无原声的片段补等长静音；所有片段音频按视频顺序拼接后与 BGM 叠加。全部输入均无原声时只输出 BGM 音轨。
+- `overrides.preserve_original_audio` 默认是 `true`，无论是否添加 BGM 都会逐段恢复输入原声：有原声的片段按 `trim_start` 和有效时长裁剪，无原声的片段补等长静音。设为 `false` 时不读取输入原声；有 BGM 时只输出 BGM，没有 BGM 时输出无音轨视频。
+- `preserve_original_audio=true` 且存在 BGM 时，所有片段音频按视频顺序拼接后与 BGM 叠加；全部输入均无原声时只输出 BGM 音轨。
 - 对接方应先调用 `GET /bgm` 获取当前实时清单；`docs/BGM_MANIFEST.json` 是打包脚本可刷新的静态清单，适合离线对齐，不替代运行时扫描结果。
 - 用户上传音频不需要调用 `GET /bgm`。客户端先用 `/upload` 上传音频，再在 `/render` 的 `overrides.bgm.fileId` 里传音频 `fileId`。
 - 模板音乐不需要调用 `GET /bgm`。后台先调用 `POST /admin/bgm-template/sync`，再在 `/render` 的 `overrides.bgm` 中传 `source="template"`、`category` 和 `filename`。

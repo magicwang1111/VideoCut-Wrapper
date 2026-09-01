@@ -248,3 +248,73 @@ def test_burn_ass_mixes_original_audio_and_looped_bgm_without_normalization(monk
     assert "[0:a:0]volume=1.0000[original]" in filter_complex
     assert "[1:a:0]volume=1.0000" in filter_complex
     assert "amix=inputs=2:duration=first:dropout_transition=0:normalize=0" in filter_complex
+
+
+@pytest.mark.parametrize(
+    ("preserve_original_audio", "with_bgm", "expected_audio_map"),
+    [
+        (True, False, "0:a?"),
+        (False, True, "[bgm]"),
+        (False, False, None),
+    ],
+)
+def test_burn_ass_applies_original_audio_policy(
+    monkeypatch, tmp_path, preserve_original_audio, with_bgm, expected_audio_map
+) -> None:
+    source = tmp_path / "source.mp4"
+    subtitle = tmp_path / "subtitle.ass"
+    bgm = tmp_path / "bgm.mp3"
+    target = tmp_path / "final.mp4"
+    source.write_bytes(b"video")
+    subtitle.write_text("[Script Info]\n", encoding="utf-8")
+    if with_bgm:
+        bgm.write_bytes(b"music")
+    commands: list[list[str]] = []
+    expected_audio = preserve_original_audio or with_bgm
+
+    def fake_probe_media(ffprobe, path):
+        if Path(path).resolve() == source.resolve():
+            return {"video": True, "audio": True}
+        return {"video": True, "audio": expected_audio}
+
+    monkeypatch.setattr("videocut.subtitle.burn.probe_media", fake_probe_media)
+    monkeypatch.setattr("videocut.subtitle.burn.probe_duration", lambda ffprobe, path: 5.0)
+    monkeypatch.setattr(
+        "videocut.subtitle.burn.resolve_runtime_video_settings",
+        lambda ffmpeg, settings: SimpleNamespace(
+            encoder="libx264",
+            input_args=lambda: [],
+            output_args=lambda preset: ["-c:v", "libx264"],
+        ),
+    )
+    monkeypatch.setattr("videocut.subtitle.burn.resolve_video_settings", lambda: object())
+
+    def fake_run(command, **kwargs):
+        commands.append([str(item) for item in command])
+        Path(command[-1]).write_bytes(b"output")
+        return SimpleNamespace(returncode=0, stderr="", stdout="")
+
+    monkeypatch.setattr("videocut.subtitle.burn.subprocess.run", fake_run)
+
+    burn_ass(
+        source,
+        subtitle,
+        target,
+        "ffmpeg",
+        "ffprobe",
+        bgm_path=bgm if with_bgm else None,
+        preserve_original_audio=preserve_original_audio,
+    )
+
+    command = commands[-1]
+    if expected_audio_map is None:
+        assert command.count("-map") == 1
+        assert "-an" in command
+        assert "-c:a" not in command
+    else:
+        second_map = command.index("-map", command.index("-map") + 1)
+        assert command[second_map + 1] == expected_audio_map
+        assert "-c:a" in command
+    if with_bgm:
+        filter_complex = command[command.index("-filter_complex") + 1]
+        assert ("amix=" in filter_complex) is preserve_original_audio

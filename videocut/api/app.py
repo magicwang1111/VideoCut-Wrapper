@@ -979,12 +979,21 @@ def create_app() -> FastAPI:
 
         resolved_keys = _resolve_clip_refs(store, oss, body.clips, strict_pipeline=True)
         overrides = deepcopy(body.overrides)
+        if "preserve_original_audio" in overrides and not isinstance(overrides["preserve_original_audio"], bool):
+            raise api_http_exception(
+                400,
+                ApiErrorCode.INVALID_BODY,
+                "Invalid request body.",
+                {"field": "overrides.preserve_original_audio", "expected": "boolean"},
+            )
         if pipeline_name == "subtitle-burn":
-            invalid_override_fields = sorted(field for field in overrides if field != "bgm")
+            invalid_override_fields = sorted(
+                field for field in overrides if field not in {"bgm", "preserve_original_audio"}
+            )
             if invalid_override_fields:
                 raise api_http_exception(
                     400, ApiErrorCode.INVALID_SUBTITLE_OVERRIDE,
-                    "subtitle-burn only accepts the BGM runtime override.",
+                    "subtitle-burn only accepts the BGM and preserve_original_audio runtime overrides.",
                     {"unsupported": invalid_override_fields},
                 )
             invalid_keys = [key for key in resolved_keys if not key.startswith(oss.subtitle_input_prefix)]

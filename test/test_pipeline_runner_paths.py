@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 import videocut.pipeline.runner as runner_module
 from videocut.ffmpeg_config import FFmpegVideoSettings
 from videocut.pipeline.config import ParsedPipelineContext
@@ -81,6 +83,64 @@ def test_pipeline_runner_output_and_meta_are_task_unique(tmp_path, monkeypatch) 
     assert len(list(output_dir.glob("meta_t_second_*.json"))) == 1
 
 
+@pytest.mark.parametrize(("preserve_original_audio", "expected_audio_calls"), [(True, 1), (False, 0)])
+def test_pipeline_runner_applies_audio_policy_without_bgm(
+    tmp_path, monkeypatch, preserve_original_audio, expected_audio_calls
+) -> None:
+    ctx = _make_context(tmp_path)
+    ctx.config.preserve_original_audio = preserve_original_audio
+    applied: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        runner_module,
+        "resolve_runtime_video_settings",
+        lambda ffmpeg_path, configured: FFmpegVideoSettings(encoder="libx264"),
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "probe_single_video",
+        lambda ffprobe_path, video_path: {
+            "duration": 5.0, "width": 1080, "height": 1920, "fps": 24, "has_audio": True
+        },
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "normalize_clips",
+        lambda root_dir, ffmpeg_path, clips, qual_preset, res_preset, video_settings: (clips, lambda: None),
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "ffmpeg_pipeline_concat",
+        lambda ffmpeg_path, clips, junctions, output_path, qual_preset, res_preset, video_settings, task:
+            Path(output_path).write_text("video", encoding="utf-8"),
+    )
+
+    def fake_apply_audio(
+        ffmpeg_path, ffprobe_path, video_path, bgm_file, volume, fade_out, task_id=None,
+        original_audio_segments=None, preserve_original_audio=True,
+    ):
+        applied.append(
+            {
+                "bgm_file": bgm_file,
+                "segments": original_audio_segments,
+                "preserve_original_audio": preserve_original_audio,
+            }
+        )
+
+    monkeypatch.setattr(runner_module, "apply_audio", fake_apply_audio)
+
+    result = PipelineRunner(tmp_path).run(ctx, "ffmpeg", "ffprobe", {}, task_id="t_audio_policy")
+
+    assert result.status == "completed"
+    assert len(applied) == expected_audio_calls
+    if applied:
+        assert applied[0]["bgm_file"] is None
+        assert applied[0]["preserve_original_audio"] is True
+    meta_path = next((tmp_path / "output" / "bgm-concat").glob("meta_t_audio_policy_*.json"))
+    metadata = json.loads(meta_path.read_text(encoding="utf-8"))
+    assert metadata["preserve_original_audio"] is preserve_original_audio
+
+
 def test_pipeline_runner_random_bgm_can_use_backup_category(tmp_path, monkeypatch) -> None:
     ctx = _make_context(tmp_path)
     assert ctx.config.bgm is None
@@ -112,14 +172,14 @@ def test_pipeline_runner_random_bgm_can_use_backup_category(tmp_path, monkeypatc
     def fake_concat(ffmpeg_path, clips, junctions, output_path, qual_preset, res_preset, video_settings, task):
         Path(output_path).write_text("video", encoding="utf-8")
 
-    def fake_apply_bgm(
+    def fake_apply_audio(
         ffmpeg_path, ffprobe_path, video_path, bgm_file, volume, fade_out, task_id=None,
-        original_audio_segments=None,
+        original_audio_segments=None, preserve_original_audio=True,
     ):
         applied_bgm_files.append(Path(bgm_file))
 
     monkeypatch.setattr(runner_module, "ffmpeg_pipeline_concat", fake_concat)
-    monkeypatch.setattr(runner_module, "apply_bgm", fake_apply_bgm)
+    monkeypatch.setattr(runner_module, "apply_audio", fake_apply_audio)
 
     result = PipelineRunner(tmp_path).run(ctx, "ffmpeg", "ffprobe", {}, task_id="t_backup_bgm")
 
@@ -167,15 +227,15 @@ def test_pipeline_runner_template_bgm_uses_template_dir_only(tmp_path, monkeypat
 
     applied_audio_segments = []
 
-    def fake_apply_bgm(
+    def fake_apply_audio(
         ffmpeg_path, ffprobe_path, video_path, bgm_file, volume, fade_out, task_id=None,
-        original_audio_segments=None,
+        original_audio_segments=None, preserve_original_audio=True,
     ):
         applied_bgm_files.append(Path(bgm_file))
         applied_audio_segments.extend(original_audio_segments or [])
 
     monkeypatch.setattr(runner_module, "ffmpeg_pipeline_concat", fake_concat)
-    monkeypatch.setattr(runner_module, "apply_bgm", fake_apply_bgm)
+    monkeypatch.setattr(runner_module, "apply_audio", fake_apply_audio)
 
     result = PipelineRunner(tmp_path).run(ctx, "ffmpeg", "ffprobe", {}, task_id="t_template_bgm")
 
@@ -320,13 +380,13 @@ def test_all_standard_pipelines_collect_each_input_audio_segment(tmp_path, monke
             Path(output_path).write_text("video", encoding="utf-8"),
     )
 
-    def fake_apply_bgm(
+    def fake_apply_audio(
         ffmpeg_path, ffprobe_path, video_path, bgm_file, volume, fade_out, task_id=None,
-        original_audio_segments=None,
+        original_audio_segments=None, preserve_original_audio=True,
     ):
         captured_segments.extend(original_audio_segments or [])
 
-    monkeypatch.setattr(runner_module, "apply_bgm", fake_apply_bgm)
+    monkeypatch.setattr(runner_module, "apply_audio", fake_apply_audio)
 
     result = PipelineRunner(tmp_path).run(ctx, "ffmpeg", "ffprobe", {}, task_id="t_multi_audio")
 

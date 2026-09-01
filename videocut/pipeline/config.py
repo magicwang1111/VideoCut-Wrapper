@@ -540,6 +540,12 @@ def bind_pipeline_config(
     bgm = _clone_bgm(config.bgm)
     if overrides.get("bgm") is not None:
         bgm = parse_bgm_config(overrides.get("bgm"), base=bgm)
+    preserve_original_audio = config.preserve_original_audio
+    if "preserve_original_audio" in overrides:
+        raw_preserve_original_audio = overrides["preserve_original_audio"]
+        if not isinstance(raw_preserve_original_audio, bool):
+            raise VideoCutError("overrides.preserve_original_audio must be a boolean.")
+        preserve_original_audio = raw_preserve_original_audio
     subtitle = _clone_subtitle(config.subtitle)
 
     bound_clips: list[PipelineClipConfig] = []
@@ -590,6 +596,7 @@ def bind_pipeline_config(
         transitions=bound_transitions or None,
         default_transition=default_transition,
         bgm=bgm,
+        preserve_original_audio=preserve_original_audio,
         subtitle=subtitle,
         variables=config.variables,
         overridable=config.overridable,

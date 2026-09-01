@@ -280,6 +280,24 @@ X-Api-Key: goumee-music
 
 调用方通常只需要传 `pipeline` 和 `clips`。裁剪、转场、画质、BGM 等渲染参数由服务端按选定 pipeline 的固定配置处理。
 
+输入视频原音轨默认保留。要去除所有输入原声，在顶层 `overrides` 中传布尔字段 `preserve_original_audio=false`：
+
+```json
+{
+  "pipeline": "bgm-concat",
+  "clips": ["video123def45"],
+  "overrides": {
+    "preserve_original_audio": false,
+    "bgm": {
+      "category": "calm",
+      "filename": "测试1"
+    }
+  }
+}
+```
+
+不传或传 `true` 时保留原声：有 BGM 则输出“原声 + BGM”，无 BGM 则只输出原声。传 `false` 时去除原声：有 BGM 则只输出 BGM，无 BGM 则输出无音轨视频。该字段只接受 JSON 布尔值，字符串 `"false"` 无效。
+
 如果要使用用户上传音频，先调用 `/upload` 上传音频，再在 `overrides.bgm.fileId` 中传返回的音频 `fileId`：
 
 ```json
@@ -339,9 +357,10 @@ oss://goumee-coze/GouMei-Video-Cut/bgm-templete/测试1/生活感.mp3
 }
 ```
 
-BGM 路径规则：
+BGM 与原声规则：
 
-- 所有标准 Pipeline 都会逐段检测输入音轨；有原声则按裁剪区间保留，无原声则补等长静音，最后把拼接后的原声与 BGM 叠加。全部输入均无原声时只写入 BGM。
+- 所有标准 Pipeline 默认逐段恢复输入音轨；有原声则按裁剪区间保留，无原声则补等长静音。该行为与是否选择 BGM 无关。
+- `preserve_original_audio=false` 时跳过输入原声；有 BGM 时只写入 BGM，没有 BGM 时成片不含音频流。
 - `GET /bgm` 返回实时清单；`docs/BGM_MANIFEST.json` 仅作为静态示例/历史清单参考。
 - 用户上传音频不属于曲库，使用 `overrides.bgm.fileId`，不需要调用 `GET /bgm`。
 - 模板音乐使用 `source="template"`，只查 `/app/input/bgm-templete`，不会出现在 `GET /bgm`，也不会回退公开曲库或 `BGM_BACKUP_DIR`。
@@ -608,7 +627,7 @@ HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读
 | `400` | `2007` | `overrides.bgm` 字段结构、未知字段或混传错误 | 修正 BGM 参数 |
 | `400` | `2008` | `overrides.bgm.fileId` 不存在或不是用户音频 | 重新上传音频并传音频 `fileId` |
 | `400` | `2009` | `subtitle-burn` 的 `clips` 数量不是 1 | 只传一个视频 OSS key |
-| `400` | `2010` | `subtitle-burn` 传入了 `bgm` 以外的 runtime override | 删除字幕、画质等覆盖项，仅保留可选的 `overrides.bgm` |
+| `400` | `2010` | `subtitle-burn` 传入了 `bgm`、`preserve_original_audio` 以外的 runtime override | 删除字幕、画质等覆盖项，仅保留支持的覆盖字段 |
 | `400` | `2011` | `subtitle-burn` 输入不在服务端配置的字幕输入前缀下 | 将视频上传到响应 `details.expectedPrefix` 指定的目录 |
 | `404` | `3001` | 下载时任务不存在、未完成或无输出 | 先轮询到 `completed` |
 | `503` | `3002` | 渲染队列已满 | 稍后重试 |
@@ -695,7 +714,7 @@ HTTP 状态码只表示请求失败的大类。对接方业务逻辑只需要读
 ```json
 {
   "error_code": 2010,
-  "message": "subtitle-burn only accepts the BGM runtime override.",
+  "message": "subtitle-burn only accepts the BGM and preserve_original_audio runtime overrides.",
   "details": {"unsupported": ["quality"]}
 }
 ```

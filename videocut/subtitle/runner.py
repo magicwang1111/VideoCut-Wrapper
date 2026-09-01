@@ -43,6 +43,7 @@ class SubtitlePipelineRunner:
             task_dir: str | Path, config: PipelineSubtitleConfig, ffmpeg_path: str,
             ffprobe_path: str, bgm_path: str | Path | None = None,
             bgm_volume: float = 1.0, bgm_fade_out: float = 0.0,
+            preserve_original_audio: bool = True,
             existing_state: dict[str, object] | None = None,
             attempt: int | None = None,
             on_progress: Callable[[int], None] | None = None,
@@ -123,6 +124,7 @@ class SubtitlePipelineRunner:
             bgm_path=bgm_path,
             bgm_volume=bgm_volume,
             bgm_fade_out=bgm_fade_out,
+            preserve_original_audio=preserve_original_audio,
         )
         progress(90)
         object_path = urlparse(remote_path).path or remote_path
@@ -132,5 +134,6 @@ class SubtitlePipelineRunner:
             metadata={"mps_task_id": mps_task_id, "cos_subtitle_path": object_path,
                       "subtitle_cue_count": len(cues), "ffmpeg_encoder": encoder,
                       "word_timed_cues": used_word_timing,
-                      "bgm_file": str(bgm_path) if bgm_path is not None else None},
+                      "bgm_file": str(bgm_path) if bgm_path is not None else None,
+                      "preserve_original_audio": preserve_original_audio},
         )

@@ -201,6 +201,7 @@ def test_build_pipeline_context_applies_binding_and_overrides(tmp_path) -> None:
         tmp_path / "config.json",
         {
             "quality": "medium",
+            "preserve_original_audio": False,
             "clip_overrides": [
                 {"index": 1, "trim_start": 5, "trim_end": 1},
             ],
@@ -213,11 +214,23 @@ def test_build_pipeline_context_applies_binding_and_overrides(tmp_path) -> None:
     assert [clip.trim_start for clip in ctx.config.clips] == [2.0, 5.0, 1.0, 0.0]
     assert [clip.trim_end for clip in ctx.config.clips] == [0.0, 1.0, 1.0, 0.0]
     assert ctx.config.quality == "medium"
+    assert ctx.config.preserve_original_audio is False
     assert [(item.type, item.duration) for item in ctx.junctions] == [
         ("flash-black", 0.5),
         ("dissolve", 0.5),
         ("flash-black", 1.2),
     ]
+
+
+def test_pipeline_context_preserves_original_audio_by_default(tmp_path) -> None:
+    config = parse_pipeline_config(_make_pipeline_payload(), tmp_path / "config.json", require_name=True)
+    ctx = build_pipeline_context(
+        config,
+        ["/tmp/a.mp4", "/tmp/b.mp4", "/tmp/c.mp4"],
+        tmp_path / "config.json",
+    )
+
+    assert ctx.config.preserve_original_audio is True
 
 
 def test_build_pipeline_context_reuses_source_indexes_for_fixed_segments(tmp_path) -> None:
@@ -428,6 +441,69 @@ def test_subtitle_render_enforces_single_prefixed_input_and_no_overrides(tmp_pat
         assert queued.payload["subtitle_output_oss_key"].endswith(f"/{queued.task_id}/final.mp4")
 
 
+@pytest.mark.parametrize("value", ["false", 0, None, []])
+def test_render_rejects_non_boolean_preserve_original_audio(tmp_path, monkeypatch, value) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root)
+
+    with TestClient(api_app_module.create_app()) as client:
+        response = client.post(
+            "/render",
+            headers={"X-Api-Key": "test-key", "Content-Type": "application/json"},
+            json={
+                "pipeline": "trim-mixed-dissolve-v1",
+                "clips": [
+                    "GouMei-Video-Cut/input/1.mp4",
+                    "GouMei-Video-Cut/input/2.mp4",
+                    "GouMei-Video-Cut/input/3.mp4",
+                ],
+                "overrides": {"preserve_original_audio": value},
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "error_code": 2001,
+        "message": "Invalid request body.",
+        "details": {"field": "overrides.preserve_original_audio", "expected": "boolean"},
+    }
+    assert FakeTaskQueue.instances[-1].tasks == []
+
+
+def test_subtitle_render_accepts_preserve_original_audio_false(tmp_path, monkeypatch) -> None:
+    FakeTaskQueue.instances.clear()
+    pipelines_root = tmp_path / "pipelines"
+    payload = {
+        "name": "subtitle-burn",
+        "mode": "pipeline",
+        "required_clip_count": 1,
+        "clips": [{"source_index": 0}],
+        "subtitle": {"enabled": True},
+    }
+    _write_pipeline_config(pipelines_root, "subtitle-burn", payload)
+    _configure_api_env(tmp_path, monkeypatch, pipelines_root)
+    source = tmp_path / "oss" / "GouMei-Video-Cut" / "subtitle-input" / "a.mp4"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_bytes(b"video")
+
+    with TestClient(api_app_module.create_app()) as client:
+        response = client.post(
+            "/render",
+            headers={"X-Api-Key": "test-key", "Content-Type": "application/json"},
+            json={
+                "pipeline": "subtitle-burn",
+                "clips": ["GouMei-Video-Cut/subtitle-input/a.mp4"],
+                "overrides": {"preserve_original_audio": False},
+            },
+        )
+
+    assert response.status_code == 200
+    queued = FakeTaskQueue.instances[-1].tasks[-1]
+    assert queued.payload["overrides"]["preserve_original_audio"] is False
+
+
 def test_subtitle_render_accepts_all_four_bgm_sources(tmp_path, monkeypatch) -> None:
     FakeTaskQueue.instances.clear()
     pipelines_root = tmp_path / "pipelines"
@@ -481,13 +557,15 @@ def test_subtitle_render_accepts_all_four_bgm_sources(tmp_path, monkeypatch) -> 
                 json={
                     "pipeline": "subtitle-burn",
                     "clips": ["GouMei-Video-Cut/subtitle-input/a.mp4"],
-                    "overrides": {"bgm": bgm},
+                    "overrides": {"bgm": bgm, "preserve_original_audio": False},
                 },
             )
             assert response.status_code == 200, response.json()
-            queued_bgm = FakeTaskQueue.instances[-1].tasks[-1].payload["overrides"]["bgm"]
+            queued_overrides = FakeTaskQueue.instances[-1].tasks[-1].payload["overrides"]
+            queued_bgm = queued_overrides["bgm"]
             assert queued_bgm["volume"] == pytest.approx(1.0)
             assert queued_bgm["fade_out"] == pytest.approx(0.0)
+            assert queued_overrides["preserve_original_audio"] is False
 
 
 @pytest.mark.parametrize(

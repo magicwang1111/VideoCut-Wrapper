@@ -86,6 +86,7 @@ class PipelineConfig:
     transitions: list[PipelineTransitionConfig] | None = None
     default_transition: PipelineTransitionConfig | None = None
     bgm: PipelineBgmConfig | None = None
+    preserve_original_audio: bool = True
     subtitle: PipelineSubtitleConfig | None = None
     variables: dict[str, PipelineVariableDef] | None = None
     overridable: list[str] | None = None

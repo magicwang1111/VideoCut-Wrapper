@@ -10,7 +10,7 @@ from pathlib import Path
 
 from videocut.bgm import (
     OriginalAudioSegment,
-    apply_bgm,
+    apply_audio,
     resolve_bgm_avatar_dir,
     resolve_bgm_backup_dir,
     resolve_bgm_dir,
@@ -425,23 +425,27 @@ class PipelineRunner:
             )
 
             bgm_file_used = None
+            chosen = None
             if config.bgm and config.bgm.enabled:
                 chosen = self.resolve_bgm_path(ctx)
                 if chosen is None:
                     raise RenderError("BGM is enabled but no BGM file could be resolved.")
                 chosen_label = chosen.name if ctx.user_bgm_path else str(chosen)
                 logger.info("[2.5/3] 混入 BGM: %s (volume=%.2f)", chosen_label, config.bgm.volume)
-                apply_bgm(
+                bgm_file_used = str(chosen)
+
+            if config.preserve_original_audio or chosen is not None:
+                apply_audio(
                     ffmpeg_path,
                     ffprobe_path,
                     output_path,
                     chosen,
-                    config.bgm.volume,
-                    config.bgm.fade_out,
+                    config.bgm.volume if config.bgm else 0.3,
+                    config.bgm.fade_out if config.bgm else 0.0,
                     task.id,
                     original_audio_segments=original_audio_segments,
+                    preserve_original_audio=config.preserve_original_audio,
                 )
-                bgm_file_used = str(chosen)
 
             elapsed = time.time() - start_time
             complete_task(task, output_path)
@@ -474,6 +478,7 @@ class PipelineRunner:
                     "volume": config.bgm.volume,
                     "fade_out": config.bgm.fade_out,
                 } if bgm_file_used else None,
+                "preserve_original_audio": config.preserve_original_audio,
                 "variables": {k: asdict(v) for k, v in ctx.config.variables.items()} if ctx.config.variables else None,
             }
             meta_filename = f"meta_{task.id}_{timestamp}.json"

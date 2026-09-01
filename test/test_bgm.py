@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 import videocut.bgm as bgm_module
-from videocut.bgm import OriginalAudioSegment, apply_bgm
+from videocut.bgm import OriginalAudioSegment, apply_audio
 from videocut.bgm import build_bgm_manifest
 from videocut.bgm import list_bgm_catalog
 from videocut.bgm import resolve_bgm_backup_dir
@@ -350,7 +350,7 @@ def test_list_bgm_catalog_rejects_stems_with_dots(tmp_path, monkeypatch) -> None
         list_bgm_catalog(bgm_dir)
 
 
-def test_apply_bgm_uses_task_unique_tmp_and_replaces_video(tmp_path, monkeypatch) -> None:
+def test_apply_audio_uses_task_unique_tmp_and_replaces_video(tmp_path, monkeypatch) -> None:
     video = tmp_path / "final.mp4"
     video.write_text("without bgm", encoding="utf-8")
     bgm_file = tmp_path / "music.mp3"
@@ -371,16 +371,16 @@ def test_apply_bgm_uses_task_unique_tmp_and_replaces_video(tmp_path, monkeypatch
 
     monkeypatch.setattr(bgm_module.subprocess, "run", fake_run)
 
-    apply_bgm("ffmpeg", "ffprobe", str(video), bgm_file, 0.3, 1.0, "t_demo")
+    apply_audio("ffmpeg", "ffprobe", str(video), bgm_file, 0.3, 1.0, "t_demo")
 
     assert video.read_text(encoding="utf-8") == "with bgm"
     assert len(written_tmp_paths) == 1
     assert written_tmp_paths[0].name.startswith("final.mp4.t_demo.")
-    assert written_tmp_paths[0].name.endswith(".bgm_tmp.mp4")
-    assert not list(tmp_path.glob("*.bgm_tmp.mp4"))
+    assert written_tmp_paths[0].name.endswith(".audio_tmp.mp4")
+    assert not list(tmp_path.glob("*.audio_tmp.mp4"))
 
 
-def test_apply_bgm_concatenates_original_audio_and_silence_before_mixing(tmp_path, monkeypatch) -> None:
+def test_apply_audio_concatenates_original_audio_and_silence_before_mixing(tmp_path, monkeypatch) -> None:
     video = tmp_path / "final.mp4"
     video.write_text("video", encoding="utf-8")
     first = tmp_path / "first.mp4"
@@ -404,7 +404,7 @@ def test_apply_bgm_concatenates_original_audio_and_silence_before_mixing(tmp_pat
 
     monkeypatch.setattr(bgm_module.subprocess, "run", fake_run)
 
-    apply_bgm(
+    apply_audio(
         "ffmpeg",
         "ffprobe",
         str(video),
@@ -429,7 +429,7 @@ def test_apply_bgm_concatenates_original_audio_and_silence_before_mixing(tmp_pat
     assert captured_args[captured_args.index("-map", captured_args.index("-map") + 1) + 1] == "[audio]"
 
 
-def test_apply_bgm_uses_bgm_only_when_all_input_segments_are_silent(tmp_path, monkeypatch) -> None:
+def test_apply_audio_uses_bgm_only_when_all_input_segments_are_silent(tmp_path, monkeypatch) -> None:
     video = tmp_path / "final.mp4"
     video.write_text("video", encoding="utf-8")
     bgm_file = tmp_path / "music.mp3"
@@ -449,7 +449,7 @@ def test_apply_bgm_uses_bgm_only_when_all_input_segments_are_silent(tmp_path, mo
 
     monkeypatch.setattr(bgm_module.subprocess, "run", fake_run)
 
-    apply_bgm(
+    apply_audio(
         "ffmpeg",
         "ffprobe",
         str(video),
@@ -470,7 +470,103 @@ def test_apply_bgm_uses_bgm_only_when_all_input_segments_are_silent(tmp_path, mo
     assert captured_args[captured_args.index("-map", captured_args.index("-map") + 1) + 1] == "[bgm]"
 
 
-def test_apply_bgm_cleans_task_unique_tmp_on_failure(tmp_path, monkeypatch) -> None:
+def test_apply_audio_restores_original_audio_without_bgm(tmp_path, monkeypatch) -> None:
+    video = tmp_path / "final.mp4"
+    source = tmp_path / "source.mp4"
+    video.write_text("video", encoding="utf-8")
+    source.write_text("source", encoding="utf-8")
+    captured_args: list[str] = []
+
+    monkeypatch.setattr(
+        bgm_module.subprocess,
+        "check_output",
+        lambda *args, **kwargs: '{"format": {"duration": "5.0"}}',
+    )
+
+    def fake_run(args, **kwargs):
+        captured_args.extend(args)
+        Path(args[-1]).write_text("original audio", encoding="utf-8")
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr(bgm_module.subprocess, "run", fake_run)
+
+    apply_audio(
+        "ffmpeg",
+        "ffprobe",
+        str(video),
+        original_audio_segments=[OriginalAudioSegment(str(source), 0.0, 5.0, True)],
+    )
+
+    filter_complex = captured_args[captured_args.index("-filter_complex") + 1]
+    assert "[original0]apad=whole_dur=5.000000" in filter_complex
+    assert "[bgm]" not in filter_complex
+    assert captured_args[captured_args.index("-map", captured_args.index("-map") + 1) + 1] == "[original]"
+
+
+def test_apply_audio_omits_original_audio_when_disabled(tmp_path, monkeypatch) -> None:
+    video = tmp_path / "final.mp4"
+    source = tmp_path / "source.mp4"
+    bgm_file = tmp_path / "music.mp3"
+    video.write_text("video", encoding="utf-8")
+    source.write_text("source", encoding="utf-8")
+    bgm_file.write_text("music", encoding="utf-8")
+    captured_args: list[str] = []
+
+    monkeypatch.setattr(
+        bgm_module.subprocess,
+        "check_output",
+        lambda *args, **kwargs: '{"format": {"duration": "5.0"}}',
+    )
+
+    def fake_run(args, **kwargs):
+        captured_args.extend(args)
+        Path(args[-1]).write_text("bgm only", encoding="utf-8")
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr(bgm_module.subprocess, "run", fake_run)
+
+    apply_audio(
+        "ffmpeg",
+        "ffprobe",
+        str(video),
+        bgm_file,
+        original_audio_segments=[OriginalAudioSegment(str(source), 0.0, 5.0, True)],
+        preserve_original_audio=False,
+    )
+
+    filter_complex = captured_args[captured_args.index("-filter_complex") + 1]
+    assert str(source) not in captured_args
+    assert "[original]" not in filter_complex
+    assert "amix=" not in filter_complex
+    assert captured_args[captured_args.index("-map", captured_args.index("-map") + 1) + 1] == "[bgm]"
+
+
+def test_apply_audio_is_noop_when_original_and_bgm_are_disabled(tmp_path, monkeypatch) -> None:
+    video = tmp_path / "final.mp4"
+    video.write_text("video", encoding="utf-8")
+    monkeypatch.setattr(
+        bgm_module.subprocess,
+        "check_output",
+        lambda *args, **kwargs: pytest.fail("ffprobe should not run"),
+    )
+    monkeypatch.setattr(
+        bgm_module.subprocess,
+        "run",
+        lambda *args, **kwargs: pytest.fail("ffmpeg should not run"),
+    )
+
+    apply_audio(
+        "ffmpeg",
+        "ffprobe",
+        str(video),
+        original_audio_segments=[OriginalAudioSegment("source.mp4", 0.0, 5.0, True)],
+        preserve_original_audio=False,
+    )
+
+    assert video.read_text(encoding="utf-8") == "video"
+
+
+def test_apply_audio_cleans_task_unique_tmp_on_failure(tmp_path, monkeypatch) -> None:
     video = tmp_path / "final.mp4"
     video.write_text("without bgm", encoding="utf-8")
     bgm_file = tmp_path / "music.mp3"
@@ -490,7 +586,7 @@ def test_apply_bgm_cleans_task_unique_tmp_on_failure(tmp_path, monkeypatch) -> N
     monkeypatch.setattr(bgm_module.subprocess, "run", fake_run)
 
     with pytest.raises(subprocess.CalledProcessError):
-        apply_bgm("ffmpeg", "ffprobe", str(video), bgm_file, 0.3, 1.0, "t_demo")
+        apply_audio("ffmpeg", "ffprobe", str(video), bgm_file, 0.3, 1.0, "t_demo")
 
     assert video.read_text(encoding="utf-8") == "without bgm"
-    assert not list(tmp_path.glob("*.bgm_tmp.mp4"))
+    assert not list(tmp_path.glob("*.audio_tmp.mp4"))

@@ -160,7 +160,7 @@ videocut serve --host 0.0.0.0 --port 3000
 - `default` — 默认值
 - `overridable` — 可覆盖参数名清单
 
-注意：当前 HTTP API 运行时没有把 `variables` 自动映射成渲染参数。对接时请使用下面结构化的 `clip_overrides`、`transition_overrides`、`default_transition`、`bgm` 等字段；完整说明见 [docs/API.md](docs/API.md)。
+注意：当前 HTTP API 运行时没有把 `variables` 自动映射成渲染参数。对接时请使用下面结构化的 `clip_overrides`、`transition_overrides`、`default_transition`、`bgm`、`preserve_original_audio` 等字段；完整说明见 [docs/API.md](docs/API.md)。
 
 ### Overrides
 
@@ -173,6 +173,7 @@ videocut serve --host 0.0.0.0 --port 3000
   "clips": ["file1", "file2", "file3"],
   "overrides": {
     "quality": "medium",
+    "preserve_original_audio": true,
     "clip_overrides": [
       { "index": 0, "trim_start": 3 },
       { "index": 1, "trim_start": 5 }
@@ -188,6 +189,8 @@ videocut serve --host 0.0.0.0 --port 3000
   }
 }
 ```
+
+`preserve_original_audio` 必须是布尔值，默认 `true`。默认会在所有 Pipeline 中保留输入原声；设为 `false` 后，有 BGM 时只输出 BGM，没有 BGM 时输出无音轨视频。
 
 `GET /bgm` 用来查询实时音乐清单，只展示 `BGM_DIR` 的当前歌曲，不展示 `BGM_BACKUP_DIR` 的归档歌曲；`overrides.bgm.category + filename` 用来指定某一首 BGM，其中 `filename` 是不带扩展名的歌曲 ID。只指定 `category` 时，会在该分类目录下随机选择一首；都不传时保持全目录随机选择。
 

@@ -114,6 +114,7 @@ def worker_main(
                     bgm_path=bgm_path,
                     bgm_volume=ctx.config.bgm.volume if ctx.config.bgm else 1.0,
                     bgm_fade_out=ctx.config.bgm.fade_out if ctx.config.bgm else 0.0,
+                    preserve_original_audio=ctx.config.preserve_original_audio,
                     existing_state=payload.get("subtitle_state") if isinstance(payload.get("subtitle_state"), dict) else None,
                     attempt=attempt,
                     on_progress=lambda value: event_queue.put(
