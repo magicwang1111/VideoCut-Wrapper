@@ -39,7 +39,6 @@ from videocut.env import load_project_env
 from videocut.errors import PipelineNotFoundError, RenderError, VideoCutError
 from videocut.log import get_logger, setup_logging
 from videocut.oss import OssClient
-from videocut.oss.client import OutputMissingError
 from videocut.pipeline import PipelineRegistry
 from videocut.queue import TaskQueue, WorkerTask
 from videocut.render.task import generate_task_id
@@ -80,9 +79,6 @@ class ApiErrorCode(IntEnum):
     TASK_OUTPUT_URL_INVALID = 3004
     BGM_TEMPLATE_SYNC_RUNNING = 3005
     AIGC_METADATA_FAILED = 3006
-    TASK_OUTPUT_MISSING = 3007
-    TASK_OUTPUT_CHECK_UNAVAILABLE = 3008
-    TASK_OUTPUT_RECOVERY_UNAVAILABLE = 3009
     BGM_TEMPLATE_SYNC_FAILED = 9002
     INTERNAL_ERROR = 9001
 
@@ -1075,26 +1071,6 @@ def create_app() -> FastAPI:
             "tasks": tasks,
         }
 
-    async def check_output(oss: OssClient, task: TaskRecord) -> dict[str, Any]:
-        result = {"outputAvailable": None, "outputVerifiedAt": None, "outputCheckError": None,
-                  "requestId": uuid4().hex}
-        if task.status != "completed" or not task.oss_key:
-            return result
-        try:
-            evidence = await asyncio.to_thread(oss.head, task.oss_key)
-            expected = task.payload.get("_upload_diagnostics", {}).get("outputSizeBytes")
-            if expected is not None and evidence["remoteSizeBytes"] != expected:
-                result.update(outputAvailable=False, outputCheckError="TASK_OUTPUT_MISSING", reason="size_mismatch")
-            else:
-                result.update(outputAvailable=True)
-            result.update(outputVerifiedAt=evidence["outputVerifiedAt"], ossRequestId=evidence.get("requestId"))
-        except OutputMissingError as exc:
-            result.update(outputAvailable=False, outputCheckError="TASK_OUTPUT_MISSING", ossRequestId=exc.request_id)
-        except Exception as exc:
-            result.update(outputCheckError="TASK_OUTPUT_CHECK_UNAVAILABLE", ossRequestId=getattr(exc, "request_id", None))
-            logger.warning("Output check unavailable task=%s request=%s error_type=%s", task.id, result["requestId"], type(exc).__name__)
-        return result
-
     @app.get("/tasks/{task_id}", dependencies=[Depends(auth_guard)])
     async def get_task(task_id: str) -> dict[str, Any]:
         store: TaskStore = app.state.store
@@ -1106,9 +1082,6 @@ def create_app() -> FastAPI:
         oss: OssClient = app.state.oss
         queue_obj: TaskQueue = app.state.task_queue
         output_url = task_output_url(oss, task)
-        availability = await check_output(oss, task)
-        if availability["outputAvailable"] is not True:
-            output_url = None
         payload = {
             "taskId": task.id,
             "status": task.status,
@@ -1141,16 +1114,7 @@ def create_app() -> FastAPI:
         upload_diagnostics = queue_obj.get_upload_diagnostics(task.id)
         if upload_diagnostics:
             payload["uploadDiagnostics"] = upload_diagnostics
-        payload.update(availability)
         return payload
-
-    @app.post("/tasks/{task_id}/retry-upload", dependencies=[Depends(auth_guard)])
-    async def retry_task_upload(task_id: str):
-        queue_obj: TaskQueue = app.state.task_queue
-        if not await asyncio.to_thread(queue_obj.retry_output_upload, task_id):
-            raise api_http_exception(409, ApiErrorCode.TASK_OUTPUT_RECOVERY_UNAVAILABLE,
-                                     "No retained output available, or task is already active.", {"taskId": task_id})
-        return {"taskId": task_id, "status": "upload_queued"}
 
     @app.get("/tasks/{task_id}/download", dependencies=[Depends(auth_guard)])
     async def download_task(task_id: str):
@@ -1160,15 +1124,11 @@ def create_app() -> FastAPI:
             raise api_http_exception(404, ApiErrorCode.TASK_OUTPUT_NOT_READY, "Task output is not ready.")
         oss: OssClient = app.state.oss
         output_url = task_output_url(oss, task)
-        availability = await check_output(oss, task)
-        if availability["outputAvailable"] is not True:
-            missing = availability["outputAvailable"] is False
-            raise api_http_exception(410 if missing else 503,
-                                     ApiErrorCode.TASK_OUTPUT_MISSING if missing else ApiErrorCode.TASK_OUTPUT_CHECK_UNAVAILABLE,
-                                     "Task output is missing or has changed." if missing else "Task output check is temporarily unavailable.",
-                                     {"taskId": task_id, "code": availability["outputCheckError"], **availability})
         if oss.local_root:
-            return FileResponse(Path(oss.local_root) / task.oss_key, filename="final.mp4")
+            path = Path(oss.local_root) / task.oss_key
+            if not path.is_file():
+                raise api_http_exception(404, ApiErrorCode.TASK_OUTPUT_NOT_READY, "Task output is no longer available.")
+            return FileResponse(path, filename="final.mp4")
         return RedirectResponse(output_url, status_code=302)
 
     return app

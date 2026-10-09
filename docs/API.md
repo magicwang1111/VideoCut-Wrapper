@@ -978,7 +978,7 @@ curl "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78" \
 | `createdAt` | `string` | 任务创建时间，北京时间 |
 | `startedAt` | `string|null` | 最近一次开始执行时间，北京时间 |
 | `completedAt` | `string|null` | 完成或最终失败时间，北京时间 |
-| `outputUrl` | `string|null` | 仅任务完成且有输出时返回。真实 OSS 模式下为 `OSS_PUBLIC_ENDPOINT` 拼接的公网对象 URL |
+| `outputUrl` | `string|null` | 上传成功后的交付地址。真实 OSS 模式下为 `OSS_PUBLIC_ENDPOINT` 拼接的公网对象 URL；下游删除后仍保留该地址，不保证持续可下载 |
 | `error` | `string|null` | 最终失败原因。任务成功时为 `null` |
 | `lastError` | `string|null` | 最近一次失败原因，任务最终成功后仍可能保留 |
 | `lastErrorAt` | `string|null` | 最近一次失败时间，北京时间 |
@@ -1048,7 +1048,8 @@ rendering
 说明：
 
 - `TASK_MAX_ATTEMPT` 控制最大尝试次数，默认 `3`。
-- 服务重启时，会把遗留的 `pending` 和 `rendering` 任务重新放回队列。遗留的 `rendering` 任务会记录一次失败历史。
+- 服务重启时，已登记本地成品的未完成任务优先恢复上传，文件丢失则失败；其他遗留的 `pending` 和 `rendering` 任务重新入队，重新渲染会记录一次失败历史。
+- `completed` 表示渲染、上传及上传时的 OSS 校验成功，随后清理本地成品。下游负责下载保存并删除 OSS 中转文件；查询任务不再检查 OSS 当前可用性，也不会因下游删除而清空交付地址或重新上传。
 - 任务完成或最终失败后，会在服务启动清理中按 `TASK_TTL_DAYS` 删除历史记录，默认保留 `7` 天。
 - 用户临时音频的服务记录会在启动清理中按 `UPLOAD_TTL_DAYS` 过期，默认跟随 `TASK_TTL_DAYS` 或 `7` 天。本地 OSS 模式会同步删除过期的 `user-audio/` 文件。
 
@@ -1067,6 +1068,7 @@ curl -L "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78/download" \
 真实 OSS 模式：
 
 - 接口返回 `302` 跳转到 `OSS_PUBLIC_ENDPOINT` 拼接的公网对象 URL。
+- 接口不再检查 OSS 对象是否仍存在。下游已删除对象时，跟随跳转会收到 OSS 的 404；后续下载应使用下游保存的副本。
 - 客户端需要允许 redirect。
 - `curl` 使用 `-L`。
 - Python `requests` 使用 `allow_redirects=True`。

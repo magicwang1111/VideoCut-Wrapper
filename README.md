@@ -576,7 +576,7 @@ curl "http://127.0.0.1:3000/tasks/t_ab12cd34ef56ab78" \
 
 - `pending`: 已创建，等待 worker 领取
 - `rendering`: 已被 worker 领取，正在下载或渲染
-- `completed`: 渲染完成，结果已上传
+- `completed`: 渲染完成，结果已上传并校验，本地成品随即清理。下游负责下载保存并删除 OSS 中转文件；任务状态和 `outputUrl` 保留交付记录，不保证对象持续存在，也不触发补传。
 - `failed`: 渲染失败，且已超过重试次数或不可恢复
 
 ### 10. 下载结果 `GET /tasks/{id}/download`

@@ -2,6 +2,7 @@
 
 python /tmp/verify_output_delivery.py --source /path/to/existing.mp4 --evidence-dir /srv/videocut/temp/delivery-check
 Use --task-id to verify an existing controlled test task without submitting another render.
+Use a task that no downstream consumer will download and delete during this check.
 """
 from __future__ import annotations
 
@@ -60,7 +61,7 @@ def main() -> None:
             raise RuntimeError(f"Task {task_id} did not finish; do not resubmit automatically")
         time.sleep(1)
     assert task["status"] == "completed", task
-    assert task["outputAvailable"] is True, task
+    assert task["outputUrl"], task
     evidence = task["uploadDiagnostics"]
     remote = oss.head(evidence["ossKey"])
     assert remote["remoteSizeBytes"] == evidence["outputSizeBytes"]
@@ -81,9 +82,10 @@ def main() -> None:
               "downloadStatus": download.status_code, "downloadBytes": len(download.content),
               "downloadSha256": hashlib.sha256(download.content).hexdigest(),
               "videoCodec": videos[0]["codec_name"], "aigc": aigc,
-              "localRetained": Path(evidence["localOutputPath"]).is_file()}
+              "localDeleted": not Path(evidence["localOutputPath"]).exists()}
+    assert result["localDeleted"], result
     (args.evidence_dir / "evidence.json").write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(json.dumps({key: result[key] for key in ("taskId", "downloadStatus", "downloadBytes", "downloadSha256", "videoCodec", "localRetained")}), flush=True)
+    print(json.dumps({key: result[key] for key in ("taskId", "downloadStatus", "downloadBytes", "downloadSha256", "videoCodec", "localDeleted")}), flush=True)
 
 
 if __name__ == "__main__":

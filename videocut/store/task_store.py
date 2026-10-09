@@ -424,14 +424,6 @@ class TaskStore:
             ).fetchall()
         return [self._row_to_record(row) for row in rows]
 
-    def list_retained_outputs(self) -> list[TaskRecord]:
-        with self._lock:
-            rows = self._db.execute(
-                "SELECT * FROM tasks WHERE json_extract(variables, '$._upload_diagnostics.localOutputPath') IS NOT NULL "
-                "AND json_extract(variables, '$._upload_diagnostics.localDeletedAt') IS NULL"
-            ).fetchall()
-        return [self._row_to_record(row) for row in rows]
-
     def cleanup_old_tasks(self, ttl_days: int) -> int:
         cutoff = to_beijing_iso(now_beijing() - timedelta(days=ttl_days))
         with self._lock:
@@ -440,8 +432,6 @@ class TaskStore:
                 DELETE FROM task_external_jobs
                 WHERE task_id IN (
                   SELECT id FROM tasks WHERE status IN ('completed','failed') AND created_at < ?
-                  AND (json_extract(variables, '$._upload_diagnostics.localOutputPath') IS NULL
-                       OR json_extract(variables, '$._upload_diagnostics.localDeletedAt') IS NOT NULL)
                 )
                 """,
                 (cutoff,),
@@ -451,16 +441,12 @@ class TaskStore:
                 DELETE FROM task_failures
                 WHERE task_id IN (
                   SELECT id FROM tasks WHERE status IN ('completed','failed') AND created_at < ?
-                  AND (json_extract(variables, '$._upload_diagnostics.localOutputPath') IS NULL
-                       OR json_extract(variables, '$._upload_diagnostics.localDeletedAt') IS NOT NULL)
                 )
                 """,
                 (cutoff,),
             )
             cursor = self._db.execute(
-                "DELETE FROM tasks WHERE status IN ('completed','failed') AND created_at < ? "
-                "AND (json_extract(variables, '$._upload_diagnostics.localOutputPath') IS NULL "
-                "OR json_extract(variables, '$._upload_diagnostics.localDeletedAt') IS NOT NULL)",
+                "DELETE FROM tasks WHERE status IN ('completed','failed') AND created_at < ?",
                 (cutoff,),
             )
             self._db.commit()

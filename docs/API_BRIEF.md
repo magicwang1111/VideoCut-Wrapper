@@ -562,7 +562,7 @@ X-Api-Key: goumee-music
 轮询约定：
 
 - 建议每 `3-5` 秒查询一次。
-- `completed` 表示成功，可以下载。
+- `completed` 表示渲染及上传校验成功，本地成品随即清理。下游负责下载保存并删除 OSS 中转文件；状态和 `outputUrl` 保留交付记录，不保证对象持续存在。
 - `failed` 表示最终失败，读取 `error`。
 
 ## 7. 下载结果
@@ -575,6 +575,8 @@ X-Api-Key: goumee-music
 成功时返回视频文件。
 
 真实 OSS 模式下接口可能返回 `302` 跳转，客户端需要允许 redirect。
+
+查询及跳转不再实时检查 OSS。下游删除对象后，跟随跳转会收到 OSS 的 404，后续下载应使用下游保存的副本；服务不会补传已经交付的文件。
 
 真实 OSS 模式下跳转地址必须是 `OSS_PUBLIC_ENDPOINT` 拼接的公网对象 URL。如果服务端检测到跳转地址仍是 `*-internal.aliyuncs.com` 或路径里包含 `%2F`，会返回 `500` 和 `error_code=3004`，用于定位结果 URL 配置问题。
 
