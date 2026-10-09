@@ -1823,6 +1823,7 @@ def test_api_error_codes_for_auth_pipeline_task_and_download(tmp_path, monkeypat
 
 
 def test_completed_task_routes_return_public_output_url(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(api_app_module.OssClient, "head", lambda self, key: {"remoteSizeBytes": 5, "outputVerifiedAt": "2026-10-09T12:00:00+08:00"})
     FakeTaskQueue.instances.clear()
     pipelines_root = tmp_path / "pipelines"
     _write_pipeline_config(pipelines_root, "trim-mixed-dissolve-v1", _make_pipeline_payload())

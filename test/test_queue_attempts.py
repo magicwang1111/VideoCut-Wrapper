@@ -246,7 +246,10 @@ def test_task_queue_records_output_upload_diagnostics(tmp_path, monkeypatch) -> 
     completed = store.get("t_rendered")
     assert completed is not None
     assert completed.status == "completed"
-    assert not output_path.exists()
+    assert output_path.exists()
+    restarted = TaskQueue(store, OrderedOss(), 1, lambda event: None, tmp_path)
+    assert restarted.get_upload_diagnostics("t_rendered")["localOutputPath"] == str(output_path.resolve())
+    restarted.upload_executor.shutdown(wait=True)
     store.close()
 
 
@@ -277,7 +280,6 @@ def test_local_output_cleanup_failure_does_not_reverse_completed_task(tmp_path, 
             "ossKey": "GouMei-Video-Cut/outputs/t_cleanup_warning/final.mp4",
         }
     ]
-    assert "local output cleanup failed" in caplog.text
     store.close()
 
 

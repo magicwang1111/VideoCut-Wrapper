@@ -8,6 +8,7 @@ import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -196,6 +197,8 @@ class TaskQueue:
         self.pool = WorkerPool(worker_count, self.root_dir, self._handle_message, self._handle_worker_dead)
         self.upload_worker_count = max(1, UPLOAD_WORKER_COUNT)
         self.upload_executor = ThreadPoolExecutor(max_workers=self.upload_worker_count, thread_name_prefix="videocut-upload")
+        self._cleanup_stop = threading.Event()
+        self._cleanup_thread: threading.Thread | None = None
 
     def start(self) -> None:
         self.pool.start()
@@ -204,6 +207,8 @@ class TaskQueue:
         else:
             self._replay_from_store()
         self._drain()
+        self._cleanup_thread = threading.Thread(target=self._retention_loop, daemon=True)
+        self._cleanup_thread.start()
 
     def _consume_skip_replay_once_file(self) -> bool:
         raw_path = os.getenv("TASK_REPLAY_SKIP_ONCE_FILE", "").strip()
@@ -220,6 +225,9 @@ class TaskQueue:
         return True
 
     def stop(self) -> None:
+        self._cleanup_stop.set()
+        if self._cleanup_thread:
+            self._cleanup_thread.join()
         self.pool.stop()
         self.upload_executor.shutdown(wait=True)
 
@@ -227,6 +235,14 @@ class TaskQueue:
         stalled = self.store.get_pending_and_stalled()
         with self._lock:
             for task in stalled:
+                saved = task.payload.get("_upload_diagnostics", {})
+                if saved.get("localOutputPath"):
+                    if Path(saved["localOutputPath"]).is_file():
+                        self._handle_message({"type": "task_rendered", "task_id": task.id,
+                                              "output_path": saved["localOutputPath"], "oss_key": saved.get("ossKey")})
+                    else:
+                        self.store.mark_failed(task.id, "Saved output missing; upload recovery cannot proceed. Rendering was not restarted.")
+                    continue
                 if task.status == "rendering":
                     self.store.record_failure(task.id, "Task replayed after service restart or unexpected shutdown.")
                     self.store.reset_to_queue(task.id)
@@ -265,6 +281,9 @@ class TaskQueue:
         with self._lock:
             diagnostics = self.upload_diagnostics.get(task_id)
             if diagnostics is None:
+                task = self.store.get(task_id)
+                diagnostics = task.payload.get("_upload_diagnostics") if task else None
+            if diagnostics is None:
                 return None
             return {key: value for key, value in diagnostics.items() if not key.startswith("_")}
 
@@ -274,9 +293,63 @@ class TaskQueue:
 
     def _update_upload_diagnostics(self, task_id: str, **updates: Any) -> dict[str, Any]:
         with self._lock:
-            diagnostics = self.upload_diagnostics.setdefault(task_id, {})
+            diagnostics = self.upload_diagnostics.setdefault(task_id, self.get_upload_diagnostics(task_id) or {})
             diagnostics.update(updates)
+            self.store.patch_payload(task_id, {"_upload_diagnostics": {key: value for key, value in diagnostics.items() if not key.startswith("_")}})
             return dict(diagnostics)
+
+    def _retention_loop(self) -> None:
+        while not self._cleanup_stop.is_set():
+            try:
+                self.cleanup_retained_outputs()
+            except Exception:
+                logger.exception("Local output retention sweep failed; files retained")
+            self._cleanup_stop.wait(300)
+
+    def cleanup_retained_outputs(self) -> None:
+        now = datetime.now(timezone.utc)
+        for task in self.store.list_retained_outputs():
+            if self._cleanup_stop.is_set():
+                break
+            saved = task.payload.get("_upload_diagnostics", {})
+            expires = saved.get("localRetainUntil")
+            if task.status != "completed" or not task.oss_key or not expires:
+                continue
+            try:
+                if datetime.fromisoformat(expires) > now:
+                    continue
+                path = Path(saved["localOutputPath"]).resolve()
+                roots = [self.root_dir, self.pool.temp_dir] if hasattr(self.pool, "temp_dir") else [self.root_dir]
+                if path.suffix.lower() != ".mp4" or not any(path.is_relative_to(root) for root in roots):
+                    logger.warning("Refusing output cleanup outside managed roots: %s", path)
+                    continue
+                evidence = self.oss.head(task.oss_key)
+                if evidence["remoteSizeBytes"] != saved.get("outputSizeBytes"):
+                    raise RuntimeError("Remote size changed; keeping recovery copy")
+                with self._lock:
+                    current = self.store.get(task.id)
+                    if not current or current.status != "completed" or current.payload.get("_upload_diagnostics") != saved:
+                        continue
+                    logger.info("local output cleanup task=%s key=%s path=%s verification=%s", task.id, task.oss_key, path, evidence)
+                    path.unlink(missing_ok=True)
+                    self._update_upload_diagnostics(task.id, localDeletedAt=now_beijing_iso(), cleanupVerification=evidence)
+            except Exception:
+                logger.warning("task %s local output retained: cleanup verification failed", task.id, exc_info=True)
+
+    def retry_output_upload(self, task_id: str) -> bool:
+        with self._lock:
+            task = self.store.get(task_id)
+            if task is None or task.status not in {"failed", "completed"}:
+                return False
+            saved = task.payload.get("_upload_diagnostics", {})
+            path = saved.get("localOutputPath")
+            if not path or not Path(path).is_file():
+                return False
+            self.store.reset_to_queue(task_id)
+            self.store.mark_rendering(task_id)
+            self._handle_message({"type": "task_rendered", "task_id": task_id,
+                                  "output_path": path, "oss_key": task.oss_key or saved.get("ossKey")})
+            return True
 
     def _drain(self) -> None:
         with self._lock:
@@ -302,8 +375,9 @@ class TaskQueue:
             return
 
         if message_type == "task_done":
-            self.store.mark_completed(task_id, message["oss_key"])
-            self.on_event({"type": "completed", "taskId": task_id, "ossKey": message["oss_key"]})
+            error = "Unverified task_done event rejected; workers must provide task_rendered with a local output."
+            self.store.mark_failed(task_id, error)
+            self.on_event({"type": "failed", "taskId": task_id, "error": error})
             self._drain()
             return
 
@@ -330,6 +404,8 @@ class TaskQueue:
                 uploadBackend=getattr(self.oss, "upload_backend", None),
                 endpoint=getattr(self.oss, "endpoint", None),
                 ossutilPath=getattr(self.oss, "ossutil_path", None),
+                localOutputPath=str(Path(output_path).resolve()),
+                localDeletedAt=None,
                 _uploadQueuedMonotonic=queued_monotonic,
             )
             logger.info("task %s reached 95%%; output upload queued: %s", task_id, output_path)
@@ -524,7 +600,9 @@ class TaskQueue:
         for attempt in range(1, max(1, UPLOAD_MAX_ATTEMPT) + 1):
             self._update_upload_diagnostics(task_id, uploadAttempt=attempt, ossKey=oss_key)
             try:
-                self.oss.upload(output_path, oss_key)
+                evidence = self.oss.upload(output_path, oss_key)
+                if isinstance(evidence, dict):
+                    self._update_upload_diagnostics(task_id, **evidence)
                 upload_run_seconds = time.monotonic() - started_monotonic
                 self._update_upload_diagnostics(
                     task_id,
@@ -544,7 +622,10 @@ class TaskQueue:
                 return oss_key
             except Exception as exc:
                 last_error = exc
-                self._update_upload_diagnostics(task_id, uploadError=str(exc))
+                errors = self._get_raw_upload_diagnostics(task_id).get("uploadErrors", [])
+                errors = [*errors, {"attempt": attempt, "error": str(exc), "at": now_beijing_iso(),
+                                    "verification": getattr(exc, "evidence", None)}]
+                self._update_upload_diagnostics(task_id, uploadError=str(exc), uploadErrors=errors)
                 if attempt >= max(1, UPLOAD_MAX_ATTEMPT):
                     break
                 logger.warning("upload failed for %s attempt %d/%d", task_id, attempt, UPLOAD_MAX_ATTEMPT, exc_info=True)
@@ -577,16 +658,14 @@ class TaskQueue:
             error = str(exc)
             self.store.mark_failed(task_id, error)
             self.on_event({"type": "failed", "taskId": task_id, "error": error})
-            if cleanup_dir:
-                shutil.rmtree(cleanup_dir, ignore_errors=True)
             return
+        retain_until = datetime.now(timezone.utc) + timedelta(hours=max(1, float(os.getenv("OUTPUT_LOCAL_RETENTION_HOURS", "24"))))
+        self._update_upload_diagnostics(task_id, localOutputPath=str(Path(output_path).resolve()),
+                                        localRetainUntil=retain_until.isoformat())
         self.store.mark_completed(task_id, oss_key)
         self.on_event({"type": "completed", "taskId": task_id, "ossKey": oss_key})
-        try:
-            Path(output_path).unlink(missing_ok=True)
-        except OSError:
-            logger.warning("task %s completed but local output cleanup failed: %s", task_id, output_path, exc_info=True)
-        if cleanup_dir:
+        logger.info("task %s local output retained until %s: %s", task_id, retain_until.isoformat(), output_path)
+        if cleanup_dir and not Path(output_path).resolve().is_relative_to(Path(cleanup_dir).resolve()):
             shutil.rmtree(cleanup_dir, ignore_errors=True)
 
     def _handle_worker_dead(self, worker_id: int, task_id: str | None) -> None:

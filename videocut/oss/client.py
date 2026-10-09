@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote
@@ -21,6 +22,18 @@ except ZoneInfoNotFoundError:
     BEIJING_TZ = timezone(timedelta(hours=8))
 
 _DEFAULT_PUBLIC_ENDPOINT = "oss-cn-hangzhou.aliyuncs.com"
+
+
+class OutputMissingError(RuntimeError):
+    def __init__(self, key: str, request_id: str | None = None):
+        super().__init__(f"OSS object missing: {key}")
+        self.request_id = request_id
+
+
+class OutputVerificationError(RuntimeError):
+    def __init__(self, evidence: dict):
+        super().__init__(f"Remote object verification failed: {evidence.get('reason')}")
+        self.evidence = evidence
 
 
 def _as_output_time(timestamp: datetime | None = None) -> datetime:
@@ -64,8 +77,8 @@ class OssClient:
                 "OSS credentials",
                 "Set OSS_ACCESS_KEY_ID and OSS_ACCESS_KEY_SECRET, or configure OSS_LOCAL_ROOT for local testing.",
             )
-        auth = oss2.Auth(access_key_id, access_key_secret)
-        self.bucket = oss2.Bucket(auth, endpoint, self.bucket_name)
+        auth = oss2.StsAuth(access_key_id, access_key_secret, sts_token) if sts_token else oss2.Auth(access_key_id, access_key_secret)
+        self.bucket = oss2.Bucket(auth, endpoint, self.bucket_name, connect_timeout=10)
         # Uploads and downloads may use an Alibaba Cloud internal endpoint, but
         # Tencent MPS must receive a URL that is reachable from the public internet.
         self.public_bucket = oss2.Bucket(auth, self.public_endpoint, self.bucket_name)
@@ -113,20 +126,65 @@ class OssClient:
             raise DependencyError("OSS bucket", "Bucket not initialized.")
         return self.public_bucket.sign_url("GET", oss_key, expires, slash_safe=True)
 
-    def upload(self, local_path: str | Path, oss_key: str) -> None:
+    def head(self, oss_key: str) -> dict:
+        evidence = {"bucket": self.bucket_name, "ossKey": oss_key, "outputVerifiedAt": datetime.now(BEIJING_TZ).isoformat()}
+        if self.local_root:
+            try:
+                size = (Path(self.local_root) / oss_key).stat().st_size
+            except FileNotFoundError as exc:
+                raise OutputMissingError(oss_key) from exc
+            return {**evidence, "remoteSizeBytes": size, "etag": None, "requestId": None}
+        try:
+            result = self.bucket.head_object(oss_key)
+        except oss2.exceptions.NoSuchKey as exc:
+            raise OutputMissingError(oss_key, getattr(exc, "request_id", None)) from exc
+        return {**evidence, "remoteSizeBytes": result.content_length,
+                "etag": result.etag, "requestId": result.request_id}
+
+    def verify(self, oss_key: str, expected_size: int) -> dict:
+        evidence = {"bucket": self.bucket_name, "ossKey": oss_key, "outputSizeBytes": expected_size}
+        attempts = max(1, int(os.getenv("OSS_VERIFY_MAX_ATTEMPT", "3")))
+        for attempt in range(1, attempts + 1):
+            try:
+                evidence.update(self.head(oss_key))
+                if evidence["remoteSizeBytes"] != expected_size:
+                    raise ValueError(f"size mismatch: expected {expected_size}, got {evidence['remoteSizeBytes']}")
+                return {**evidence, "verificationAttempt": attempt, "outputAvailable": True}
+            except Exception as exc:
+                evidence.update(reason=self._redact(str(exc)), verificationAttempt=attempt,
+                                requestId=getattr(exc, "request_id", evidence.get("requestId")),
+                                outputAvailable=False)
+                if attempt < attempts:
+                    time.sleep(max(0, float(os.getenv("OSS_VERIFY_RETRY_DELAY_SECONDS", "1"))))
+        raise OutputVerificationError(evidence)
+
+    def upload(self, local_path: str | Path, oss_key: str) -> dict:
+        size = Path(local_path).stat().st_size
+        tool_result = {"backend": "local" if self.local_root else self.upload_backend}
         if self.local_root:
             target = Path(self.local_root) / oss_key
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(local_path, target)
-            return
-        if self.bucket is None:
+        elif self.bucket is None:
             raise DependencyError("OSS bucket", "Bucket not initialized; set OSS credentials or OSS_LOCAL_ROOT.")
-        if self.upload_backend == "ossutil":
-            self._upload_with_ossutil(local_path, oss_key)
-            return
-        if self.upload_backend != "oss2":
+        elif self.upload_backend == "ossutil":
+            tool_result.update(self._upload_with_ossutil(local_path, oss_key) or {})
+        elif self.upload_backend != "oss2":
             raise DependencyError("OSS upload backend", f"Unsupported OSS_UPLOAD_BACKEND: {self.upload_backend}")
-        self.bucket.put_object_from_file(oss_key, str(local_path))
+        else:
+            result = self.bucket.put_object_from_file(oss_key, str(local_path))
+            tool_result.update(requestId=result.request_id, status=result.status)
+        try:
+            return {**self.verify(oss_key, size), "uploadToolResult": tool_result}
+        except OutputVerificationError as exc:
+            exc.evidence["uploadToolResult"] = tool_result
+            raise
+
+    def _redact(self, text: str) -> str:
+        for secret in (self.access_key_id, self.access_key_secret, self.sts_token):
+            if secret:
+                text = text.replace(secret, "[REDACTED]")
+        return text[-2000:]
 
     def _resolve_ossutil_path(self) -> str:
         resolved = shutil.which(self.ossutil_path)
@@ -137,7 +195,7 @@ class OssClient:
             return str(candidate)
         raise DependencyError("ossutil", f"OSSUTIL_PATH is not executable or not found: {self.ossutil_path}")
 
-    def _upload_with_ossutil(self, local_path: str | Path, oss_key: str) -> None:
+    def _upload_with_ossutil(self, local_path: str | Path, oss_key: str) -> dict:
         if not self.access_key_id or not self.access_key_secret:
             raise DependencyError("OSS credentials", "ossutil upload requires OSS_ACCESS_KEY_ID and OSS_ACCESS_KEY_SECRET.")
         command = [
@@ -166,13 +224,15 @@ class OssClient:
                 errors="replace",
                 timeout=self.ossutil_timeout_seconds,
             )
-        except subprocess.TimeoutExpired as exc:
-            raise RuntimeError(f"ossutil upload timed out after {self.ossutil_timeout_seconds} seconds.") from exc
+        except subprocess.TimeoutExpired:
+            # TimeoutExpired includes argv (and therefore credentials) in its repr.
+            raise RuntimeError(f"ossutil upload timed out after {self.ossutil_timeout_seconds} seconds.") from None
         if result.returncode != 0:
-            detail = (result.stderr or result.stdout or "").strip()
+            detail = self._redact((result.stderr or result.stdout or "").strip())
             if len(detail) > 2000:
                 detail = "...\n" + detail[-2000:]
             raise RuntimeError(f"ossutil upload failed with code {result.returncode}: {detail}")
+        return {"exitCode": result.returncode, "stdout": self._redact(result.stdout or ""), "stderr": self._redact(result.stderr or "")}
 
     def download(self, oss_key: str, local_path: str | Path) -> None:
         target_path = Path(local_path)

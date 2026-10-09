@@ -1,0 +1,7 @@
+FROM videocut-wrapper:v5.36
+LABEL org.opencontainers.image.version="v5.37" \
+      org.opencontainers.image.description="Verified OSS delivery and retained output recovery"
+COPY videocut/oss/client.py /app/videocut/oss/client.py
+COPY videocut/queue/task_queue.py /app/videocut/queue/task_queue.py
+COPY videocut/api/app.py /app/videocut/api/app.py
+COPY videocut/store/task_store.py /app/videocut/store/task_store.py
